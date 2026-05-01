@@ -1,11 +1,14 @@
 package io.vidocq.champollion.jsonb.internal;
 
+import io.vidocq.champollion.jsonb.spi.JsonbBinding;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbConfig;
 import jakarta.json.bind.JsonbException;
 import jakarta.json.spi.JsonProvider;
 import jakarta.json.stream.JsonGenerator;
 import jakarta.json.stream.JsonParser;
+
+import java.util.Map;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,12 +33,19 @@ public final class ChampollionJsonb implements Jsonb {
     private final JsonProvider jsonProvider;
     private final RuntimeBindingRegistry writeRegistry;
     private final RuntimeReadRegistry readRegistry;
+    private final StaticBindings staticBindings;
 
-    ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider) {
+    ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.config = config;
         this.jsonProvider = jsonProvider;
         this.writeRegistry = new RuntimeBindingRegistry();
         this.readRegistry = new RuntimeReadRegistry();
+        this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
+    }
+
+    /** Vue immuable des bindings statiques résolus, pour diagnostic et tests. */
+    public Map<Class<?>, JsonbBinding<?>> staticBindingsView() {
+        return staticBindings.view();
     }
 
     // ===== toJson =====
@@ -57,13 +67,27 @@ public final class ChampollionJsonb implements Jsonb {
 
     @Override public void toJson(Object object, Type runtimeType, Writer writer) {
         try (JsonGenerator g = jsonProvider.createGenerator(writer)) {
-            if (object == null) {
-                g.writeNull();
-            } else {
-                BindingWriter w = writeRegistry.writerFor(runtimeType);
-                w.write(g, object);
-            }
+            writeValue(g, object, runtimeType);
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void writeValue(JsonGenerator g, Object object, Type runtimeType) {
+        if (object == null) { g.writeNull(); return; }
+        // Lookup-first : binding statique disponible pour ce type ?
+        JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, object));
+        if (staticBinding != null) {
+            staticBinding.write(g, object);
+            return;
+        }
+        BindingWriter w = writeRegistry.writerFor(runtimeType);
+        w.write(g, object);
+    }
+
+    private static Class<?> rawClassOf(Type t, Object instance) {
+        if (t instanceof Class<?> c) return c;
+        if (t instanceof java.lang.reflect.ParameterizedType p) return (Class<?>) p.getRawType();
+        return instance == null ? Object.class : instance.getClass();
     }
 
     @Override public void toJson(Object object, OutputStream stream) {
@@ -72,12 +96,7 @@ public final class ChampollionJsonb implements Jsonb {
 
     @Override public void toJson(Object object, Type runtimeType, OutputStream stream) {
         try (JsonGenerator g = jsonProvider.createGenerator(stream)) {
-            if (object == null) {
-                g.writeNull();
-            } else {
-                BindingWriter w = writeRegistry.writerFor(runtimeType);
-                w.write(g, object);
-            }
+            writeValue(g, object, runtimeType);
         }
     }
 
@@ -98,8 +117,7 @@ public final class ChampollionJsonb implements Jsonb {
     @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(Reader reader, Type runtimeType) {
         try (JsonParser p = jsonProvider.createParser(reader)) {
-            BindingReader r = readRegistry.readerFor(runtimeType);
-            return (T) r.read(p);
+            return (T) readValue(p, runtimeType);
         }
     }
 
@@ -110,9 +128,18 @@ public final class ChampollionJsonb implements Jsonb {
     @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(InputStream stream, Type runtimeType) {
         try (JsonParser p = jsonProvider.createParser(stream)) {
-            BindingReader r = readRegistry.readerFor(runtimeType);
-            return (T) r.read(p);
+            return (T) readValue(p, runtimeType);
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Object readValue(JsonParser p, Type runtimeType) {
+        // Lookup-first : binding statique pour ce type ?
+        JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, null));
+        if (staticBinding != null) {
+            return staticBinding.read(p);
+        }
+        return readRegistry.readerFor(runtimeType).read(p);
     }
 
     @Override public void close() throws Exception { /* nothing held */ }
