@@ -62,19 +62,28 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_JSON_PARSER = ClassDesc.of("jakarta.json.stream.JsonParser");
     private static final ClassDesc CD_JSON_PARSER_EVENT = ClassDesc.of("jakarta.json.stream.JsonParser$Event");
 
-    /** Test : tous les composants sont-ils dans le subset bytecode (primitives + String) ? */
+    /** Test : tous les composants sont-ils dans le subset bytecode (primitives + String + enum) ? */
     static boolean eligible(List<? extends RecordComponentElement> comps) {
         for (var c : comps) {
             TypeMirror tm = c.asType();
             switch (tm.getKind()) {
                 case INT, LONG, DOUBLE, FLOAT, SHORT, BYTE, BOOLEAN -> { /* OK */ }
                 case DECLARED -> {
-                    if (!"java.lang.String".equals(((DeclaredType) tm).asElement().toString())) return false;
+                    DeclaredType dt = (DeclaredType) tm;
+                    String fqn = dt.asElement().toString();
+                    if ("java.lang.String".equals(fqn)) continue;
+                    if (dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM) continue;
+                    return false;
                 }
                 default -> { return false; }
             }
         }
         return true;
+    }
+
+    private static boolean isEnum(TypeMirror tm) {
+        return tm.getKind() == TypeKind.DECLARED
+                && ((DeclaredType) tm).asElement().getKind() == javax.lang.model.element.ElementKind.ENUM;
     }
 
     /** Émet le bytecode du binding pour {@code record}. */
@@ -222,19 +231,38 @@ final class BindingBytecodeEmitter {
                 code.pop();
             }
             case DECLARED -> {
-                // String : if (t.name() != null) g.write("name", t.name());
-                Label skip = code.newLabel();
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
-                code.ifnull(skip);
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
-                code.pop();
-                code.labelBinding(skip);
+                if (isEnum(tm)) {
+                    // if (t.name() != null) g.write("name", t.<accessor>().name());
+                    ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
+                    Label skip = code.newLabel();
+                    code.aload(3);
+                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
+                    code.ifnull(skip);
+                    code.aload(1);
+                    code.ldc(name);
+                    code.aload(3);
+                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
+                    code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name",
+                            MethodTypeDesc.of(CD_STRING));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
+                    code.pop();
+                    code.labelBinding(skip);
+                } else {
+                    // String : if (t.name() != null) g.write("name", t.name());
+                    Label skip = code.newLabel();
+                    code.aload(3);
+                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
+                    code.ifnull(skip);
+                    code.aload(1);
+                    code.ldc(name);
+                    code.aload(3);
+                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
+                    code.pop();
+                    code.labelBinding(skip);
+                }
             }
             default -> throw new IllegalStateException("Unsupported component for bytecode emitter: " + tm);
         }
@@ -426,9 +454,18 @@ final class BindingBytecodeEmitter {
                 code.istore(slot);
             }
             case DECLARED -> {
-                code.aload(1);
-                code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
-                code.astore(slot);
+                if (isEnum(tm)) {
+                    // <Enum>.valueOf(p.getString())
+                    ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+                    code.invokestatic(CD_ENUM, "valueOf", MethodTypeDesc.of(CD_ENUM, CD_STRING));
+                    code.astore(slot);
+                } else {
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+                    code.astore(slot);
+                }
             }
             default -> throw new IllegalStateException("Unsupported");
         }
