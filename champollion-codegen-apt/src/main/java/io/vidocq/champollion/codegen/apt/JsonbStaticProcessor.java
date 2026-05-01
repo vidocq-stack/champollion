@@ -100,6 +100,25 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             }
         }
 
+        // Fast path : Class File API si tous les composants sont primitifs ou String.
+        // Évite la génération d'un .java intermédiaire et la re-compilation.
+        if (BindingBytecodeEmitter.eligible(comps)) {
+            try {
+                byte[] bytes = BindingBytecodeEmitter.emit(record, bindingFqn);
+                JavaFileObject classFile = processingEnv.getFiler().createClassFile(bindingFqn, record);
+                try (var os = classFile.openOutputStream()) {
+                    os.write(bytes);
+                }
+                generatedBindings.add(bindingFqn);
+                return;
+            } catch (IOException ex) {
+                error(record, "Failed to emit class file: " + ex.getMessage());
+                return;
+            }
+        }
+
+        // Slow path : génération de sources Java pour les types complexes
+        // (containers, nested records). Sera migré vers bytecode au fur et à mesure.
         try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, record).openWriter();
              PrintWriter pw = new PrintWriter(w)) {
             emit(pw, pkgName, simpleName, bindingSimple, targetFqn, comps);
@@ -446,13 +465,15 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
                     pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = " + f + ".valueOf(p.getString());");
                 } else if (isStaticRecord(dt)) {
-                    // Délégation à <X>$$Binding. L'event est déjà consommé : on doit appeler
-                    // l'enfant avec un parser amorcé qui ré-émet cet event.
+                    // Délégation à <X>$$Binding. Le binding peut être en bytecode (read
+                    // retourne Object) ou en source paramétré (read retourne T). On cast
+                    // explicitement pour couvrir les deux.
                     String binding = bindingFqnOf(dt);
+                    String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
                     pw.println("                    if (_ev == JsonParser.Event.VALUE_NULL) " + target + " = null;");
                     pw.println("                    else {");
                     pw.println("                        JsonParser _primed = new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(_ev, p);");
-                    pw.println("                        " + target + " = new " + binding + "().read(_primed);");
+                    pw.println("                        " + target + " = (" + f + ") new " + binding + "().read(_primed);");
                     pw.println("                    }");
                 } else if ("java.util.List".equals(fqn)) {
                     TypeMirror elem = dt.getTypeArguments().get(0);
@@ -564,7 +585,10 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         DeclaredType dt = (DeclaredType) tm;
         if (isStaticRecord(dt)) {
             String b = bindingFqnOf(dt);
-            return "new " + b + "().read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(" + ev + ", " + p + "))";
+            String targetFqn = ((TypeElement) dt.asElement()).getQualifiedName().toString();
+            // Cast explicite : le binding peut être en bytecode raw (Object read) ou
+            // source paramétré (T read). Le cast couvre les deux cas.
+            return "(" + targetFqn + ") new " + b + "().read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(" + ev + ", " + p + "))";
         }
         if (isEnum(dt)) {
             String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
