@@ -5,9 +5,12 @@ import jakarta.json.bind.JsonbConfig;
 import jakarta.json.bind.JsonbException;
 import jakarta.json.spi.JsonProvider;
 import jakarta.json.stream.JsonGenerator;
+import jakarta.json.stream.JsonParser;
 
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
+import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.reflect.Type;
@@ -25,12 +28,14 @@ public final class ChampollionJsonb implements Jsonb {
 
     private final JsonbConfig config;
     private final JsonProvider jsonProvider;
-    private final RuntimeBindingRegistry registry;
+    private final RuntimeBindingRegistry writeRegistry;
+    private final RuntimeReadRegistry readRegistry;
 
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider) {
         this.config = config;
         this.jsonProvider = jsonProvider;
-        this.registry = new RuntimeBindingRegistry();
+        this.writeRegistry = new RuntimeBindingRegistry();
+        this.readRegistry = new RuntimeReadRegistry();
     }
 
     // ===== toJson =====
@@ -55,7 +60,7 @@ public final class ChampollionJsonb implements Jsonb {
             if (object == null) {
                 g.writeNull();
             } else {
-                BindingWriter w = registry.writerFor(runtimeType);
+                BindingWriter w = writeRegistry.writerFor(runtimeType);
                 w.write(g, object);
             }
         }
@@ -70,24 +75,45 @@ public final class ChampollionJsonb implements Jsonb {
             if (object == null) {
                 g.writeNull();
             } else {
-                BindingWriter w = registry.writerFor(runtimeType);
+                BindingWriter w = writeRegistry.writerFor(runtimeType);
                 w.write(g, object);
             }
         }
     }
 
-    // ===== fromJson — M4.2 =====
+    // ===== fromJson =====
 
-    @Override public <T> T fromJson(String str, Class<T> type) { throw notYet(); }
-    @Override public <T> T fromJson(String str, Type runtimeType) { throw notYet(); }
-    @Override public <T> T fromJson(Reader reader, Class<T> type) { throw notYet(); }
-    @Override public <T> T fromJson(Reader reader, Type runtimeType) { throw notYet(); }
-    @Override public <T> T fromJson(java.io.InputStream stream, Class<T> type) { throw notYet(); }
-    @Override public <T> T fromJson(java.io.InputStream stream, Type runtimeType) { throw notYet(); }
+    @Override public <T> T fromJson(String str, Class<T> type) {
+        return fromJson(new StringReader(str), (Type) type);
+    }
+
+    @Override public <T> T fromJson(String str, Type runtimeType) {
+        return fromJson(new StringReader(str), runtimeType);
+    }
+
+    @Override public <T> T fromJson(Reader reader, Class<T> type) {
+        return fromJson(reader, (Type) type);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override public <T> T fromJson(Reader reader, Type runtimeType) {
+        try (JsonParser p = jsonProvider.createParser(reader)) {
+            BindingReader r = readRegistry.readerFor(runtimeType);
+            return (T) r.read(p);
+        }
+    }
+
+    @Override public <T> T fromJson(InputStream stream, Class<T> type) {
+        return fromJson(stream, (Type) type);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override public <T> T fromJson(InputStream stream, Type runtimeType) {
+        try (JsonParser p = jsonProvider.createParser(stream)) {
+            BindingReader r = readRegistry.readerFor(runtimeType);
+            return (T) r.read(p);
+        }
+    }
 
     @Override public void close() throws Exception { /* nothing held */ }
-
-    private static JsonbException notYet() {
-        return new JsonbException("fromJson — implemented in M4.2");
-    }
 }
