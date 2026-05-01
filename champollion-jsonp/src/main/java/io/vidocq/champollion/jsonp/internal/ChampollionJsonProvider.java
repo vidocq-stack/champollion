@@ -188,6 +188,41 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return b;
     }
 
+    // ===== Scalar value factories =====
+
+    @Override public jakarta.json.JsonString createValue(String value) {
+        return new ChampollionJsonString(value);
+    }
+
+    @Override public jakarta.json.JsonNumber createValue(int value) {
+        return ChampollionJsonNumber.of(value);
+    }
+
+    @Override public jakarta.json.JsonNumber createValue(long value) {
+        return ChampollionJsonNumber.of(value);
+    }
+
+    @Override public jakarta.json.JsonNumber createValue(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            throw new NumberFormatException("JSON does not allow NaN or Infinity");
+        }
+        return ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(value));
+    }
+
+    @Override public jakarta.json.JsonNumber createValue(java.math.BigDecimal value) {
+        return ChampollionJsonNumber.of(value);
+    }
+
+    @Override public jakarta.json.JsonNumber createValue(java.math.BigInteger value) {
+        return ChampollionJsonNumber.of(new java.math.BigDecimal(value));
+    }
+
+    // ===== JsonPointer =====
+
+    @Override public jakarta.json.JsonPointer createPointer(String jsonPointer) {
+        return new ChampollionJsonPointer(jsonPointer);
+    }
+
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
         Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
         return new JsonBuilderFactory() {
