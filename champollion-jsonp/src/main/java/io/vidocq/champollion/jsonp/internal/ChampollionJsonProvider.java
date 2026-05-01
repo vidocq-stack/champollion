@@ -8,6 +8,7 @@ import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonReader;
 import jakarta.json.JsonReaderFactory;
+import jakarta.json.JsonStructure;
 import jakarta.json.JsonValue;
 import jakarta.json.JsonWriter;
 import jakarta.json.JsonWriterFactory;
@@ -233,6 +234,19 @@ public final class ChampollionJsonProvider extends JsonProvider {
 
     @Override public jakarta.json.JsonPatch createPatch(JsonArray array) {
         return new ChampollionJsonPatch(array);
+    }
+
+    @Override public jakarta.json.JsonPatch createDiff(JsonStructure source, JsonStructure target) {
+        // RFC 6902 diff : non-trivial. Reporté en M3.4 (le merge patch couvre déjà l'essentiel des cas).
+        throw new UnsupportedOperationException("createDiff (JsonPatch) — implemented in M3.4");
+    }
+
+    @Override public jakarta.json.JsonMergePatch createMergePatch(JsonValue patch) {
+        return new ChampollionJsonMergePatch(patch);
+    }
+
+    @Override public jakarta.json.JsonMergePatch createMergeDiff(JsonValue source, JsonValue target) {
+        return ChampollionJsonMergePatch.diff(source, target);
     }
 
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
