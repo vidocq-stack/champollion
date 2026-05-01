@@ -7,7 +7,7 @@
 
 - **Branche** : `main`
 - **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : 207/207 ✅ (`mvn test` sur le reactor)
+- **Tests** : **224/224** ✅ (`mvn test` sur le reactor)
 - **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
 
 ## Modules
@@ -16,8 +16,8 @@
 |---|---|---|
 | `champollion-api` | ✅ | Re-expose `jakarta.json` + `jakarta.json.bind`. Pas encore de SPI propre exportée (à ajouter quand on aura un point d'extension à figer). |
 | `champollion-jsonp` | ✅ **complet pour la spec publique** | 161 tests. Streaming + object model + builders + Reader/Writer + Pointer + Patch + MergePatch + ServiceLoader. |
-| `champollion-jsonb` | ⚠️ **MVP runtime** | 46 tests. toJson + fromJson opérationnels sur primitives, java.time, UUID, enum, records, POJOs (champs publics), List/Set/Map/Array/Optional. |
-| `champollion-codegen-apt` | 🟡 squelette | Module + `module-info` + package prêts. Aucun `Processor` réel. |
+| `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. toJson + fromJson runtime opérationnels (primitives, java.time, UUID, enum, records, POJOs, containers). SPI publique `JsonbBinding<T>` + `@JsonbStatic` exposée, ServiceLoader, lookup-first, fallback runtime. |
+| `champollion-codegen-apt` | ✅ **MVP fonctionnel** | 11 tests. APT `JsonbStaticProcessor` génère un `JsonbBinding<T>` par record annoté `@JsonbStatic` + ServiceLoader file. Couvre primitives + String + List<E> + Optional<E> + arrays primitifs + String[]. Differential testing automatisé static vs runtime. |
 | `champollion-codegen-maven-plugin` | 🟡 squelette (`packaging=jar`) | `GenerateMojo` minimal. Le packaging `maven-plugin` reviendra en M5 avec un descriptor compatible Java 25. |
 | `champollion-bench` | 🟡 vide | POM JMH prêt, aucun benchmark écrit. |
 | `champollion-examples` | 🟡 vide | POM prêt, aucun exemple écrit. |
@@ -43,7 +43,13 @@
 | **M3.4** | `Json.createDiff` (JsonPatch diff) | ❌ reporté |
 | **M4.4** | Customization JSON-B (annotations) | ❌ pas commencé |
 | **M4.5** | Polymorphisme `@JsonbTypeInfo`/`@JsonbSubtype` | ❌ pas commencé |
-| **M5** | Codegen statique APT + Maven plugin | ❌ pas commencé |
+| **M5.1** | SPI `JsonbBinding` + lookup-first | ✅ 6 tests |
+| **M5.2** | `@JsonbStatic` + APT `JsonbStaticProcessor` | ✅ 4 tests |
+| **M5.3** | APT containers (List/Optional/Arrays) | ✅ 4 tests |
+| **M5.4** | Differential testing static vs runtime | ✅ 3 tests |
+| **M5.5** | APT — Map<String,X> + nested records | ❌ pas commencé |
+| **M5.6** | Maven plugin `champollion-codegen-maven-plugin` | ❌ packaging=jar squelette |
+| **M5.7** | Validation AOT GraalVM `native-image` | ❌ pas commencé |
 | **M6** | TCK officiels JSON-P 2.1 + JSON-B 3.0 | ❌ pas commencé |
 | **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
 
@@ -63,14 +69,21 @@
 - **M4.5 — Polymorphisme** : `@JsonbTypeInfo` + `@JsonbSubtype`, nouveauté JSON-B 3.0. Aujourd'hui non supporté.
 - **POJO setters** : la lecture POJO actuelle ne gère que les champs publics. Étendre aux setters conventionnels (`setX`/`getX`) pour les bean classiques.
 
-### Moyen terme — M5 (codegen statique)
+### Moyen terme — M5 (codegen statique) — partiellement livré
 
-- `champollion-codegen-apt` : `Processor` qui scanne `@JsonbStatic` et génère `<FQN>$$Binding.java` (writer + reader) + ServiceLoader fichier-source pour `BindingFactoryProvider`.
-- `champollion-codegen-maven-plugin` : Mojo `generate` qui scanne le classpath du projet hôte et délègue à l'APT pour les classes non annotables. Re-passer en `packaging=maven-plugin` quand `maven-plugin-plugin` saura lire Java 25.
-- SPI `BindingFactoryProvider` côté `champollion-jsonb` : registre lookup-first vers les factories statiques générées, fallback runtime sinon (déjà prévu dans le module-info).
-- Differential testing automatisé : pour chaque type compilé en mode statique, vérifier `runtime.toJson(o).equals(static.toJson(o))` et symétriquement à la lecture.
-- Optimisations : escape précompilé pour les noms de propriétés en `byte[]` UTF-8.
-- Validation AOT : `native-image` sur `champollion-examples` pour valider l'absence de réflexion.
+**Livré :**
+- ✅ SPI `JsonbBinding<T>` exposée (`champollion-jsonb.spi`)
+- ✅ Annotation `@JsonbStatic` (`champollion-jsonb.spi`, `RetentionPolicy.CLASS`)
+- ✅ APT `JsonbStaticProcessor` qui génère `<FQN>$$Binding.java` + ServiceLoader file
+- ✅ `ChampollionJsonb` lookup-first sur les bindings statiques, fallback runtime introspectif
+- ✅ Differential testing automatisé runtime vs static
+- ✅ Couverture : primitives, String, List<E>, Optional<E>, arrays primitifs, String[]
+
+**À faire :**
+- **M5.5** Codegen Map<String,X> et nested records `@JsonbStatic` (le binding A doit pouvoir instancier le binding B compilé séparément). Pose la question du protocole de résolution : ServiceLoader lazy au runtime du binding ?
+- **M5.6** Activation `champollion-codegen-maven-plugin` (packaging=maven-plugin) quand `maven-plugin-plugin` ≥ ASM lisant Java 25 sera publié. Aujourd'hui jar squelette.
+- **M5.7** Optimisations : escape précompilé pour les noms de propriétés en `byte[]` UTF-8 émis comme `private static final byte[]` dans le binding.
+- **M5.8** Validation AOT : `native-image` sur `champollion-examples` pour prouver l'absence totale de réflexion sur les types annotés.
 
 ### Moyen terme — Tests d'envergure
 
