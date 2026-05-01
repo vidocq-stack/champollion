@@ -14,9 +14,14 @@
     <description>Annotation Processor : génère un BindingFactory par type annoté @JsonbStatic — JPMS, zéro réflexion runtime</description>
 
     <dependencies>
+        <!--
+            Dépendance build-time vers champollion-jsonb : l'APT a besoin
+            d'importer JsonbBinding et @JsonbStatic. La SPI jsonb ne dépend pas
+            de codegen — pas de circularité.
+        -->
         <dependency>
             <groupId>io.vidocq.champollion</groupId>
-            <artifactId>champollion-api</artifactId>
+            <artifactId>champollion-jsonb</artifactId>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
