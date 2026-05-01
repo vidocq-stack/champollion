@@ -34,16 +34,121 @@ final class RuntimeBindingRegistry {
     };
 
     BindingWriter writerFor(Type t) {
-        if (t instanceof Class<?> c) return cache.get(c);
-        // Generic types : M4.3 — pour M4.1 on dégrade en raw type.
-        if (t == null) return Builtins.OBJECT;
+        if (t == null) return dynamicWriter();
+        if (t instanceof Class<?> c) {
+            if (c.isArray()) return arrayWriter(c.getComponentType());
+            if (c == Object.class) return dynamicWriter();
+            return cache.get(c);
+        }
+        if (t instanceof java.lang.reflect.ParameterizedType p) return parameterizedWriter(p);
         return cache.get(rawOf(t));
+    }
+
+    /** Writer qui résout au runtime par {@code value.getClass()} : nécessaire pour
+     *  les collections/maps non typées (raw types) ou quand le type statique est {@code Object}. */
+    private BindingWriter dynamicWriter() {
+        return (g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            cache.get(value.getClass()).write(g, value);
+        };
     }
 
     private static Class<?> rawOf(Type t) {
         if (t instanceof Class<?> c) return c;
         if (t instanceof java.lang.reflect.ParameterizedType p) return (Class<?>) p.getRawType();
         return Object.class;
+    }
+
+    /**
+     * Résolution pour types paramétrés : Collection&lt;E&gt;, Map&lt;String,V&gt;, Optional&lt;E&gt;.
+     * Le writer obtenu est <em>spécifique au type</em> et non caché par classe — la JVM réutilise
+     * cependant la même instance pour des types identiques via memoisation interne (M5 : cache
+     * dédié si besoin).
+     */
+    private BindingWriter parameterizedWriter(java.lang.reflect.ParameterizedType p) {
+        Class<?> raw = (Class<?>) p.getRawType();
+        Type[] args = p.getActualTypeArguments();
+        if (java.util.Map.class.isAssignableFrom(raw)) {
+            BindingWriter valueWriter = args.length >= 2 ? writerFor(args[1]) : dynamicWriter();
+            return mapWriter(valueWriter);
+        }
+        if (java.util.Collection.class.isAssignableFrom(raw)) {
+            BindingWriter elemWriter = args.length >= 1 ? writerFor(args[0]) : dynamicWriter();
+            return collectionWriter(elemWriter);
+        }
+        if (raw == java.util.Optional.class) {
+            BindingWriter inner = args.length >= 1 ? writerFor(args[0]) : dynamicWriter();
+            return optionalWriter(inner);
+        }
+        return cache.get(raw);
+    }
+
+    private BindingWriter arrayWriter(Class<?> componentType) {
+        if (componentType == int.class) return (g, v) -> {
+            g.writeStartArray();
+            for (int x : (int[]) v) g.write(x);
+            g.writeEnd();
+        };
+        if (componentType == long.class) return (g, v) -> {
+            g.writeStartArray();
+            for (long x : (long[]) v) g.write(x);
+            g.writeEnd();
+        };
+        if (componentType == double.class) return (g, v) -> {
+            g.writeStartArray();
+            for (double x : (double[]) v) g.write(x);
+            g.writeEnd();
+        };
+        if (componentType == boolean.class) return (g, v) -> {
+            g.writeStartArray();
+            for (boolean x : (boolean[]) v) g.write(x);
+            g.writeEnd();
+        };
+        BindingWriter elem = writerFor(componentType);
+        return (g, v) -> {
+            g.writeStartArray();
+            for (Object x : (Object[]) v) {
+                if (x == null) g.writeNull();
+                else elem.write(g, x);
+            }
+            g.writeEnd();
+        };
+    }
+
+    private BindingWriter collectionWriter(BindingWriter elem) {
+        return (g, v) -> {
+            g.writeStartArray();
+            for (Object x : (Iterable<?>) v) {
+                if (x == null) g.writeNull();
+                else elem.write(g, x);
+            }
+            g.writeEnd();
+        };
+    }
+
+    private BindingWriter mapWriter(BindingWriter valueWriter) {
+        return (g, v) -> {
+            g.writeStartObject();
+            for (var entry : ((java.util.Map<?, ?>) v).entrySet()) {
+                Object key = entry.getKey();
+                if (!(key instanceof String s)) {
+                    throw new JsonbException("Map keys must be String for JSON-B (got " + (key == null ? "null" : key.getClass()) + ")");
+                }
+                Object val = entry.getValue();
+                g.writeKey(s);
+                if (val == null) g.writeNull();
+                else valueWriter.write(g, val);
+            }
+            g.writeEnd();
+        };
+    }
+
+    private BindingWriter optionalWriter(BindingWriter inner) {
+        return (g, v) -> {
+            var opt = (java.util.Optional<?>) v;
+            if (opt.isEmpty()) g.writeNull();
+            else inner.write(g, opt.get());
+        };
     }
 
     // ===== Resolution =====
@@ -56,6 +161,15 @@ final class RuntimeBindingRegistry {
         if (type.isPrimitive()) {
             // Boxé par l'appelant ; on ne devrait pas arriver ici hors cas tordu.
             return cache.get(boxOf(type));
+        }
+        if (java.util.Map.class.isAssignableFrom(type)) {
+            return mapWriter(dynamicWriter());
+        }
+        if (java.util.Collection.class.isAssignableFrom(type)) {
+            return collectionWriter(dynamicWriter());
+        }
+        if (type == java.util.Optional.class) {
+            return optionalWriter(dynamicWriter());
         }
         return resolvePojo(type);
     }
@@ -114,6 +228,10 @@ final class RuntimeBindingRegistry {
             }
             if (v == null) {
                 // Spec §3.14.2 : null members omis par défaut.
+                continue;
+            }
+            if (v instanceof java.util.Optional<?> opt && opt.isEmpty()) {
+                // Optional.empty() = absence sémantique → membre omis.
                 continue;
             }
             g.writeKey(p.name);
