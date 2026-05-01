@@ -217,10 +217,22 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return ChampollionJsonNumber.of(new java.math.BigDecimal(value));
     }
 
-    // ===== JsonPointer =====
+    // ===== JsonPointer / JsonPatch =====
 
     @Override public jakarta.json.JsonPointer createPointer(String jsonPointer) {
         return new ChampollionJsonPointer(jsonPointer);
+    }
+
+    @Override public jakarta.json.JsonPatchBuilder createPatchBuilder() {
+        return new ChampollionJsonPatchBuilder();
+    }
+
+    @Override public jakarta.json.JsonPatchBuilder createPatchBuilder(JsonArray array) {
+        return new ChampollionJsonPatchBuilder(array);
+    }
+
+    @Override public jakarta.json.JsonPatch createPatch(JsonArray array) {
+        return new ChampollionJsonPatch(array);
     }
 
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
