@@ -12,6 +12,8 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
@@ -106,13 +108,47 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         generatedBindings.add(bindingFqn);
     }
 
-    /** M5.2 : composants supportés = primitives + String. */
+    /**
+     * M5.3 : composants supportés = primitives, String, List&lt;X&gt;, Optional&lt;X&gt;,
+     * arrays primitifs et String[].
+     */
     private static boolean isSupportedComponentType(TypeMirror tm) {
         return switch (tm.getKind()) {
             case INT, LONG, DOUBLE, FLOAT, SHORT, BYTE, BOOLEAN -> true;
-            case DECLARED -> "java.lang.String".equals(tm.toString());
+            case DECLARED -> {
+                String fqn = ((DeclaredType) tm).asElement().toString();
+                if ("java.lang.String".equals(fqn)) yield true;
+                if ("java.util.List".equals(fqn) || "java.util.Optional".equals(fqn)) {
+                    var args = ((DeclaredType) tm).getTypeArguments();
+                    if (args.size() != 1) yield false;
+                    yield isLeafType(args.get(0));
+                }
+                yield false;
+            }
+            case ARRAY -> {
+                TypeMirror comp = ((ArrayType) tm).getComponentType();
+                yield switch (comp.getKind()) {
+                    case INT, LONG, DOUBLE, BOOLEAN -> true;
+                    case DECLARED -> "java.lang.String".equals(comp.toString());
+                    default -> false;
+                };
+            }
             default -> false;
         };
+    }
+
+    /** Types "feuille" autorisés à l'intérieur de containers : primitives wrappés, String. */
+    private static boolean isLeafType(TypeMirror tm) {
+        if (tm.getKind() == javax.lang.model.type.TypeKind.DECLARED) {
+            String fqn = ((DeclaredType) tm).asElement().toString();
+            return switch (fqn) {
+                case "java.lang.String", "java.lang.Integer", "java.lang.Long",
+                     "java.lang.Double", "java.lang.Float", "java.lang.Short",
+                     "java.lang.Byte", "java.lang.Boolean" -> true;
+                default -> false;
+            };
+        }
+        return false;
     }
 
     private void emit(PrintWriter pw, String pkg, String recordName, String bindingName,
@@ -137,18 +173,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println("        if (value == null) { g.writeNull(); return; }");
         pw.println("        g.writeStartObject();");
         for (var c : comps) {
-            String name = c.getSimpleName().toString();
-            String accessor = "value." + name + "()";
-            String kind = c.asType().getKind().toString();
-            switch (c.asType().getKind()) {
-                case INT, SHORT, BYTE -> pw.println("        g.write(\"" + name + "\", (int) " + accessor + ");");
-                case LONG -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
-                case DOUBLE, FLOAT -> pw.println("        g.write(\"" + name + "\", (double) " + accessor + ");");
-                case BOOLEAN -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
-                default -> { // String : null = omit (cohérent runtime §3.14.2)
-                    pw.println("        if (" + accessor + " != null) g.write(\"" + name + "\", " + accessor + ");");
-                }
-            }
+            emitWriteComponent(pw, c);
         }
         pw.println("        g.writeEnd();");
         pw.println("    }");
@@ -162,17 +187,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println("        if (e != JsonParser.Event.START_OBJECT) {");
         pw.println("            throw new IllegalStateException(\"Expected START_OBJECT, got \" + e);");
         pw.println("        }");
-        // Initialise les variables locales avec les défauts du record.
         for (var c : comps) {
-            String name = c.getSimpleName().toString();
-            switch (c.asType().getKind()) {
-                case INT, SHORT, BYTE -> pw.println("        int _" + name + " = 0;");
-                case LONG -> pw.println("        long _" + name + " = 0L;");
-                case DOUBLE -> pw.println("        double _" + name + " = 0.0;");
-                case FLOAT -> pw.println("        float _" + name + " = 0.0f;");
-                case BOOLEAN -> pw.println("        boolean _" + name + " = false;");
-                default -> pw.println("        String _" + name + " = null;");
-            }
+            emitReadDeclaration(pw, c);
         }
         pw.println("        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {");
         pw.println("            if (e != JsonParser.Event.KEY_NAME) {");
@@ -184,16 +200,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         for (var c : comps) {
             String name = c.getSimpleName().toString();
             pw.println("                case \"" + name + "\" -> {");
-            switch (c.asType().getKind()) {
-                case INT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = p.getInt();");
-                case SHORT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = (short) p.getInt();");
-                case BYTE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = (byte) p.getInt();");
-                case LONG -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = p.getLong();");
-                case DOUBLE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = p.getBigDecimal().doubleValue();");
-                case FLOAT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = p.getBigDecimal().floatValue();");
-                case BOOLEAN -> pw.println("                    _" + name + " = (_ev == JsonParser.Event.VALUE_TRUE);");
-                default -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) _" + name + " = p.getString();");
-            }
+            emitReadComponent(pw, c, "_" + name);
             pw.println("                }");
         }
         pw.println("                default -> {");
@@ -202,7 +209,6 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println("                }");
         pw.println("            }");
         pw.println("        }");
-        // Construction record.
         pw.print("        return new " + targetFqn + "(");
         for (int i = 0; i < comps.size(); i++) {
             if (i > 0) pw.print(", ");
@@ -211,6 +217,218 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println(");");
         pw.println("    }");
         pw.println("}");
+    }
+
+    // ============================================================
+    // Code generation helpers (write side)
+    // ============================================================
+
+    private void emitWriteComponent(PrintWriter pw, RecordComponentElement c) {
+        String name = c.getSimpleName().toString();
+        String accessor = "value." + name + "()";
+        TypeMirror tm = c.asType();
+        switch (tm.getKind()) {
+            case INT, SHORT, BYTE -> pw.println("        g.write(\"" + name + "\", (int) " + accessor + ");");
+            case LONG -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
+            case DOUBLE, FLOAT -> pw.println("        g.write(\"" + name + "\", (double) " + accessor + ");");
+            case BOOLEAN -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
+            case DECLARED -> {
+                String fqn = ((DeclaredType) tm).asElement().toString();
+                if ("java.lang.String".equals(fqn)) {
+                    pw.println("        if (" + accessor + " != null) g.write(\"" + name + "\", " + accessor + ");");
+                } else if ("java.util.List".equals(fqn)) {
+                    TypeMirror elem = ((DeclaredType) tm).getTypeArguments().get(0);
+                    String elemFqn = ((DeclaredType) elem).asElement().toString();
+                    pw.println("        if (" + accessor + " != null) {");
+                    pw.println("            g.writeKey(\"" + name + "\");");
+                    pw.println("            g.writeStartArray();");
+                    pw.println("            for (" + elemFqn + " _e : " + accessor + ") {");
+                    pw.println("                if (_e == null) g.writeNull(); else " + writePrimitiveOrString("_e", elemFqn));
+                    pw.println("            }");
+                    pw.println("            g.writeEnd();");
+                    pw.println("        }");
+                } else if ("java.util.Optional".equals(fqn)) {
+                    TypeMirror inner = ((DeclaredType) tm).getTypeArguments().get(0);
+                    String innerFqn = ((DeclaredType) inner).asElement().toString();
+                    pw.println("        if (" + accessor + " != null && " + accessor + ".isPresent()) {");
+                    pw.println("            " + innerFqn + " _v = " + accessor + ".get();");
+                    pw.println("            g.writeKey(\"" + name + "\");");
+                    pw.println("            " + writePrimitiveOrString("_v", innerFqn));
+                    pw.println("        }");
+                }
+            }
+            case ARRAY -> {
+                TypeMirror comp = ((ArrayType) tm).getComponentType();
+                pw.println("        if (" + accessor + " != null) {");
+                pw.println("            g.writeKey(\"" + name + "\");");
+                pw.println("            g.writeStartArray();");
+                switch (comp.getKind()) {
+                    case INT -> pw.println("            for (int _e : " + accessor + ") g.write(_e);");
+                    case LONG -> pw.println("            for (long _e : " + accessor + ") g.write(_e);");
+                    case DOUBLE -> pw.println("            for (double _e : " + accessor + ") g.write(_e);");
+                    case BOOLEAN -> pw.println("            for (boolean _e : " + accessor + ") g.write(_e);");
+                    case DECLARED -> {
+                        // String[]
+                        pw.println("            for (String _e : " + accessor + ") {");
+                        pw.println("                if (_e == null) g.writeNull(); else g.write(_e);");
+                        pw.println("            }");
+                    }
+                    default -> {}
+                }
+                pw.println("            g.writeEnd();");
+                pw.println("        }");
+            }
+            default -> {}
+        }
+    }
+
+    /** Émet une statement {@code g.write(<expr>);} adaptée au type de la valeur scalaire. */
+    private static String writePrimitiveOrString(String expr, String fqn) {
+        return switch (fqn) {
+            case "java.lang.String" -> "g.write(" + expr + ");";
+            case "java.lang.Integer", "java.lang.Short", "java.lang.Byte" -> "g.write(" + expr + ".intValue());";
+            case "java.lang.Long" -> "g.write(" + expr + ".longValue());";
+            case "java.lang.Double", "java.lang.Float" -> "g.write(" + expr + ".doubleValue());";
+            case "java.lang.Boolean" -> "g.write(" + expr + ".booleanValue());";
+            default -> "g.write(String.valueOf(" + expr + "));";
+        };
+    }
+
+    // ============================================================
+    // Code generation helpers (read side)
+    // ============================================================
+
+    private void emitReadDeclaration(PrintWriter pw, RecordComponentElement c) {
+        String name = c.getSimpleName().toString();
+        TypeMirror tm = c.asType();
+        switch (tm.getKind()) {
+            case INT, SHORT, BYTE -> pw.println("        int _" + name + " = 0;");
+            case LONG -> pw.println("        long _" + name + " = 0L;");
+            case DOUBLE -> pw.println("        double _" + name + " = 0.0;");
+            case FLOAT -> pw.println("        float _" + name + " = 0.0f;");
+            case BOOLEAN -> pw.println("        boolean _" + name + " = false;");
+            case DECLARED -> {
+                String fqn = ((DeclaredType) tm).asElement().toString();
+                if ("java.util.List".equals(fqn)) {
+                    String elemFqn = ((DeclaredType) ((DeclaredType) tm).getTypeArguments().get(0)).asElement().toString();
+                    pw.println("        java.util.List<" + elemFqn + "> _" + name + " = null;");
+                } else if ("java.util.Optional".equals(fqn)) {
+                    String inner = ((DeclaredType) ((DeclaredType) tm).getTypeArguments().get(0)).asElement().toString();
+                    pw.println("        java.util.Optional<" + inner + "> _" + name + " = java.util.Optional.empty();");
+                } else {
+                    pw.println("        String _" + name + " = null;");
+                }
+            }
+            case ARRAY -> {
+                TypeMirror comp = ((ArrayType) tm).getComponentType();
+                String typeStr = switch (comp.getKind()) {
+                    case INT -> "int[]";
+                    case LONG -> "long[]";
+                    case DOUBLE -> "double[]";
+                    case BOOLEAN -> "boolean[]";
+                    case DECLARED -> "String[]";
+                    default -> "Object[]";
+                };
+                pw.println("        " + typeStr + " _" + name + " = null;");
+            }
+            default -> {}
+        }
+    }
+
+    private void emitReadComponent(PrintWriter pw, RecordComponentElement c, String target) {
+        TypeMirror tm = c.asType();
+        switch (tm.getKind()) {
+            case INT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getInt();");
+            case SHORT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = (short) p.getInt();");
+            case BYTE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = (byte) p.getInt();");
+            case LONG -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getLong();");
+            case DOUBLE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().doubleValue();");
+            case FLOAT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().floatValue();");
+            case BOOLEAN -> pw.println("                    " + target + " = (_ev == JsonParser.Event.VALUE_TRUE);");
+            case DECLARED -> {
+                String fqn = ((DeclaredType) tm).asElement().toString();
+                if ("java.lang.String".equals(fqn)) {
+                    pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getString();");
+                } else if ("java.util.List".equals(fqn)) {
+                    String elemFqn = ((DeclaredType) ((DeclaredType) tm).getTypeArguments().get(0)).asElement().toString();
+                    pw.println("                    if (_ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
+                    pw.println("                    java.util.ArrayList<" + elemFqn + "> _list = new java.util.ArrayList<>();");
+                    pw.println("                    JsonParser.Event _aev;");
+                    pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) {");
+                    pw.println("                        if (_aev == JsonParser.Event.VALUE_NULL) _list.add(null);");
+                    pw.println("                        else _list.add(" + readLeaf("_aev", "p", elemFqn) + ");");
+                    pw.println("                    }");
+                    pw.println("                    " + target + " = _list;");
+                } else if ("java.util.Optional".equals(fqn)) {
+                    String innerFqn = ((DeclaredType) ((DeclaredType) tm).getTypeArguments().get(0)).asElement().toString();
+                    pw.println("                    if (_ev == JsonParser.Event.VALUE_NULL) " + target + " = java.util.Optional.empty();");
+                    pw.println("                    else " + target + " = java.util.Optional.of(" + readLeaf("_ev", "p", innerFqn) + ");");
+                }
+            }
+            case ARRAY -> {
+                TypeMirror comp = ((ArrayType) tm).getComponentType();
+                pw.println("                    if (_ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
+                switch (comp.getKind()) {
+                    case INT -> {
+                        pw.println("                    java.util.ArrayList<Integer> _ints = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event _aev;");
+                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _ints.add(p.getInt());");
+                        pw.println("                    int[] _arr = new int[_ints.size()];");
+                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _ints.get(_i);");
+                        pw.println("                    " + target + " = _arr;");
+                    }
+                    case LONG -> {
+                        pw.println("                    java.util.ArrayList<Long> _longs = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event _aev;");
+                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _longs.add(p.getLong());");
+                        pw.println("                    long[] _arr = new long[_longs.size()];");
+                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _longs.get(_i);");
+                        pw.println("                    " + target + " = _arr;");
+                    }
+                    case DOUBLE -> {
+                        pw.println("                    java.util.ArrayList<Double> _doubles = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event _aev;");
+                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _doubles.add(p.getBigDecimal().doubleValue());");
+                        pw.println("                    double[] _arr = new double[_doubles.size()];");
+                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _doubles.get(_i);");
+                        pw.println("                    " + target + " = _arr;");
+                    }
+                    case BOOLEAN -> {
+                        pw.println("                    java.util.ArrayList<Boolean> _bools = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event _aev;");
+                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _bools.add(_aev == JsonParser.Event.VALUE_TRUE);");
+                        pw.println("                    boolean[] _arr = new boolean[_bools.size()];");
+                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _bools.get(_i);");
+                        pw.println("                    " + target + " = _arr;");
+                    }
+                    case DECLARED -> {
+                        // String[]
+                        pw.println("                    java.util.ArrayList<String> _ss = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event _aev;");
+                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) {");
+                        pw.println("                        _ss.add(_aev == JsonParser.Event.VALUE_NULL ? null : p.getString());");
+                        pw.println("                    }");
+                        pw.println("                    " + target + " = _ss.toArray(new String[0]);");
+                    }
+                    default -> {}
+                }
+            }
+            default -> {}
+        }
+    }
+
+    /** Lit la valeur courante en tant que type leaf. {@code ev} = event déjà consommé pour cette valeur. */
+    private static String readLeaf(String ev, String p, String fqn) {
+        return switch (fqn) {
+            case "java.lang.String" -> p + ".getString()";
+            case "java.lang.Integer" -> p + ".getInt()";
+            case "java.lang.Long" -> p + ".getLong()";
+            case "java.lang.Double", "java.lang.Float" -> p + ".getBigDecimal().doubleValue()";
+            case "java.lang.Short" -> "(short) " + p + ".getInt()";
+            case "java.lang.Byte" -> "(byte) " + p + ".getInt()";
+            case "java.lang.Boolean" -> "(" + ev + " == JsonParser.Event.VALUE_TRUE)";
+            default -> p + ".getString()";
+        };
     }
 
     private void writeServicesFile() {
