@@ -85,13 +85,12 @@ final class RuntimeReadRegistry {
         BindingReader[] readers = new BindingReader[comps.length];
         Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
         for (int i = 0; i < comps.length; i++) {
-            paramTypes[i] = comps[i].getType();
-            readers[i] = readerFor(comps[i].getGenericType());
-            // M4.4 : @JsonbTransient → composant absent du JSON, on n'enregistre pas le mapping.
-            // Le constructor reçoit la valeur par défaut (null/0/false) pour ce slot.
-            if (isJsonbTransient(comps[i])) continue;
-            // M4.4 : @JsonbProperty(name) → utilise ce nom, sinon nom du composant.
-            indexByName.put(jsonbName(comps[i]), i);
+            final RecordComponent comp = comps[i];
+            paramTypes[i] = comp.getType();
+            // M4.4d : @JsonbDateFormat → reader custom pour les types java.time.
+            readers[i] = customDateReader(comp).orElseGet(() -> readerFor(comp.getGenericType()));
+            if (isJsonbTransient(comp)) continue;
+            indexByName.put(jsonbName(comp), i);
         }
         Constructor<?> ctor;
         try {
@@ -415,6 +414,39 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
+    }
+
+    /**
+     * Si le composant a {@code @JsonbDateFormat}, retourne un reader custom.
+     * Couvre LocalDate, LocalDateTime, OffsetDateTime, ZonedDateTime, Instant.
+     */
+    private static java.util.Optional<BindingReader> customDateReader(RecordComponent c) {
+        var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+        var fromAccessor = direct == null
+                ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class)
+                : null;
+        var ann = direct != null ? direct : fromAccessor;
+        if (ann == null) return java.util.Optional.empty();
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(ann.value());
+        Class<?> raw = c.getType();
+        return java.util.Optional.of(parser -> {
+            JsonParser.Event e = parser.next();
+            if (e == JsonParser.Event.VALUE_NULL) return null;
+            if (e != JsonParser.Event.VALUE_STRING) {
+                throw new JsonbException("@JsonbDateFormat expects a JSON string, got " + e);
+            }
+            String s = parser.getString();
+            if (raw == java.time.LocalDate.class) return java.time.LocalDate.parse(s, fmt);
+            if (raw == java.time.LocalDateTime.class) return java.time.LocalDateTime.parse(s, fmt);
+            if (raw == java.time.OffsetDateTime.class) return java.time.OffsetDateTime.parse(s, fmt);
+            if (raw == java.time.ZonedDateTime.class) return java.time.ZonedDateTime.parse(s, fmt);
+            if (raw == java.time.Instant.class) {
+                // Instant n'a pas de parse(String, DateTimeFormatter) direct ; on passe par OffsetDateTime
+                // si le pattern le permet, sinon on délègue à Instant.from.
+                return java.time.Instant.from(fmt.parse(s));
+            }
+            throw new JsonbException("@JsonbDateFormat unsupported type: " + raw);
+        });
     }
 
     // ===== Customization helpers (M4.4) =====

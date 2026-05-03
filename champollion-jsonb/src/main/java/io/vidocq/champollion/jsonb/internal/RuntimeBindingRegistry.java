@@ -195,9 +195,35 @@ final class RuntimeBindingRegistry {
             try { accessor.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c);
-            props.add(new Property(name, new MethodAccessor(accessor), writerFor(c.getGenericType()), nillable));
+            // M4.4d : @JsonbDateFormat → writer custom pour les types java.time.
+            BindingWriter w = customDateWriter(c).orElseGet(() -> writerFor(c.getGenericType()));
+            props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
         }
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    /**
+     * Si le composant a {@code @JsonbDateFormat}, retourne un writer qui formate
+     * la valeur via {@link java.time.format.DateTimeFormatter#ofPattern}. Sinon empty.
+     */
+    private static java.util.Optional<BindingWriter> customDateWriter(RecordComponent c) {
+        var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+        var fromAccessor = direct == null
+                ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class)
+                : null;
+        var ann = direct != null ? direct : fromAccessor;
+        if (ann == null) return java.util.Optional.empty();
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(ann.value());
+        Class<?> rawType = c.getType();
+        return java.util.Optional.of((g, value) -> {
+            // Délègue à TemporalAccessor.format quand applicable.
+            if (value == null) { g.writeNull(); return; }
+            if (value instanceof java.time.temporal.TemporalAccessor t) {
+                g.write(fmt.format(t));
+            } else {
+                throw new JsonbException("@JsonbDateFormat applied to non-temporal type: " + rawType);
+            }
+        });
     }
 
     private BindingWriter resolvePojo(Class<?> type) {

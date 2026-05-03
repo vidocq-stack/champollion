@@ -1,9 +1,13 @@
 package io.vidocq.champollion.jsonb.internal;
 
 import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.annotation.JsonbDateFormat;
 import jakarta.json.bind.annotation.JsonbNillable;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTransient;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -100,6 +104,39 @@ class JsonbCustomizationTest {
             try (var j = JsonbBuilder.create()) {
                 String json = j.toJson(new Plain(null, null));
                 assertEquals("{}", json);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbDateFormat — custom date pattern")
+    class DateFormat {
+
+        record Event(String name, @JsonbDateFormat("dd/MM/yyyy") LocalDate when) {}
+
+        @Test
+        void writes_date_with_custom_pattern() {
+            try (var j = JsonbBuilder.create()) {
+                String json = j.toJson(new Event("Demo", LocalDate.of(2026, 5, 3)));
+                assertEquals("{\"name\":\"Demo\",\"when\":\"03/05/2026\"}", json);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        void reads_date_with_custom_pattern() {
+            try (var j = JsonbBuilder.create()) {
+                Event ev = j.fromJson("{\"name\":\"Demo\",\"when\":\"03/05/2026\"}", Event.class);
+                assertEquals(LocalDate.of(2026, 5, 3), ev.when());
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        record Meeting(@JsonbDateFormat("yyyy-MM-dd HH:mm") LocalDateTime ts) {}
+
+        @Test
+        void writes_localdatetime_with_custom_pattern() {
+            try (var j = JsonbBuilder.create()) {
+                String json = j.toJson(new Meeting(LocalDateTime.of(2026, 5, 3, 10, 30)));
+                assertEquals("{\"ts\":\"2026-05-03 10:30\"}", json);
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }
