@@ -67,6 +67,9 @@ final class RuntimeReadRegistry {
         BindingReader b = Builtins.lookup(type);
         if (b != null) return b;
         if (type.isEnum()) return enumReader(type);
+        // M4.5 : polymorphisme — si @JsonbTypeInfo, dispatch sur l'alias.
+        var info = RuntimeBindingRegistry.findTypeInfo(type);
+        if (info != null) return polymorphicReader(info);
         if (type.isRecord()) return resolveRecord(type);
         if (type.isPrimitive()) return classCache.get(box(type));
         if (java.util.Map.class.isAssignableFrom(type)) return mapReader(this::dynamicValue);
@@ -589,6 +592,98 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
+    }
+
+    /**
+     * Reader polymorphe : lit la clé discriminante (en première position dans le JSON,
+     * MVP M4.5), trouve la classe concrète associée à l'alias, puis lit les membres
+     * restants directement dans le record/POJO concret via une variante de
+     * readObjectAndConstruct qui assume START_OBJECT déjà consommé.
+     *
+     * <p>Note : Champollion écrit toujours la clé discriminante en première position.
+     * Pour interopérer avec d'autres implémentations qui placent la clé ailleurs, il
+     * faudrait bufferiser tout l'objet — reporté.</p>
+     */
+    private BindingReader polymorphicReader(jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        String discriminantKey = info.key();
+        Map<String, Class<?>> aliasToType = new HashMap<>();
+        for (var sub : info.value()) {
+            aliasToType.put(sub.alias(), sub.type());
+        }
+        return parser -> {
+            JsonParser.Event e = parser.next();
+            if (e == JsonParser.Event.VALUE_NULL) return null;
+            if (e != JsonParser.Event.START_OBJECT) {
+                throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
+            }
+            // Lit la première clé : doit être discriminantKey
+            e = parser.next();
+            if (e != JsonParser.Event.KEY_NAME) {
+                throw new JsonbException("Expected KEY_NAME, got " + e);
+            }
+            String key = parser.getString();
+            if (!key.equals(discriminantKey)) {
+                throw new JsonbException("Expected discriminator '" + discriminantKey + "' as first member, got '" + key + "'");
+            }
+            e = parser.next();
+            if (e != JsonParser.Event.VALUE_STRING) {
+                throw new JsonbException("Expected VALUE_STRING for discriminator, got " + e);
+            }
+            String alias = parser.getString();
+            Class<?> concrete = aliasToType.get(alias);
+            if (concrete == null) {
+                throw new JsonbException("Unknown @JsonbSubtype alias: " + alias);
+            }
+            return readMembersOnly(parser, concrete);
+        };
+    }
+
+    /**
+     * Lit les membres restants d'un objet (sans START_OBJECT initial) et construit
+     * une instance du type concret. Utilisé pour la deuxième phase de la lecture
+     * polymorphe.
+     */
+    private Object readMembersOnly(JsonParser parser, Class<?> concrete) {
+        if (concrete.isRecord()) {
+            RecordComponent[] comps = concrete.getRecordComponents();
+            Class<?>[] paramTypes = new Class<?>[comps.length];
+            BindingReader[] readers = new BindingReader[comps.length];
+            Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
+            for (int i = 0; i < comps.length; i++) {
+                final RecordComponent comp = comps[i];
+                paramTypes[i] = comp.getType();
+                readers[i] = customAdapterReader(comp)
+                        .or(() -> customDateReader(comp))
+                        .or(() -> globalDateReader(comp.getType()))
+                        .orElseGet(() -> readerFor(comp.getGenericType()));
+                if (isJsonbTransient(comp)) continue;
+                indexByName.put(jsonbName(comp), i);
+            }
+            Constructor<?> ctor;
+            try { ctor = concrete.getDeclaredConstructor(paramTypes); }
+            catch (NoSuchMethodException e) {
+                throw new JsonbException("Canonical record constructor not found for " + concrete, e);
+            }
+            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+            Object[] args = new Object[paramTypes.length];
+            for (int i = 0; i < paramTypes.length; i++) args[i] = defaultFor(paramTypes[i]);
+            JsonParser.Event e;
+            while ((e = parser.next()) != JsonParser.Event.END_OBJECT) {
+                if (e != JsonParser.Event.KEY_NAME) {
+                    throw new JsonbException("Expected KEY_NAME, got " + e);
+                }
+                String key = parser.getString();
+                Integer idx = indexByName.get(key);
+                if (idx == null) skipValue(parser);
+                else args[idx] = readers[idx].read(parser);
+            }
+            try { return ctor.newInstance(args); }
+            catch (ReflectiveOperationException ex) {
+                throw new JsonbException("ctor failed for " + concrete, ex);
+            }
+        }
+        // POJO non-record : non supporté en MVP M4.5
+        throw new JsonbException("@JsonbTypeInfo dispatch on non-record type not supported (yet): " + concrete);
     }
 
     /**

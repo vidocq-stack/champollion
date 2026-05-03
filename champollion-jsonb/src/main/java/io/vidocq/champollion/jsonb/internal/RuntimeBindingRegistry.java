@@ -174,6 +174,10 @@ final class RuntimeBindingRegistry {
         BindingWriter built = Builtins.lookup(type);
         if (built != null) return built;
         if (type.isEnum()) return Builtins.ENUM;
+        // M4.5 : polymorphisme — si @JsonbTypeInfo (sur la classe ou un supertype),
+        // émet un membre discriminant avant les membres du concrete type.
+        var info = findTypeInfo(type);
+        if (info != null) return polymorphicWriter(info);
         if (type.isRecord()) return resolveRecord(type);
         if (type.isPrimitive()) {
             // Boxé par l'appelant ; on ne devrait pas arriver ici hors cas tordu.
@@ -359,6 +363,116 @@ final class RuntimeBindingRegistry {
             };
         }
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    /**
+     * Cherche {@code @JsonbTypeInfo} sur {@code type} ou ses supertypes (interfaces et
+     * superclasses). Spec §4.8 : peut être déclarée sur l'interface sealed parente.
+     */
+    static jakarta.json.bind.annotation.JsonbTypeInfo findTypeInfo(Class<?> type) {
+        if (type == null || type == Object.class) return null;
+        var direct = type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+        if (direct != null) return direct;
+        for (Class<?> i : type.getInterfaces()) {
+            var found = findTypeInfo(i);
+            if (found != null) return found;
+        }
+        return findTypeInfo(type.getSuperclass());
+    }
+
+    /**
+     * Writer polymorphe : pour chaque {@code value}, identifie l'alias matching dans
+     * {@code typeInfo.value()}, écrit {@code @key:alias}, puis sérialise les membres
+     * de la classe concrète.
+     */
+    private BindingWriter polymorphicWriter(jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        String key = info.key();
+        java.util.Map<Class<?>, String> aliasByType = new java.util.HashMap<>();
+        for (var sub : info.value()) {
+            aliasByType.put(sub.type(), sub.alias());
+        }
+        return (g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            Class<?> concrete = value.getClass();
+            String alias = aliasByType.get(concrete);
+            if (alias == null) {
+                throw new JsonbException("@JsonbTypeInfo : aucun @JsonbSubtype matchant pour " + concrete);
+            }
+            List<Property> props = concretePropertiesOf(concrete);
+            g.writeStartObject();
+            g.write(key, alias);
+            for (Property p : props) {
+                Object v;
+                try { v = p.accessor.read(value); }
+                catch (Throwable t) { throw new JsonbException("Failed property " + p.name, t); }
+                if (v == null) {
+                    if (p.nillable) { g.writeKey(p.name); g.writeNull(); }
+                    continue;
+                }
+                if (v instanceof java.util.Optional<?> opt && opt.isEmpty()) {
+                    if (p.nillable) { g.writeKey(p.name); g.writeNull(); }
+                    continue;
+                }
+                g.writeKey(p.name);
+                p.writer.write(g, v);
+            }
+            g.writeEnd();
+        };
+    }
+
+    private List<Property> concretePropertiesOf(Class<?> concrete) {
+        if (concrete.isRecord()) return propertiesFromRecord(concrete);
+        return propertiesFromPojo(concrete);
+    }
+
+    private List<Property> propertiesFromRecord(Class<?> type) {
+        RecordComponent[] comps = type.getRecordComponents();
+        var props = new ArrayList<Property>(comps.length);
+        for (RecordComponent c : comps) {
+            if (isJsonbTransient(c)) continue;
+            Method accessor = c.getAccessor();
+            try { accessor.setAccessible(true); } catch (Exception ignore) {}
+            String name = jsonbName(c, c.getName());
+            boolean nillable = isJsonbNillable(c) || writeNullValues;
+            BindingWriter w = customAdapterWriter(c)
+                    .or(() -> customDateWriter(c))
+                    .or(() -> globalDateWriter(c.getType()))
+                    .orElseGet(() -> writerFor(c.getGenericType()));
+            props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
+        }
+        return props;
+    }
+
+    private List<Property> propertiesFromPojo(Class<?> type) {
+        var props = new ArrayList<Property>();
+        var seen = new java.util.HashSet<String>();
+        for (Method m : type.getMethods()) {
+            int mods = m.getModifiers();
+            if (Modifier.isStatic(mods)) continue;
+            if (m.getDeclaringClass() == Object.class) continue;
+            if (m.getParameterCount() != 0 || m.getReturnType() == void.class) continue;
+            String propName = beanPropertyOf(m);
+            if (propName == null) continue;
+            if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            try { m.setAccessible(true); } catch (Exception ignore) {}
+            String name = jsonbNameFromMethod(m, propName);
+            boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
+            BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
+            seen.add(propName);
+            props.add(new Property(name, new MethodAccessor(m), w, nillable));
+        }
+        for (Field f : type.getFields()) {
+            int mods = f.getModifiers();
+            if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
+            if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            if (seen.contains(f.getName())) continue;
+            try { f.setAccessible(true); } catch (Exception ignore) {}
+            String name = jsonbName(f, f.getName());
+            boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
+            BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
+            props.add(new Property(name, new FieldAccessor(f), w, nillable));
+        }
+        return props;
     }
 
     /**
