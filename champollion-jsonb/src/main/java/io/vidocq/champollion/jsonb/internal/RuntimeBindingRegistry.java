@@ -277,15 +277,37 @@ final class RuntimeBindingRegistry {
 
     private BindingWriter resolvePojo(Class<?> type) {
         var props = new ArrayList<Property>();
+        var seen = new java.util.HashSet<String>();
+
+        // 1) JavaBean getters publics (priorité §3.7) : getXxx() / isXxx() boolean.
+        for (Method m : type.getMethods()) {
+            int mods = m.getModifiers();
+            if (Modifier.isStatic(mods)) continue;
+            if (m.getDeclaringClass() == Object.class) continue;
+            if (m.getParameterCount() != 0) continue;
+            if (m.getReturnType() == void.class) continue;
+            String propName = beanPropertyOf(m);
+            if (propName == null) continue;
+            if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            try { m.setAccessible(true); } catch (Exception ignore) {}
+            String name = jsonbNameFromMethod(m, propName);
+            boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
+            seen.add(propName);
+            props.add(new Property(name, new MethodAccessor(m), writerFor(m.getGenericReturnType()), nillable));
+        }
+
+        // 2) Champs publics non couverts par un getter.
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            if (seen.contains(f.getName())) continue;   // déjà couvert par un getter
             try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
             boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
             props.add(new Property(name, new FieldAccessor(f), writerFor(f.getGenericType()), nillable));
         }
+
         if (props.isEmpty()) {
             // Fallback : toString() pour les types opaques sans builtin et sans champs.
             return (g, value) -> {
@@ -331,6 +353,44 @@ final class RuntimeBindingRegistry {
         var prop = f.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return prop.value();
         return defaultName;
+    }
+
+    /** Renommage via {@code @JsonbProperty(name)} sur un method ; fallback {@code defaultName}. */
+    static String jsonbNameFromMethod(Method m, String defaultName) {
+        var prop = m.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        return defaultName;
+    }
+
+    /**
+     * Convention JavaBean §3.7 : {@code getXxx} → {@code xxx} ; {@code isXxx} (boolean
+     * uniquement) → {@code xxx}. Retourne {@code null} si la méthode n'est pas un accesseur.
+     */
+    static String beanPropertyOf(Method m) {
+        String n = m.getName();
+        if (n.startsWith("get") && n.length() > 3 && Character.isUpperCase(n.charAt(3))) {
+            return decapitalize(n.substring(3));
+        }
+        if (n.startsWith("is") && n.length() > 2 && Character.isUpperCase(n.charAt(2))
+                && (m.getReturnType() == boolean.class || m.getReturnType() == Boolean.class)) {
+            return decapitalize(n.substring(2));
+        }
+        return null;
+    }
+
+    /** Convention JavaBean : {@code setXxx} → {@code xxx}. */
+    static String beanSetterOf(Method m) {
+        String n = m.getName();
+        if (n.startsWith("set") && n.length() > 3 && Character.isUpperCase(n.charAt(3))
+                && m.getParameterCount() == 1) {
+            return decapitalize(n.substring(3));
+        }
+        return null;
+    }
+
+    private static String decapitalize(String s) {
+        if (s.isEmpty()) return s;
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     private static void writeObject(JsonGenerator g, Object value, List<Property> props) {

@@ -120,16 +120,101 @@ final class RuntimeReadRegistry {
                     + " (consider adding @JsonbCreator on a constructor or static factory).", e);
         }
         try { ctor.setAccessible(true); } catch (Exception ignore) {}
-        Map<String, Field> fieldsByName = new HashMap<>();
+        // Découverte des setters JavaBean (§3.7) + champs publics fallback.
+        Map<String, BeanWriter> writersByName = new HashMap<>();
+
+        // 1) Setters publics : setXxx(T) avec un getter correspondant pour vérifier @JsonbTransient.
+        for (Method m : type.getMethods()) {
+            if (Modifier.isStatic(m.getModifiers())) continue;
+            if (m.getDeclaringClass() == Object.class) continue;
+            if (m.getReturnType() != void.class) continue;
+            String prop = RuntimeBindingRegistry.beanSetterOf(m);
+            if (prop == null) continue;
+            // Vérification @JsonbTransient : sur le setter ou sur le getter associé.
+            if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            Method getter = findGetter(type, prop);
+            if (getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            try { m.setAccessible(true); } catch (Exception ignore) {}
+            // Nom JSON : @JsonbProperty sur le setter ou sur le getter ; sinon nom de propriété.
+            String name = methodJsonbName(m, getter, prop);
+            BindingReader reader = readerFor(m.getGenericParameterTypes()[0]);
+            writersByName.put(name, new MethodSetter(m, reader));
+        }
+
+        // 2) Champs publics non couverts par un setter.
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f);
-            fieldsByName.put(name, f);
+            if (writersByName.containsKey(name)) continue;
+            try { f.setAccessible(true); } catch (Exception ignore) {}
+            BindingReader reader = readerFor(f.getGenericType());
+            writersByName.put(name, new FieldSetter(f, reader));
         }
-        return parser -> readObjectAndAssign(parser, ctor, fieldsByName);
+
+        return parser -> readObjectAndApply(parser, ctor, writersByName);
+    }
+
+    /** Cherche un getter conventionnel pour la propriété {@code prop}. */
+    private static Method findGetter(Class<?> type, String prop) {
+        String cap = Character.toUpperCase(prop.charAt(0)) + prop.substring(1);
+        for (Method m : type.getMethods()) {
+            if (m.getParameterCount() != 0) continue;
+            if (Modifier.isStatic(m.getModifiers())) continue;
+            if (m.getName().equals("get" + cap) || m.getName().equals("is" + cap)) return m;
+        }
+        return null;
+    }
+
+    private static String methodJsonbName(Method setter, Method getter, String defaultName) {
+        var prop = setter.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        if (getter != null) {
+            var p2 = getter.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+            if (p2 != null && !p2.value().isEmpty()) return p2.value();
+        }
+        return defaultName;
+    }
+
+    /** Setter polymorphe : reçoit l'instance + parser et applique la valeur lue. */
+    interface BeanWriter {
+        void apply(Object target, JsonParser p);
+    }
+
+    private record MethodSetter(Method m, BindingReader reader) implements BeanWriter {
+        public void apply(Object target, JsonParser p) {
+            try { m.invoke(target, reader.read(p)); }
+            catch (ReflectiveOperationException e) {
+                throw new JsonbException("Setter failed: " + m, e);
+            }
+        }
+    }
+
+    private record FieldSetter(Field f, BindingReader reader) implements BeanWriter {
+        public void apply(Object target, JsonParser p) {
+            try { f.set(target, reader.read(p)); }
+            catch (IllegalAccessException e) {
+                throw new JsonbException("Field set failed: " + f, e);
+            }
+        }
+    }
+
+    private Object readObjectAndApply(JsonParser p, Constructor<?> ctor, Map<String, BeanWriter> writers) {
+        JsonParser.Event e = p.next();
+        if (e == JsonParser.Event.VALUE_NULL) return null;
+        if (e != JsonParser.Event.START_OBJECT) throw new JsonbException("Expected object, got " + e);
+        Object inst;
+        try { inst = ctor.newInstance(); }
+        catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed", ex); }
+        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
+            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
+            String key = p.getString();
+            BeanWriter w = writers.get(key);
+            if (w == null) skipValue(p);
+            else w.apply(inst, p);
+        }
+        return inst;
     }
 
     /**
