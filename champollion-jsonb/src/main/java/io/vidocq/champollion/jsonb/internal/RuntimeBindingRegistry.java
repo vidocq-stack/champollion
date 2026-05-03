@@ -527,14 +527,30 @@ final class RuntimeBindingRegistry {
         if (spec == null) return java.util.Optional.empty();
         java.text.NumberFormat fmt;
         if ("##default".equals(spec.pattern()) || spec.pattern().isEmpty()) {
-            fmt = java.text.NumberFormat.getInstance(spec.locale());
+            var sym = java.text.DecimalFormatSymbols.getInstance(spec.locale());
+            normalizeFrenchGroupSeparator(sym);
+            fmt = new java.text.DecimalFormat(((java.text.DecimalFormat) java.text.NumberFormat.getInstance(spec.locale())).toPattern(), sym);
         } else {
-            fmt = new java.text.DecimalFormat(spec.pattern(), new java.text.DecimalFormatSymbols(spec.locale()));
+            var sym = new java.text.DecimalFormatSymbols(spec.locale());
+            normalizeFrenchGroupSeparator(sym);
+            fmt = new java.text.DecimalFormat(spec.pattern(), sym);
         }
         return java.util.Optional.of((g, value) -> {
             if (value == null) g.writeNull();
             else g.write(fmt.format(value));
         });
+    }
+
+    /**
+     * Compatibilité TCK §JsonbNumberFormat : depuis Java 13/CLDR moderne, le séparateur
+     * de groupes pour la locale française est U+202F (NNBSP, NARROW NO-BREAK SPACE) ;
+     * le TCK JSON-B 3.0 attend U+00A0 (NBSP). On ré-impose NBSP pour rester conforme.
+     */
+    private static void normalizeFrenchGroupSeparator(java.text.DecimalFormatSymbols sym) {
+        char sep = sym.getGroupingSeparator();
+        if (sep == '\u202F' || sep == ' ') {
+            sym.setGroupingSeparator('\u00A0');
+        }
     }
 
     static boolean isNumericType(Class<?> rawType) {
@@ -614,7 +630,9 @@ final class RuntimeBindingRegistry {
     }
 
     private static java.util.Locale parseLocale(String tag) {
-        if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.getDefault();
+        // §4.7.3 : "##default" sur @JsonbNumberFormat / @JsonbDateFormat signifie le format
+        // canonique JSON-B (séparateur de groupes ',' décimal '.'), équivalent à Locale.ROOT.
+        if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.ROOT;
         return java.util.Locale.forLanguageTag(tag);
     }
 

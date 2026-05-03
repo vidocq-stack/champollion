@@ -613,12 +613,16 @@ final class RuntimeReadRegistry {
         }
         if (ann == null) return null;
         String pattern = ann.value();
-        java.util.Locale locale = "##default".equals(ann.locale()) ? java.util.Locale.getDefault() : java.util.Locale.forLanguageTag(ann.locale());
+        java.util.Locale locale = "##default".equals(ann.locale()) ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
         java.text.NumberFormat fmt;
         if ("##default".equals(pattern) || pattern.isEmpty()) {
-            fmt = java.text.NumberFormat.getInstance(locale);
+            var sym = java.text.DecimalFormatSymbols.getInstance(locale);
+            normalizeFrenchGroupSeparator(sym);
+            fmt = new java.text.DecimalFormat(((java.text.DecimalFormat) java.text.NumberFormat.getInstance(locale)).toPattern(), sym);
         } else {
-            fmt = new java.text.DecimalFormat(pattern, new java.text.DecimalFormatSymbols(locale));
+            var sym = new java.text.DecimalFormatSymbols(locale);
+            normalizeFrenchGroupSeparator(sym);
+            fmt = new java.text.DecimalFormat(pattern, sym);
         }
         return p -> {
             var ev = p.next();
@@ -631,6 +635,13 @@ final class RuntimeReadRegistry {
                 throw new JsonbException("Number parse error: " + pe.getMessage(), pe);
             }
         };
+    }
+
+    private static void normalizeFrenchGroupSeparator(java.text.DecimalFormatSymbols sym) {
+        char sep = sym.getGroupingSeparator();
+        if (sep == ' ' || sep == ' ') {
+            sym.setGroupingSeparator(' ');
+        }
     }
 
     private static Class<?> boxOfPrim(Class<?> p) {
