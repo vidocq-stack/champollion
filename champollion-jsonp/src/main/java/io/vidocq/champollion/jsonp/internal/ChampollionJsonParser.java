@@ -296,14 +296,27 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public JsonObject getObject() {
-        if (lastEvent != Event.START_OBJECT) {
+        // §3.10.2.1 — accepter aussi un parser fresh (pas encore next-é) : on
+        // pre-next pour atteindre START_OBJECT (compat TCK Jersey + JsonbDeserializer
+        // customs qui appellent getObject() directement).
+        if (lastEvent == null) {
+            Event ev = next();
+            if (ev != Event.START_OBJECT) {
+                throw new IllegalStateException("getObject() expected START_OBJECT, got " + ev);
+            }
+        } else if (lastEvent != Event.START_OBJECT) {
             throw new IllegalStateException("getObject() requires last event = START_OBJECT, got " + lastEvent);
         }
         return readObjectMembers();
     }
 
     @Override public JsonArray getArray() {
-        if (lastEvent != Event.START_ARRAY) {
+        if (lastEvent == null) {
+            Event ev = next();
+            if (ev != Event.START_ARRAY) {
+                throw new IllegalStateException("getArray() expected START_ARRAY, got " + ev);
+            }
+        } else if (lastEvent != Event.START_ARRAY) {
             throw new IllegalStateException("getArray() requires last event = START_ARRAY, got " + lastEvent);
         }
         return readArrayElements();
