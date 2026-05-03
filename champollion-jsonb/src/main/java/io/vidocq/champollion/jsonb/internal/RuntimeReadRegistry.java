@@ -105,12 +105,17 @@ final class RuntimeReadRegistry {
     }
 
     private BindingReader resolvePojo(Class<?> type) {
-        // POJO : ctor sans arg + champs publics. Pas de getter discovery ici (M4.2 minimal).
+        // M4.4e : si @JsonbCreator est sur un constructor ou une static factory, on l'utilise.
+        var creator = findJsonbCreator(type);
+        if (creator != null) return resolveCreator(creator);
+
+        // Fallback : ctor sans arg + champs publics.
         Constructor<?> ctor;
         try {
             ctor = type.getDeclaredConstructor();
         } catch (NoSuchMethodException e) {
-            throw new JsonbException("No no-arg constructor for " + type, e);
+            throw new JsonbException("No no-arg constructor for " + type
+                    + " (consider adding @JsonbCreator on a constructor or static factory).", e);
         }
         try { ctor.setAccessible(true); } catch (Exception ignore) {}
         Map<String, Field> fieldsByName = new HashMap<>();
@@ -123,6 +128,79 @@ final class RuntimeReadRegistry {
             fieldsByName.put(name, f);
         }
         return parser -> readObjectAndAssign(parser, ctor, fieldsByName);
+    }
+
+    /**
+     * Cherche un constructor ou une static factory annotée {@code @JsonbCreator}.
+     * Renvoie null si aucun n'est trouvé. La spec §4.6 autorise au plus un creator.
+     */
+    private static java.lang.reflect.Executable findJsonbCreator(Class<?> type) {
+        for (Constructor<?> c : type.getDeclaredConstructors()) {
+            if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return c;
+        }
+        for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                    && m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return m;
+        }
+        return null;
+    }
+
+    /**
+     * Construit un BindingReader qui lit le JSON, mappe les paramètres du creator
+     * via {@code @JsonbProperty} (ou nom de paramètre par défaut), et invoque
+     * le constructor ou la static factory pour produire l'instance.
+     */
+    private BindingReader resolveCreator(java.lang.reflect.Executable creator) {
+        try { creator.setAccessible(true); } catch (Exception ignore) {}
+        java.lang.reflect.Parameter[] params = creator.getParameters();
+        Class<?>[] paramTypes = creator.getParameterTypes();
+        BindingReader[] readers = new BindingReader[params.length];
+        Map<String, Integer> indexByName = new HashMap<>(params.length * 2);
+        for (int i = 0; i < params.length; i++) {
+            readers[i] = readerFor(creator instanceof Constructor<?> c
+                    ? c.getGenericParameterTypes()[i]
+                    : ((java.lang.reflect.Method) creator).getGenericParameterTypes()[i]);
+            String name = paramJsonbName(params[i]);
+            indexByName.put(name, i);
+        }
+        return parser -> readObjectAndInvokeCreator(parser, creator, paramTypes, readers, indexByName);
+    }
+
+    private static String paramJsonbName(java.lang.reflect.Parameter p) {
+        var prop = p.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        return p.getName();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object readObjectAndInvokeCreator(JsonParser p, java.lang.reflect.Executable creator,
+                                              Class<?>[] paramTypes, BindingReader[] readers,
+                                              Map<String, Integer> indexByName) {
+        JsonParser.Event e = p.next();
+        if (e == JsonParser.Event.VALUE_NULL) return null;
+        if (e != JsonParser.Event.START_OBJECT) {
+            throw new JsonbException("Expected object, got " + e);
+        }
+        Object[] args = new Object[paramTypes.length];
+        for (int i = 0; i < paramTypes.length; i++) {
+            args[i] = defaultFor(paramTypes[i]);
+        }
+        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
+            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
+            String key = p.getString();
+            Integer idx = indexByName.get(key);
+            if (idx == null) {
+                skipValue(p);
+            } else {
+                args[idx] = readers[idx].read(p);
+            }
+        }
+        try {
+            if (creator instanceof Constructor<?> c) return c.newInstance(args);
+            return ((java.lang.reflect.Method) creator).invoke(null, args);
+        } catch (ReflectiveOperationException ex) {
+            throw new JsonbException("Failed to invoke @JsonbCreator: " + ex.getMessage(), ex);
+        }
     }
 
     private Object readObjectAndConstruct(JsonParser p, Constructor<?> ctor,

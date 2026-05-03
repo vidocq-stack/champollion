@@ -1,6 +1,7 @@
 package io.vidocq.champollion.jsonb.internal;
 
 import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.annotation.JsonbCreator;
 import jakarta.json.bind.annotation.JsonbDateFormat;
 import jakarta.json.bind.annotation.JsonbNillable;
 import jakarta.json.bind.annotation.JsonbProperty;
@@ -137,6 +138,56 @@ class JsonbCustomizationTest {
             try (var j = JsonbBuilder.create()) {
                 String json = j.toJson(new Meeting(LocalDateTime.of(2026, 5, 3, 10, 30)));
                 assertEquals("{\"ts\":\"2026-05-03 10:30\"}", json);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbCreator — static factory or annotated constructor")
+    class JsonbCreatorAnnotation {
+
+        /** POJO immuable sans no-arg ctor : @JsonbCreator sur ctor. */
+        public static final class Money {
+            public final String currency;
+            public final long cents;
+            @JsonbCreator
+            public Money(@JsonbProperty("currency") String currency, @JsonbProperty("cents") long cents) {
+                this.currency = currency;
+                this.cents = cents;
+            }
+            @Override public boolean equals(Object o) {
+                return o instanceof Money m && m.currency.equals(currency) && m.cents == cents;
+            }
+            @Override public int hashCode() { return java.util.Objects.hash(currency, cents); }
+        }
+
+        @Test
+        void reads_pojo_via_jsonb_creator_constructor() {
+            try (var j = JsonbBuilder.create()) {
+                Money m = j.fromJson("{\"currency\":\"EUR\",\"cents\":1234}", Money.class);
+                assertEquals(new Money("EUR", 1234), m);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        /** POJO avec un static factory method @JsonbCreator. */
+        public static final class Tag {
+            public final String value;
+            private Tag(String value) { this.value = value; }
+            @JsonbCreator
+            public static Tag of(@JsonbProperty("value") String value) {
+                return new Tag(value);
+            }
+            @Override public boolean equals(Object o) {
+                return o instanceof Tag t && t.value.equals(value);
+            }
+            @Override public int hashCode() { return value.hashCode(); }
+        }
+
+        @Test
+        void reads_pojo_via_jsonb_creator_static_factory() {
+            try (var j = JsonbBuilder.create()) {
+                Tag t = j.fromJson("{\"value\":\"prod\"}", Tag.class);
+                assertEquals("prod", t.value);
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }
