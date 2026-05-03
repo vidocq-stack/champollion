@@ -133,12 +133,12 @@ le corpus TCK.
 
 ### JSON-P 2.1
 
-| Métrique | Valeur |
-|---|---|
-| Tests exécutés | 197 |
-| **PASS** | **65** (33 %) |
-| FAIL | 112 |
-| ERROR | 20 |
+| Métrique | 2026-05-03 baseline | Après M2.x + M3.4 |
+|---|---|---|
+| Tests exécutés | 197 | 197 |
+| **PASS** | **65** (33 %) | **69** (35 %) |
+| FAIL | 112 | 113 |
+| ERROR | 20 | 15 |
 
 Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationException` qu'on s'était auto-marqués comme TODO) :
 - `Json.createDiff()` → M3.4 reporté
