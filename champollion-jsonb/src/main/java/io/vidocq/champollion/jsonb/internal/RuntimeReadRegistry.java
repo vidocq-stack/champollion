@@ -87,7 +87,11 @@ final class RuntimeReadRegistry {
         for (int i = 0; i < comps.length; i++) {
             paramTypes[i] = comps[i].getType();
             readers[i] = readerFor(comps[i].getGenericType());
-            indexByName.put(comps[i].getName(), i);
+            // M4.4 : @JsonbTransient → composant absent du JSON, on n'enregistre pas le mapping.
+            // Le constructor reçoit la valeur par défaut (null/0/false) pour ce slot.
+            if (isJsonbTransient(comps[i])) continue;
+            // M4.4 : @JsonbProperty(name) → utilise ce nom, sinon nom du composant.
+            indexByName.put(jsonbName(comps[i]), i);
         }
         Constructor<?> ctor;
         try {
@@ -114,8 +118,10 @@ final class RuntimeReadRegistry {
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
+            if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
-            fieldsByName.put(f.getName(), f);
+            String name = jsonbName(f);
+            fieldsByName.put(name, f);
         }
         return parser -> readObjectAndAssign(parser, ctor, fieldsByName);
     }
@@ -409,6 +415,27 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
+    }
+
+    // ===== Customization helpers (M4.4) =====
+
+    private static boolean isJsonbTransient(RecordComponent c) {
+        if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) return true;
+        return c.getAccessor().isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+    }
+
+    private static String jsonbName(RecordComponent c) {
+        var prop = c.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        var accessorProp = c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (accessorProp != null && !accessorProp.value().isEmpty()) return accessorProp.value();
+        return c.getName();
+    }
+
+    private static String jsonbName(Field f) {
+        var prop = f.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        return f.getName();
     }
 
     // ===== Builtins =====

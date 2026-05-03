@@ -190,21 +190,26 @@ final class RuntimeBindingRegistry {
         RecordComponent[] comps = type.getRecordComponents();
         var props = new ArrayList<Property>(comps.length);
         for (RecordComponent c : comps) {
+            // @JsonbTransient : exclu (consultable sur le component, l'accessor ou le field).
+            if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
             try { accessor.setAccessible(true); } catch (Exception ignore) {}
-            props.add(new Property(c.getName(), new MethodAccessor(accessor), writerFor(c.getGenericType())));
+            String name = jsonbName(c, c.getName());
+            props.add(new Property(name, new MethodAccessor(accessor), writerFor(c.getGenericType())));
         }
         return (g, value) -> writeObject(g, value, props);
     }
 
     private BindingWriter resolvePojo(Class<?> type) {
-        // M4.1 : champs publics + getters conventionnels.
+        // M4.1 : champs publics + getters conventionnels. M4.4 : @JsonbTransient + @JsonbProperty.
         var props = new ArrayList<Property>();
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
+            if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
-            props.add(new Property(f.getName(), new FieldAccessor(f), writerFor(f.getGenericType())));
+            String name = jsonbName(f, f.getName());
+            props.add(new Property(name, new FieldAccessor(f), writerFor(f.getGenericType())));
         }
         if (props.isEmpty()) {
             // Fallback : toString() pour les types opaques sans builtin et sans champs.
@@ -214,6 +219,33 @@ final class RuntimeBindingRegistry {
             };
         }
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    /**
+     * Vrai si le {@link RecordComponent} ou son accesseur portent {@code @JsonbTransient}.
+     * Spec §4.7 : l'annotation peut être présente sur le composant lui-même ou sur la
+     * méthode d'accès (synthétique pour les records).
+     */
+    private static boolean isJsonbTransient(RecordComponent c) {
+        if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) return true;
+        Method accessor = c.getAccessor();
+        return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+    }
+
+    /** Renommage via {@code @JsonbProperty(name)} sur un component ; fallback {@code defaultName}. */
+    private static String jsonbName(RecordComponent c, String defaultName) {
+        var prop = c.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        var accessorProp = c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (accessorProp != null && !accessorProp.value().isEmpty()) return accessorProp.value();
+        return defaultName;
+    }
+
+    /** Renommage via {@code @JsonbProperty(name)} sur un field ; fallback {@code defaultName}. */
+    private static String jsonbName(Field f, String defaultName) {
+        var prop = f.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        return defaultName;
     }
 
     private static void writeObject(JsonGenerator g, Object value, List<Property> props) {
