@@ -364,10 +364,13 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public Stream<JsonValue> getValueStream() {
-        // Stream sur les valeurs au niveau racine (utilisé pour streamer plusieurs
-        // documents JSON consécutifs, cas marginal). On retourne juste la valeur
-        // courante puis termine.
-        return java.util.stream.Stream.of(getValue());
+        // Spec §3.10 : getValueStream() doit être appelé au niveau racine du
+        // document avant tout next(). Si on est dans un object/array, throw
+        // IllegalStateException.
+        if (lastEvent != null) {
+            throw new IllegalStateException("getValueStream() must be called before any next() at root level");
+        }
+        return Stream.of(getValue());
     }
 
     @Override public void skipArray() {

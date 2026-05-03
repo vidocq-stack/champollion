@@ -158,10 +158,10 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 return new ChampollionJsonParser(new InputStreamReader(in, charset));
             }
             @Override public JsonParser createParser(JsonObject obj) {
-                throw new UnsupportedOperationException("createParser(JsonObject) — implemented in M3");
+                return new JsonValueParser(obj);
             }
             @Override public JsonParser createParser(JsonArray arr) {
-                throw new UnsupportedOperationException("createParser(JsonArray) — implemented in M3");
+                return new JsonValueParser(arr);
             }
             @Override public Map<String, ?> getConfigInUse() { return snapshot; }
         };
