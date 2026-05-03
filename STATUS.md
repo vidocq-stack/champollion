@@ -7,7 +7,7 @@
 
 - **Branche** : `main`
 - **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : **271/271** ✅ (`mvn test` sur le reactor)
+- **Tests** : **276/276** ✅ (`mvn test` sur le reactor)
 - **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
 
 ## Modules
@@ -50,7 +50,7 @@
 | **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ pas commencé |
 | **M4.6** | POJO JavaBean conventions (getters/setters) | ✅ 6 tests |
 | **M4.7** | JsonbConfig (FORMATTING, NULL_VALUES, DATE_FORMAT) | ✅ 6 tests |
-| **M4.5** | Polymorphisme `@JsonbTypeInfo`/`@JsonbSubtype` | ❌ pas commencé |
+| **M4.5** | Polymorphisme `@JsonbTypeInfo`/`@JsonbSubtype` | ✅ 5 tests (records, MVP) |
 | **M5.1** | SPI `JsonbBinding` + lookup-first | ✅ 6 tests |
 | **M5.2** | `@JsonbStatic` + APT `JsonbStaticProcessor` | ✅ 4 tests |
 | **M5.3** | APT containers (List/Optional/Arrays) | ✅ 4 tests |
