@@ -52,7 +52,7 @@
 | **M5.7** | APT bytecode direct (Class File API JDK 25) | ✅ records primitives + String + enums |
 | **M5.8** | Maven plugin `champollion-codegen-maven-plugin` | ❌ packaging=jar squelette |
 | **M5.9** | APT bytecode étendu : arrays primitifs + `String[]` + `Optional<X>` | ✅ |
-| **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ❌ slow path source pour l'instant |
+| **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ✅ — **fast path bytecode 100 %** |
 | **M5.11** | Optimisation : noms de propriétés en byte[] UTF-8 | ❌ pas commencé |
 | **M5.12** | Validation AOT GraalVM `native-image` | ❌ pas commencé |
 | **M6** | TCK officiels JSON-P 2.1 + JSON-B 3.0 | ❌ pas commencé |
@@ -79,9 +79,12 @@
 **Livré :**
 - ✅ SPI `JsonbBinding<T>` exposée (`champollion-jsonb.spi`) + `PrimedJsonParser` utility
 - ✅ Annotation `@JsonbStatic` (`champollion-jsonb.spi`, `RetentionPolicy.CLASS`)
-- ✅ **APT `JsonbStaticProcessor` à double voie** :
-  - **Fast path bytecode** (Class File API JDK 25, `Filer.createClassFile`) : records dont composants ∈ primitives + String + enums + arrays primitifs + `String[]` + `Optional<X>`. Émission directe de `.class` sans étape de compilation Java.
-  - **Slow path source** (filer.createSourceFile) : `List<E>`, `Map<String,V>`, nested records `@JsonbStatic`.
+- ✅ **APT `JsonbStaticProcessor` 100 % bytecode** (Class File API JDK 25, `Filer.createClassFile`) sur le subset complet :
+  - primitives (8 types), String, enums
+  - arrays primitifs (`int[]`, `long[]`, `double[]`, `boolean[]`), `String[]`
+  - `Optional<X>`, `List<X>`, `Map<String,V>` où X/V ∈ scalaire / enum / nested record `@JsonbStatic`
+  - nested records `@JsonbStatic` comme composants directs
+  - Le slow path source reste implémenté comme fallback mais n'est plus déclenché par les tests actuels.
 - ✅ `ChampollionJsonb` lookup-first sur les bindings statiques, fallback runtime introspectif
 - ✅ Differential testing automatisé runtime vs static
 - ✅ Couverture types : primitives, String, enums, List<E>, Optional<E>, Map<String,V>, arrays primitifs, String[], nested records `@JsonbStatic` (référence directe par `new <X>$$Binding()`)
