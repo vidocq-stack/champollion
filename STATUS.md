@@ -7,7 +7,9 @@
 
 - **Branche** : `main`
 - **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : **276/276** ✅ (`mvn test` sur le reactor)
+- **Tests** : **290/290** ✅ (`mvn test` sur le reactor)
+- **TCK JSON-P 2.1** : 69/197 PASS (35 %) — premier run progressif, voir TCK.md
+- **TCK JSON-B 3.0** : 75/295 PASS (25 %) — premier run baseline
 - **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
 
 ## Modules
@@ -68,8 +70,9 @@
 | **M6.3** | Script `run-official-tck-jsonb-3.0.sh` | ✅ |
 | **M6.4** | Mode `--static` du TCK | ❌ reporté (non critique) |
 | **M6.5** | `TCK.md` instructions + challenges | ✅ |
-| **M6.6** | TCK officiel JSON-P 2.1 — first run + analysis | ❌ nécessite installation TCK |
-| **M6.7** | TCK officiel JSON-B 3.0 — first run + analysis | ❌ nécessite installation TCK |
+| **M6.6** | `install-tck.sh` — téléchargement + install M2 auto | ✅ |
+| **M6.7** | TCK first run + premiers fixes (M2.x stubs + M3.4) | ✅ baseline 65→69 PASS sur JSON-P |
+| **M6.8** | Analyse FAIL méthodique (sources TCK) | ❌ chantier — voir TCK.md |
 | **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
 
 ## Reste à faire

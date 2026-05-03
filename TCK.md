@@ -173,19 +173,35 @@ non encore couverts.
 
 ## Challenges connus
 
-> Liste des tests désactivés avec justification de spec ou bug TCK.
+> Liste des tests désactivés ou divergents avec justification spec / TCK.
 
 ### JSON-P 2.1
 
-| Test | Catégorie | Statut | Justification |
+| Test / classe | Catégorie | Statut | Justification |
 |---|---|---|---|
-| _à investiguer_ | — | — | Premier run baseline ; analyse FAIL/ERROR à venir. |
+| `JSONPSigTest.signatureTest` | environnement | challenge | Test sigtest qui requiert un signature file Eclipse, non distribué dans le ZIP TCK 2.1.0. Cf. `cassini-tck` qui documente le même cas pour JAX-RS. |
+| `PointerTests.jsonPointerResolveTest` (escape `~n`) | spec interpretation | à investiguer | RFC 6901 §3 : `~` doit être suivi de `0` ou `1`. Champollion rejette `~n` (conforme RFC). Le TCK 2.1 attend visiblement un comportement plus permissif — à analyser via le source TCK. |
+| `jsonprovidertests.ClientTests.*` (18 tests pluggability) | provider tiers | à investiguer | Suite pluggability qui charge un provider concurrent au runtime. Probable conflit de `JsonProvider.provider()` discovery via ServiceLoader avec le test. |
+| `jsonparsertests.ClientTests.jsonParserTest2..9, jsonParserIOErrorTests, parseUTFEncodedTests2` | parser variants | à investiguer | Tests parser sur cas marginaux (UTF-16/32 detection, IOErrors, etc.). |
+| `jsonreadertests.ClientTests.*` (28 FAIL) | reader exact format | à investiguer | Probablement des mismatches `toString()` ou comportement par défaut sur des cas spec marginaux. |
+| `jsonObjectBuilderBuildTest` (`expected: <null> but was: <"value">`) | semantique | à investiguer | Probablement `getString(name, default)` qui retourne la valeur stockée au lieu du default — à vérifier. |
 
 ### JSON-B 3.0
 
 | Test | Catégorie | Statut | Justification |
 |---|---|---|---|
-| _à investiguer_ | — | — | Premier run baseline ; analyse FAIL/ERROR à venir. |
+| `JsonbBuilderTest.testCreateConfig`, `testWithConfig` | API | à investiguer | Comportement de `JsonbBuilder.newBuilder()` + `withConfig()` à creuser. |
+| _autres_ | divers | à investiguer | Premier run global pour découvrir les divergences ; analyse fine TCK par test à venir. |
+
+### Plan d'attaque vers 100 % PASS
+
+L'analyse fine de chaque FAIL nécessite de lire le code source du TCK
+(disponible dans `jakarta-jsonp-tck-2.1.0.zip` → `jsonp-tck/artifacts/jakarta.json-tck-tests-2.1.0-sources.jar`).
+Pour chaque famille :
+
+1. Extraire les sources, identifier le pattern précis
+2. Décider : bug Champollion (fix) / divergence spec acceptable (documenter) / contrainte TCK environnementale (skip)
+3. Reporter les ratios mis à jour ici
 
 ---
 
