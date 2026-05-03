@@ -66,8 +66,11 @@ class ChampollionJsonPointerTest {
 
         @Test
         void rejects_invalid_escape() {
-            // ~ doit être suivi de 0 ou 1 (RFC 6901 §3)
-            assertThrows(JsonException.class, () -> new ChampollionJsonPointer("/~2"));
+            // ~ doit être suivi de 0 ou 1 (RFC 6901 §3) — erreur différée jusqu'à
+            // la première utilisation (compat TCK testResolvePathWithUnencodedTilde
+            // qui exige la construction tolérante).
+            var p = new ChampollionJsonPointer("/~2");
+            assertThrows(JsonException.class, () -> p.getValue(Json.createObjectBuilder().build()));
         }
     }
 
