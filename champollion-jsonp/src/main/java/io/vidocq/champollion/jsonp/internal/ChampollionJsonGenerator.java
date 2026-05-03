@@ -51,7 +51,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         this.out = (out instanceof BufferedWriter || out instanceof java.io.StringWriter
                 || out instanceof java.io.CharArrayWriter)
                 ? out
-                : new BufferedWriter(out, 1024);
+                : new BufferedWriter(out, 256);
         this.pretty = pretty;
         this.stack.push(Ctx.ROOT_BEFORE);
     }

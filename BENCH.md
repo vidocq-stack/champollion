@@ -98,12 +98,28 @@ Scan complet du flux d'événements (`hasNext`/`next`) sans construction d'objec
 > via `entityStream`). Pour mesurer P2, refaire le bench avec
 > `OutputStreamWriter(new FileOutputStream(...))` ou similaire.
 
-### Throughput (ops/µs)
+### Throughput (ops/µs) — cible `StringWriter` (déjà bufferisée)
 
 | Workload | Champollion | Parsson | Ratio |
 |---|---:|---:|---:|
 | SMALL  | 5,918 | 15,147 | 0,39× |
 | MEDIUM | 0,620 | 2,218  | 0,28× |
+
+### Throughput (ops/µs) — cible `OutputStreamWriter` (cas REST réel)
+
+Bench `JsonpGenerateOSBench`, sink = `OutputStreamWriter(NullOutputStream, UTF-8)`.
+
+| Workload | Sans P2 | **P2 (BufferedWriter 256)** | Δ |
+|---|---:|---:|---:|
+| SMALL  | 3,594 | **4,385** | **+22 %** |
+| MEDIUM | 0,402 | **0,594** | **+48 %** |
+
+**Lecture** : sur la cible `OutputStreamWriter` (ce qu'utilise Cassini via
+`MessageBodyWriter.writeTo(... entityStream ...)`), P2 apporte +22 % à +48 %
+selon le payload. Le buffer 256 chars est le sweet spot : plus grand
+(1024) régresse SMALL de -27 % à cause du coût d'allocation non amorti,
+plus petit annule le gain MEDIUM. Pour la cible `StringWriter` (bench-only),
+P2 est une no-op : Champollion détecte le `StringWriter` et n'enrobe pas.
 
 ### Latence (µs/op)
 
