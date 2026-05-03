@@ -1,6 +1,8 @@
 package io.vidocq.champollion.codegen.apt;
 
 import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+import jakarta.json.bind.annotation.JsonbProperty;
+import jakarta.json.bind.annotation.JsonbTransient;
 
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
@@ -163,12 +165,16 @@ final class BindingBytecodeEmitter {
         ClassDesc CD_BINDING = ClassDesc.of(bindingFqn);
         List<? extends RecordComponentElement> comps = record.getRecordComponents();
 
-        // M5.11 : pré-encoder les noms de propriétés en JSON-quoted (avec escape RFC 8259).
-        // Stockés en String constants au constant pool — accessibles via ldc, pas de scan
-        // d'escape à l'exécution.
+        // M5.11 : pré-encoder les noms de propriétés (avec escape RFC 8259).
+        // M4.4b : @JsonbProperty(name) renomme ; @JsonbTransient exclut.
+        String[] jsonNames = new String[comps.size()];
         String[] preQuoted = new String[comps.size()];
+        boolean[] transientFlag = new boolean[comps.size()];
         for (int i = 0; i < comps.size(); i++) {
-            preQuoted[i] = preQuoteJson(comps.get(i).getSimpleName().toString());
+            var c = comps.get(i);
+            jsonNames[i] = jsonbName(c);
+            preQuoted[i] = preQuoteJson(jsonNames[i]);
+            transientFlag[i] = isJsonbTransient(c);
         }
 
         return ClassFile.of().build(CD_BINDING, cb -> {
@@ -179,9 +185,28 @@ final class BindingBytecodeEmitter {
 
             emitDefaultCtor(cb);
             emitTypeMethod(cb, CD_TARGET);
-            emitWrite(cb, CD_TARGET, comps, preQuoted);
-            emitRead(cb, CD_TARGET, comps);
+            emitWrite(cb, CD_TARGET, comps, jsonNames, preQuoted, transientFlag);
+            emitRead(cb, CD_TARGET, comps, jsonNames, transientFlag);
         });
+    }
+
+    /** Nom JSON d'un composant : valeur de @JsonbProperty si présente, sinon simpleName. */
+    private static String jsonbName(RecordComponentElement c) {
+        var prop = c.getAnnotation(JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        var accessor = c.getAccessor();
+        if (accessor != null) {
+            var pa = accessor.getAnnotation(JsonbProperty.class);
+            if (pa != null && !pa.value().isEmpty()) return pa.value();
+        }
+        return c.getSimpleName().toString();
+    }
+
+    /** Vrai si le composant ou son accesseur portent {@code @JsonbTransient}. */
+    private static boolean isJsonbTransient(RecordComponentElement c) {
+        if (c.getAnnotation(JsonbTransient.class) != null) return true;
+        var accessor = c.getAccessor();
+        return accessor != null && accessor.getAnnotation(JsonbTransient.class) != null;
     }
 
     /**
@@ -238,7 +263,8 @@ final class BindingBytecodeEmitter {
     // public void write(JsonGenerator g, Object v)
     // ============================================================
 
-    private static void emitWrite(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps, String[] preQuoted) {
+    private static void emitWrite(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps,
+                                  String[] jsonNames, String[] preQuoted, boolean[] transientFlag) {
         // Locals : 0 this, 1 g, 2 v(Object), 3 t(Target)
         cb.withMethodBody("write",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT),
@@ -267,7 +293,8 @@ final class BindingBytecodeEmitter {
                     code.pop();
 
                     for (int i = 0; i < comps.size(); i++) {
-                        emitWriteComponent(code, CD_TARGET, comps.get(i), preQuoted[i]);
+                        if (transientFlag[i]) continue;   // @JsonbTransient : pas d'écriture
+                        emitWriteComponent(code, CD_TARGET, comps.get(i), jsonNames[i], preQuoted[i]);
                     }
 
                     // g.writeEnd();
@@ -279,50 +306,52 @@ final class BindingBytecodeEmitter {
                 });
     }
 
-    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String preQuoted) {
+    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String jsonName, String preQuoted) {
+        // 'name' = nom de la méthode accessor sur le record (toujours le simpleName du composant).
+        // 'jsonName' = nom du membre dans le JSON (peut différer via @JsonbProperty).
         String name = c.getSimpleName().toString();
         TypeMirror tm = c.asType();
 
         switch (tm.getKind()) {
             case INT, SHORT, BYTE ->
-                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                emitKeyValuePrimitive(code, CD_TARGET, name, jsonName, preQuoted, tm,
                         ConstantDescs.CD_int, "I", false);
             case LONG ->
-                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                emitKeyValuePrimitive(code, CD_TARGET, name, jsonName, preQuoted, tm,
                         ConstantDescs.CD_long, "J", false);
             case DOUBLE ->
-                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                emitKeyValuePrimitive(code, CD_TARGET, name, jsonName, preQuoted, tm,
                         ConstantDescs.CD_double, "D", false);
             case FLOAT ->
-                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                emitKeyValuePrimitive(code, CD_TARGET, name, jsonName, preQuoted, tm,
                         ConstantDescs.CD_double, "D", true);
             case BOOLEAN ->
-                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                emitKeyValuePrimitive(code, CD_TARGET, name, jsonName, preQuoted, tm,
                         ConstantDescs.CD_boolean, "Z", false);
             case DECLARED -> {
                 if (isOptional(tm)) {
-                    emitWriteOptional(code, CD_TARGET, name, (DeclaredType) tm);
+                    emitWriteOptional(code, CD_TARGET, name, jsonName, (DeclaredType) tm);
                     return;
                 }
                 if (isList(tm)) {
-                    emitWriteList(code, CD_TARGET, name, (DeclaredType) tm);
+                    emitWriteList(code, CD_TARGET, name, jsonName, (DeclaredType) tm);
                     return;
                 }
                 if (isMap(tm)) {
-                    emitWriteMap(code, CD_TARGET, name, (DeclaredType) tm);
+                    emitWriteMap(code, CD_TARGET, name, jsonName, (DeclaredType) tm);
                     return;
                 }
                 if (isStaticRecord((DeclaredType) tm)) {
-                    emitWriteNestedRecord(code, CD_TARGET, name, (DeclaredType) tm);
+                    emitWriteNestedRecord(code, CD_TARGET, name, jsonName, (DeclaredType) tm);
                     return;
                 }
                 if (isEnum(tm)) {
-                    emitKeyValueEnum(code, CD_TARGET, name, preQuoted, (DeclaredType) tm);
+                    emitKeyValueEnum(code, CD_TARGET, name, jsonName, preQuoted, (DeclaredType) tm);
                 } else {
-                    emitKeyValueString(code, CD_TARGET, name, preQuoted);
+                    emitKeyValueString(code, CD_TARGET, name, jsonName, preQuoted);
                 }
             }
-            case ARRAY -> emitWriteArray(code, CD_TARGET, name, (ArrayType) tm);
+            case ARRAY -> emitWriteArray(code, CD_TARGET, name, jsonName, (ArrayType) tm);
             default -> throw new IllegalStateException("Unsupported component for bytecode emitter: " + tm);
         }
     }
@@ -338,7 +367,7 @@ final class BindingBytecodeEmitter {
      * gain d'avoir évité l'escape RFC 8259 §7 sur le nom à chaque appel.</p>
      */
     private static void emitKeyValuePrimitive(CodeBuilder code, ClassDesc CD_TARGET, String name,
-                                              String preQuoted, TypeMirror accessorTm,
+                                              String jsonName, String preQuoted, TypeMirror accessorTm,
                                               ClassDesc valueDesc, String valueDescStr, boolean f2d) {
         ClassDesc accessorCD = toCD(accessorTm);
         Label slow = code.newLabel();
@@ -365,10 +394,10 @@ final class BindingBytecodeEmitter {
         code.pop();
         code.goto_(end);
 
-        // SLOW : g.write(name, t.name())
+        // SLOW : g.write(jsonName, t.name())
         code.labelBinding(slow);
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(accessorCD));
         if (f2d) code.f2d();
@@ -380,7 +409,7 @@ final class BindingBytecodeEmitter {
     }
 
     /** Voie rapide / lente pour les composants String avec gestion null. */
-    private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String preQuoted) {
+    private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted) {
         Label skip = code.newLabel();
         // if (t.name() == null) skip
         code.aload(3);
@@ -410,7 +439,7 @@ final class BindingBytecodeEmitter {
         // SLOW
         code.labelBinding(slow);
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
         code.invokeinterface(CD_JSON_GENERATOR, "write",
@@ -421,7 +450,7 @@ final class BindingBytecodeEmitter {
     }
 
     /** Voie rapide / lente pour les composants enum avec gestion null. */
-    private static void emitKeyValueEnum(CodeBuilder code, ClassDesc CD_TARGET, String name, String preQuoted, DeclaredType enumDt) {
+    private static void emitKeyValueEnum(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted, DeclaredType enumDt) {
         ClassDesc CD_ENUM = ClassDesc.of(enumDt.asElement().toString());
         Label skip = code.newLabel();
         code.aload(3);
@@ -452,7 +481,7 @@ final class BindingBytecodeEmitter {
         // SLOW
         code.labelBinding(slow);
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
         code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name", MethodTypeDesc.of(CD_STRING));
@@ -464,7 +493,7 @@ final class BindingBytecodeEmitter {
     }
 
     /** Émet le bytecode write pour un composant array primitif ou {@code String[]}. */
-    private static void emitWriteArray(CodeBuilder code, ClassDesc CD_TARGET, String name, ArrayType arrTm) {
+    private static void emitWriteArray(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, ArrayType arrTm) {
         TypeMirror compTm = arrTm.getComponentType();
         ClassDesc CD_COMP_ARR = arrayCDOf(compTm);
 
@@ -474,9 +503,9 @@ final class BindingBytecodeEmitter {
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_COMP_ARR));
         code.ifnull(skipNull);
 
-        // g.writeKey(name);
+        // g.writeKey(jsonName);
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
@@ -581,7 +610,7 @@ final class BindingBytecodeEmitter {
      * Sinon, on extrait via {@code .get()} et on émet via {@code g.write(name, val)}
      * avec unbox au besoin pour les wrappers primitifs.</p>
      */
-    private static void emitWriteOptional(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType optTm) {
+    private static void emitWriteOptional(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, DeclaredType optTm) {
         TypeMirror inner = optTm.getTypeArguments().get(0);
         String innerFqn = ((DeclaredType) inner).asElement().toString();
 
@@ -598,9 +627,9 @@ final class BindingBytecodeEmitter {
         code.invokevirtual(CD_OPTIONAL, "isPresent", MethodTypeDesc.of(ConstantDescs.CD_boolean));
         code.ifeq(skip);
 
-        // g.writeKey(name);
+        // g.writeKey(jsonName);
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
@@ -890,7 +919,7 @@ final class BindingBytecodeEmitter {
      *     if (e == null) writeNull; else writeLeafFromBoxed(e); }
      *   writeEnd; }
      */
-    private static void emitWriteList(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType listTm) {
+    private static void emitWriteList(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, DeclaredType listTm) {
         TypeMirror inner = listTm.getTypeArguments().get(0);
         String innerFqn = ((DeclaredType) inner).asElement().toString();
 
@@ -900,8 +929,8 @@ final class BindingBytecodeEmitter {
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_LIST));
         code.ifnull(skip);
 
-        // g.writeKey(name); g.writeStartArray()
-        code.aload(1); code.ldc(name);
+        // g.writeKey(jsonName); g.writeStartArray()
+        code.aload(1); code.ldc(jsonName);
         code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
@@ -1019,7 +1048,7 @@ final class BindingBytecodeEmitter {
     // Map<String, V>
     // ============================================================
 
-    private static void emitWriteMap(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType mapTm) {
+    private static void emitWriteMap(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, DeclaredType mapTm) {
         TypeMirror valT = mapTm.getTypeArguments().get(1);
         String valFqn = ((DeclaredType) valT).asElement().toString();
 
@@ -1028,7 +1057,7 @@ final class BindingBytecodeEmitter {
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_MAP));
         code.ifnull(skip);
 
-        code.aload(1); code.ldc(name);
+        code.aload(1); code.ldc(jsonName);
         code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
@@ -1164,7 +1193,7 @@ final class BindingBytecodeEmitter {
     /**
      * write : if (t.field() != null) { writeKey ; new Inner$$Binding().write(g, t.field()); }
      */
-    private static void emitWriteNestedRecord(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType nestedDt) {
+    private static void emitWriteNestedRecord(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, DeclaredType nestedDt) {
         ClassDesc CD_INNER = ClassDesc.of(((TypeElement) nestedDt.asElement()).getQualifiedName().toString());
         ClassDesc CD_INNER_BINDING = bindingCDOf(nestedDt);
 
@@ -1173,9 +1202,9 @@ final class BindingBytecodeEmitter {
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_INNER));
         code.ifnull(skip);
 
-        // g.writeKey(name)
+        // g.writeKey(jsonName)
         code.aload(1);
-        code.ldc(name);
+        code.ldc(jsonName);
         code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
@@ -1250,7 +1279,8 @@ final class BindingBytecodeEmitter {
     // public Object read(JsonParser p)
     // ============================================================
 
-    private static void emitRead(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps) {
+    private static void emitRead(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps,
+                                 String[] jsonNames, boolean[] transientFlag) {
         cb.withMethodBody("read",
                 MethodTypeDesc.of(CD_OBJECT, CD_JSON_PARSER),
                 ClassFile.ACC_PUBLIC, code -> {
@@ -1313,11 +1343,11 @@ final class BindingBytecodeEmitter {
                     // chaîne if/else if sur la clé
                     Label nextIter = code.newLabel();
                     for (int i = 0; i < comps.size(); i++) {
+                        if (transientFlag[i]) continue;   // @JsonbTransient : pas de mapping en read
                         var c = comps.get(i);
-                        String name = c.getSimpleName().toString();
                         Label notMatch = code.newLabel();
                         code.aload(3);
-                        code.ldc(name);
+                        code.ldc(jsonNames[i]);
                         code.invokevirtual(CD_STRING, "equals",
                                 MethodTypeDesc.of(ConstantDescs.CD_boolean, CD_OBJECT));
                         code.ifeq(notMatch);
