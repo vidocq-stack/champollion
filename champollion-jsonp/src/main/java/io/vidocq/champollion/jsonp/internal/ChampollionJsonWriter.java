@@ -38,7 +38,9 @@ public final class ChampollionJsonWriter implements JsonWriter {
         if (consumed) throw new IllegalStateException("write* methods cannot be invoked twice");
         consumed = true;
         emit(value);
-        generator.close();
+        // Spec §3.5 : write* n'invoque PAS close() — c'est la responsabilité de close().
+        // On flush juste pour matérialiser le contenu côté Writer.
+        generator.flush();
     }
 
     private void emit(JsonValue value) {
@@ -78,11 +80,14 @@ public final class ChampollionJsonWriter implements JsonWriter {
     }
 
     @Override public void close() {
-        // Si rien n'a été écrit, on doit pouvoir fermer sans erreur d'état mais sans
-        // produire un document vide non-valide. Ici on tolère close() sans write : pas de flush du generator.
-        if (consumed) {
-            // déjà fermé via write()
-            return;
+        // Spec §3.5 : ferme le Writer/OutputStream sous-jacent ; propage IOException
+        // en JsonException. Si write* n'a jamais été appelé, on accepte (pas de
+        // document à matérialiser).
+        try {
+            generator.close();
+        } catch (jakarta.json.stream.JsonGenerationException e) {
+            // Document non terminé (close sans write*) : ignoré pour permettre la
+            // fermeture propre dans un finally / try-with-resource.
         }
     }
 }

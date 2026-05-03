@@ -105,10 +105,10 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     // ===== named members in object =====
 
     @Override public JsonGenerator write(String name, JsonValue value) {
-        // M2 : object model. Pour l'instant, supporte seulement TRUE/FALSE/NULL via JsonValue.ValueType
-        // est non disponible sans dépendance circulaire ; UnsupportedOperationException pour signaler
-        // que le contrat sera complété en M2.
-        throw new UnsupportedOperationException("write(String, JsonValue) requires the object model — implemented in M2");
+        beforeKey(name);
+        emitJsonValue(value);
+        afterValue();
+        return this;
     }
 
     @Override public JsonGenerator write(String name, String value) {
@@ -170,7 +170,44 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     // ===== unnamed values (in arrays / root) =====
 
     @Override public JsonGenerator write(JsonValue value) {
-        throw new UnsupportedOperationException("write(JsonValue) requires the object model — implemented in M2");
+        beforeValue();
+        emitJsonValue(value);
+        afterValue();
+        return this;
+    }
+
+    /** Émet un JsonValue arbitraire (objet, array, scalaire). */
+    private void emitJsonValue(JsonValue value) {
+        if (value == null) { writeRaw("null"); return; }
+        switch (value.getValueType()) {
+            case OBJECT -> {
+                write('{');
+                boolean first = true;
+                for (var e : ((jakarta.json.JsonObject) value).entrySet()) {
+                    if (!first) write(',');
+                    first = false;
+                    writeString(e.getKey());
+                    write(':');
+                    emitJsonValue(e.getValue());
+                }
+                write('}');
+            }
+            case ARRAY -> {
+                write('[');
+                boolean first = true;
+                for (JsonValue v : (jakarta.json.JsonArray) value) {
+                    if (!first) write(',');
+                    first = false;
+                    emitJsonValue(v);
+                }
+                write(']');
+            }
+            case STRING -> writeString(((jakarta.json.JsonString) value).getString());
+            case NUMBER -> writeRaw(((jakarta.json.JsonNumber) value).bigDecimalValue().toString());
+            case TRUE -> writeRaw("true");
+            case FALSE -> writeRaw("false");
+            case NULL -> writeRaw("null");
+        }
     }
 
     @Override public JsonGenerator write(String value) {
@@ -271,7 +308,14 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         if (stack.peek() != Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("close() called with open containers or empty document");
         }
-        flush();
+        // Spec §3.5 : close() ferme le Writer/OutputStream sous-jacent et propage
+        // toute IOException en JsonException.
+        try {
+            out.flush();
+            out.close();
+        } catch (IOException e) {
+            throw new JsonException("I/O error closing generator", e);
+        }
     }
 
     @Override public void flush() {

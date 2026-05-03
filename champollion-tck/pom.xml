@@ -70,6 +70,12 @@
             Profil JSON-P 2.1 TCK. Activé par run-official-tck-jsonp-2.1.sh.
             Le TCK officiel doit être installé en M2 local (cf. TCK.md).
         -->
+        <!--
+            Profil API : tests api/* avec Champollion comme JsonProvider.
+            Le jar -tck-tests-pluggability est volontairement exclu (il fournit
+            un MyJsonProvider concurrent via META-INF/services qui pollue
+            JsonProvider.provider() au runtime et casse les tests api).
+        -->
         <profile>
             <id>jsonp-tck</id>
             <dependencies>
@@ -79,6 +85,54 @@
                     <version>${jakarta.json.tck.version}</version>
                     <scope>test</scope>
                 </dependency>
+                <dependency>
+                    <groupId>jakarta.json</groupId>
+                    <artifactId>jakarta.json-tck-common</artifactId>
+                    <version>${jakarta.json.tck.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter</artifactId>
+                    <version>5.11.4</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.5</version>
+                        <configuration>
+                            <dependenciesToScan>
+                                <dependency>jakarta.json:jakarta.json-tck-tests</dependency>
+                            </dependenciesToScan>
+                            <reportsDirectory>${project.build.directory}/tck-reports/jsonp</reportsDirectory>
+                            <!--
+                                Le TCK contient JsonProviderTest.systemProperty() qui
+                                set System.setProperty("jakarta.json.provider", DummyJsonProvider)
+                                sans cleanup. Fork par classe pour isoler chaque test
+                                dans une JVM neuve, sinon DummyJsonProvider pollue tous
+                                les tests suivants.
+                            -->
+                            <forkCount>1</forkCount>
+                            <reuseForks>false</reuseForks>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            Profil pluggability : exécuté séparément, classpath pluggability + tck-common
+            uniquement (Champollion non chargé). MyJsonProvider du jar pluggability
+            sert d'oracle pour les tests qui vérifient le comportement par défaut de
+            JsonProvider.provider() face à des providers tiers.
+        -->
+        <profile>
+            <id>jsonp-tck-pluggability</id>
+            <dependencies>
                 <dependency>
                     <groupId>jakarta.json</groupId>
                     <artifactId>jakarta.json-tck-tests-pluggability</artifactId>
@@ -106,10 +160,9 @@
                         <version>3.5.5</version>
                         <configuration>
                             <dependenciesToScan>
-                                <dependency>jakarta.json:jakarta.json-tck-tests</dependency>
                                 <dependency>jakarta.json:jakarta.json-tck-tests-pluggability</dependency>
                             </dependenciesToScan>
-                            <reportsDirectory>${project.build.directory}/tck-reports/jsonp</reportsDirectory>
+                            <reportsDirectory>${project.build.directory}/tck-reports/jsonp-pluggability</reportsDirectory>
                         </configuration>
                     </plugin>
                 </plugins>

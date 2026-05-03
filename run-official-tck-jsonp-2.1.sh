@@ -44,10 +44,15 @@ case "$MODE" in
         mvn -B -ntp -Pjsonp-tck test -Dtest=BasicSmokeTest 2>&1 | tee "../$LOG" || true
         ;;
     all)
+        # Deux invocations séparées : api/* avec Champollion provider, puis
+        # pluggability/* avec MyJsonProvider tiers. Ces deux suites ne peuvent
+        # pas coexister sur le même classpath (collision ServiceLoader).
+        echo "    [1/2] suite api avec Champollion provider"
         mvn -B -ntp -Pjsonp-tck test 2>&1 | tee "../$LOG" || true
+        echo "    [2/2] suite pluggability avec MyJsonProvider"
+        mvn -B -ntp -Pjsonp-tck-pluggability test 2>&1 | tee -a "../$LOG" || true
         ;;
     *)
-        # passe les arguments à Maven (-Dtest=..., etc.)
         mvn -B -ntp -Pjsonp-tck test "$@" 2>&1 | tee "../$LOG" || true
         ;;
 esac
