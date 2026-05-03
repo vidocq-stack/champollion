@@ -1,5 +1,7 @@
 package io.vidocq.champollion.codegen.apt;
 
+import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -93,6 +95,7 @@ final class BindingBytecodeEmitter {
                     String fqn = dt.asElement().toString();
                     if ("java.lang.String".equals(fqn)) continue;
                     if (dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM) continue;
+                    if (isStaticRecord(dt)) continue;
                     if ("java.util.Optional".equals(fqn) || "java.util.List".equals(fqn)) {
                         var args = dt.getTypeArguments();
                         if (args.size() != 1) return false;
@@ -305,6 +308,10 @@ final class BindingBytecodeEmitter {
                 }
                 if (isMap(tm)) {
                     emitWriteMap(code, CD_TARGET, name, (DeclaredType) tm);
+                    return;
+                }
+                if (isStaticRecord((DeclaredType) tm)) {
+                    emitWriteNestedRecord(code, CD_TARGET, name, (DeclaredType) tm);
                     return;
                 }
                 if (isEnum(tm)) {
@@ -1004,6 +1011,83 @@ final class BindingBytecodeEmitter {
         code.astore(slot);
     }
 
+    // ============================================================
+    // Nested @JsonbStatic record
+    // ============================================================
+
+    /**
+     * write : if (t.field() != null) { writeKey ; new Inner$$Binding().write(g, t.field()); }
+     */
+    private static void emitWriteNestedRecord(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType nestedDt) {
+        ClassDesc CD_INNER = ClassDesc.of(((TypeElement) nestedDt.asElement()).getQualifiedName().toString());
+        ClassDesc CD_INNER_BINDING = bindingCDOf(nestedDt);
+
+        Label skip = code.newLabel();
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_INNER));
+        code.ifnull(skip);
+
+        // g.writeKey(name)
+        code.aload(1);
+        code.ldc(name);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+
+        // new Inner$$Binding().write(g, t.field())
+        code.new_(CD_INNER_BINDING);
+        code.dup();
+        code.invokespecial(CD_INNER_BINDING, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+        code.aload(1);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_INNER));
+        // signature effacée : write(JsonGenerator, Object)V
+        code.invokevirtual(CD_INNER_BINDING, "write",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT));
+
+        code.labelBinding(skip);
+    }
+
+    /**
+     * read : if (_ev == VALUE_NULL) field = null ;
+     *        else field = (Inner) new Inner$$Binding().read(new PrimedJsonParser(_ev, p));
+     */
+    private static void emitReadNestedRecord(CodeBuilder code, DeclaredType nestedDt, int slot) {
+        ClassDesc CD_INNER = ClassDesc.of(((TypeElement) nestedDt.asElement()).getQualifiedName().toString());
+        ClassDesc CD_INNER_BINDING = bindingCDOf(nestedDt);
+        ClassDesc CD_PRIMED = ClassDesc.of("io.vidocq.champollion.jsonb.spi.PrimedJsonParser");
+
+        Label nul = code.newLabel();
+        Label end = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_NULL", CD_JSON_PARSER_EVENT);
+        code.if_acmpne(nul);
+        code.aconst_null();
+        code.goto_(end);
+        code.labelBinding(nul);
+
+        // new Inner$$Binding()
+        code.new_(CD_INNER_BINDING);
+        code.dup();
+        code.invokespecial(CD_INNER_BINDING, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+
+        // new PrimedJsonParser(_ev, p)
+        code.new_(CD_PRIMED);
+        code.dup();
+        code.aload(2);
+        code.aload(1);
+        code.invokespecial(CD_PRIMED, "<init>",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_PARSER_EVENT, CD_JSON_PARSER));
+
+        // .read(JsonParser) → Object
+        code.invokevirtual(CD_INNER_BINDING, "read",
+                MethodTypeDesc.of(CD_OBJECT, CD_JSON_PARSER));
+        code.checkcast(CD_INNER);
+
+        code.labelBinding(end);
+        code.astore(slot);
+    }
+
     /** ClassDesc d'un array dont la composante est {@code compTm}. */
     private static ClassDesc arrayCDOf(TypeMirror compTm) {
         return switch (compTm.getKind()) {
@@ -1168,6 +1252,17 @@ final class BindingBytecodeEmitter {
                 && "java.util.Map".equals(((DeclaredType) tm).asElement().toString());
     }
 
+    private static boolean isStaticRecord(DeclaredType dt) {
+        var elem = dt.asElement();
+        return elem.getKind() == javax.lang.model.element.ElementKind.RECORD
+                && elem.getAnnotation(JsonbStatic.class) != null;
+    }
+
+    /** FQN du binding généré pour un record statique. */
+    private static ClassDesc bindingCDOf(DeclaredType dt) {
+        return ClassDesc.of(((TypeElement) dt.asElement()).getQualifiedName().toString() + "$$Binding");
+    }
+
     private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot, int tmpBase) {
         // Si _ev == VALUE_NULL on saute (le slot reste à sa valeur par défaut).
         Label nullSkip = code.newLabel();
@@ -1236,6 +1331,8 @@ final class BindingBytecodeEmitter {
                     emitReadList(code, (DeclaredType) tm, slot, tmpBase);
                 } else if (isMap(tm)) {
                     emitReadMap(code, (DeclaredType) tm, slot, tmpBase);
+                } else if (isStaticRecord((DeclaredType) tm)) {
+                    emitReadNestedRecord(code, (DeclaredType) tm, slot);
                 } else if (isEnum(tm)) {
                     // <Enum>.valueOf(p.getString())
                     ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
