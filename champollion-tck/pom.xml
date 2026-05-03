@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    champollion-tck — runner des TCK officiels Jakarta JSON-P 2.1 et JSON-B 3.0.
+
+    Module HORS REACTOR (volontairement pas listé dans <subprojects> du parent
+    champollion 0.1.0-SNAPSHOT) — POM Maven Model 4.0.0 standalone pour
+    contourner ShrinkWrap Maven Resolver 3.3 qui ne sait pas parser les POMs
+    Model 4.1.0. Même contrainte que cassini-tck/foy-tck.
+
+    Invocation : ./run-official-tck-jsonp-2.1.sh ou ./run-official-tck-jsonb-3.0.sh
+    après avoir lancé `mvn -ntp install -DskipTests` à la racine du reactor.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.vidocq.champollion</groupId>
+    <artifactId>champollion-tck</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Champollion :: TCK Runner</name>
+    <description>Runner des TCK officiels Jakarta JSON-P 2.1 et JSON-B 3.0 — hors reactor</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <champollion.version>0.1.0-SNAPSHOT</champollion.version>
+        <jakarta.json.version>2.1.3</jakarta.json.version>
+        <jakarta.json.bind.version>3.0.1</jakarta.json.bind.version>
+
+        <!--
+            Versions des TCK officiels Eclipse Foundation. Non publiées sur
+            Maven Central public — voir TCK.md pour l'installation manuelle.
+        -->
+        <jakarta.json.tck.version>2.1.0</jakarta.json.tck.version>
+        <jakarta.json.bind.tck.version>3.0.0</jakarta.json.bind.tck.version>
+    </properties>
+
+    <dependencies>
+        <!-- Champollion : implémentation testée -->
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonp</artifactId>
+            <version>${champollion.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb</artifactId>
+            <version>${champollion.version}</version>
+        </dependency>
+
+        <!-- API specs -->
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>${jakarta.json.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
+            <version>${jakarta.json.bind.version}</version>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!--
+            Profil JSON-P 2.1 TCK. Activé par run-official-tck-jsonp-2.1.sh.
+            Le TCK officiel doit être installé en M2 local (cf. TCK.md).
+        -->
+        <profile>
+            <id>jsonp-tck</id>
+            <dependencies>
+                <dependency>
+                    <groupId>jakarta.json</groupId>
+                    <artifactId>jakarta-json-tck</artifactId>
+                    <version>${jakarta.json.tck.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter</artifactId>
+                    <version>5.11.4</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.5</version>
+                        <configuration>
+                            <dependenciesToScan>
+                                <dependency>jakarta.json:jakarta-json-tck</dependency>
+                            </dependenciesToScan>
+                            <reportsDirectory>${project.build.directory}/tck-reports/jsonp</reportsDirectory>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            Profil JSON-B 3.0 TCK. Activé par run-official-tck-jsonb-3.0.sh.
+            Utilise TestNG + Arquillian (selon le format officiel Eclipse).
+        -->
+        <profile>
+            <id>jsonb-tck</id>
+            <dependencies>
+                <dependency>
+                    <groupId>jakarta.json.bind</groupId>
+                    <artifactId>jakarta-json-bind-tck</artifactId>
+                    <version>${jakarta.json.bind.tck.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.testng</groupId>
+                    <artifactId>testng</artifactId>
+                    <version>7.10.2</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.5</version>
+                        <configuration>
+                            <dependenciesToScan>
+                                <dependency>jakarta.json.bind:jakarta-json-bind-tck</dependency>
+                            </dependenciesToScan>
+                            <reportsDirectory>${project.build.directory}/tck-reports/jsonb</reportsDirectory>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>25</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
