@@ -174,13 +174,16 @@ Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationEx
 
 ### JSON-B 3.0
 
-| Métrique | 2026-05-03 baseline | Après M7.x |
-|---|---|---|
-| Tests exécutés | 295 | 295 |
-| **PASS** | **78** (26,4 %) | **248** (84,1 %) ✅ |
-| FAIL | 179 | 35 |
-| ERROR | 33 | 7 |
-| SKIP | 5 | 5 |
+| Métrique | 2026-05-03 baseline | Après M7.x | Après M7.8–M7.15 (final) |
+|---|---|---|---|
+| Tests exécutés | 295 | 295 | 295 |
+| **PASS** | **78** (26,4 %) | 248 (84,1 %) | **287 (97,3 %)** ✅ |
+| FAIL | 179 | 35 | **0** |
+| ERROR | 33 | 7 | 3 (env) |
+| SKIP | 5 | 5 | 5 |
+
+**100 % des tests fonctionnellement applicables PASS** — les 3 ERROR restants sont
+purement environnementaux (CDI runtime absent + signature binaire).
 
 **Modules à 100 %** :
 - `defaultmapping.basictypes.BasicJavaTypesMapping` (10/10)
@@ -222,27 +225,38 @@ Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationEx
 - @JsonbTypeInfo dispatch sur POJO non-record (M7.7)
 - `JsonbConfig.FAIL_ON_UNKNOWN_PROPERTIES`, `JsonbConfig.LOCALE` (M7.7)
 
-**Restant** (35 FAIL + 7 ERROR) :
-- IJSON strict mode (`JsonbConfig.STRICT_IJSON`) — 8 FAIL
-- @JsonbTypeAdapter / @JsonbTypeSerializer / @JsonbTypeDeserializer — 6 FAIL (gros chantier custom)
-- Polymorphism multi-level (`@JsonbTypeInfo` chains) — 8 FAIL
-- @JsonbCreator édge cases (Optional creator params) — 7 FAIL
-- @JsonbNumberFormat sur container hiérarchique — 5 FAIL
-- AnnotationTest exception cases — 2 FAIL
-- CDI integration — 2 ERROR (NoClassDefFound jakarta.enterprise.inject.se.SeContainer — env)
-- JSONBSigTest — 1 ERROR (challenge env)
+**Fixes M7.8 → M7.15 (39 tests gagnés, 248 → 287)** :
+- M7.8 — Validations `@JsonbCreator` (multiplicité, return type factory, ctor + factory),
+  setters/fields appliqués post-creator (`testCustomConstructorPlusFields`),
+  defaults `Optional* / OptionalInt / OptionalLong / OptionalDouble`,
+  flag `JsonbConfig.CREATOR_PARAMETERS_REQUIRED`.
+- M7.10 — Cascade discriminator multi-niveau `@JsonbTypeInfo` :
+  `findTypeInfo` tolère chaîne d'héritage linéaire (Labrador → Dog → Animal → LivingThing),
+  `typeInfoChain` collecte parent → enfant, `polymorphicWriter`/`polymorphicReader`
+  écrivent/lisent toute la cascade dans l'ordre.
+- M7.11 — Validations `@JsonbTypeInfo` §4.8 (multi-inheritance, alias non-subtype, name collision).
+- M7.12 — IJSON strict mode complet : `withStrictIJSON`, top-level non-objet/array
+  → JsonbException, BinaryDataStrategy.BASE_64 forcé, format date `yyyy-MM-dd'T'HH:mm:ss'Z'xxx`,
+  Calendar/Date/LocalDate/Instant convertis via ZonedDateTime UTC, Duration/Period
+  préservés au format ISO 8601.
+- M7.13 — Adapters globaux (`JsonbConfig.withAdapters`) + `@JsonbTypeAdapter` field-level,
+  préservation des génériques de l'Adapted type (`AnimalListAdapter` ↔ `List<AnimalJson>`).
+- M7.14 — Custom Serializers/Deserializers : `@JsonbTypeSerializer`/`@JsonbTypeDeserializer`,
+  `JsonbConfig.SERIALIZERS`/`DESERIALIZERS`, `ChampollionSerializationContext`
+  et `ChampollionDeserializationContext`, `ReplayJsonParser` pour rejouer le current event.
+- M7.15 — `@JsonbCreator` dans hiérarchie polymorphique (DateConstructor),
+  `@JsonbDateFormat`/`@JsonbTypeAdapter`/`@JsonbTypeDeserializer` sur les params du creator.
+- M7.9 — `@JsonbNumberFormat` : `parseLocale("##default")` → `Locale.ROOT`
+  (format canonique JSON-B), normalisation NBSP (U+00A0 vs NNBSP U+202F sur CLDR
+  Java 13+ français). Symétrie writer + reader.
+- M7.13/14 (final) — `readObjectAndApply` tolère END_OBJECT consommé par un
+  custom deser (sur-consommation de la valeur enfant), `PrimedParser.currentEvent()` override.
 
-### Plan d'attaque pour 100 % PASS
-
-1. **M2.x stubs** : implémenter les méthodes `UnsupportedOperationException`
-   identifiées (`getObject`, `getValue`, `createObjectBuilder(Map)`,
-   `createDiff`).
-2. **JsonPointer escapes** : revoir le rejet de `~n` (probablement ce que le TCK
-   attend que ce soit accepté ou mieux signalé).
-3. **JSON-B advanced** : `@JsonbVisibility`, `@JsonbNumberFormat`, naming
-   strategies (camelCase, snake_case, etc.), property order strategy.
-4. **Differential investigation** : pour chaque test FAIL, trouver la divergence
-   spec/Champollion et la documenter dans la table _Challenges_ ci-dessous.
+**Restant (3 ERROR purement environnementaux)** :
+- `AdaptersCustomizationCDITest` — `NoClassDefFoundError jakarta.enterprise.inject.se.SeContainer`
+  (CDI runtime non fourni par le TCK ; non lié à Champollion)
+- `SerializersCustomizationCDITest` — idem
+- `JSONBSigTest.signatureTest` — challenge environnemental (signature binaire)
 
 ## Challenges connus
 
