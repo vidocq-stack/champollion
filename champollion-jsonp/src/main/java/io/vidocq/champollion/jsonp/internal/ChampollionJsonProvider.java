@@ -224,6 +224,13 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return b;
     }
 
+    @Override public JsonArrayBuilder createArrayBuilder(java.util.Collection<?> collection) {
+        var b = new ChampollionJsonArrayBuilder();
+        if (collection == null) return b;
+        for (Object v : collection) b.add(toJsonValue(v));
+        return b;
+    }
+
     // ===== Scalar value factories =====
 
     @Override public jakarta.json.JsonString createValue(String value) {

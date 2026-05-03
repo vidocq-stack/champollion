@@ -268,12 +268,20 @@ public final class ChampollionJsonParser implements JsonParser {
         return new SimpleLocation(tokenizer.line(), tokenizer.column(), tokenizer.offset());
     }
 
+    @Override public Event currentEvent() {
+        return lastEvent;
+    }
+
     @Override public JsonValue getValue() {
-        // Spec §3.10 : retourne la valeur à la position courante. Pour START_OBJECT/
-        // START_ARRAY, équivaut à getObject()/getArray(). Pour KEY_NAME, retourne la
-        // string du nom. Pour VALUE_*, le JsonValue scalaire correspondant.
+        // Spec §3.10 (2.1) : retourne la valeur à la position courante. Pour
+        // START_OBJECT/START_ARRAY, équivaut à getObject()/getArray(). Pour KEY_NAME,
+        // retourne la string du nom. Pour VALUE_*, le JsonValue scalaire correspondant.
+        // Si aucun event n'a encore été lu, on avance automatiquement (cas TCK 2.1).
         if (lastEvent == null) {
-            throw new IllegalStateException("getValue() called before any next()");
+            if (!hasNext()) {
+                throw new IllegalStateException("getValue() : empty input");
+            }
+            next();
         }
         return switch (lastEvent) {
             case START_OBJECT -> readObjectMembers();
