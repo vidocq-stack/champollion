@@ -150,9 +150,9 @@ final class RuntimeReadRegistry {
         }
         if (direct == null) return null;
         final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
-        Class<?> adaptedType = RuntimeBindingRegistry.findAdaptedType(
+        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(
                 (Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
-        BindingReader inner = readerForRaw(adaptedType);
+        BindingReader inner = readerForGeneric(adaptedGeneric);
         return parser -> {
             Object adaptedValue = inner.read(parser);
             if (adaptedValue == null) return null;
@@ -166,6 +166,23 @@ final class RuntimeReadRegistry {
         if (c == null || c == Object.class) return this::dynamicValue;
         if (c.isArray()) return arrayReader(c.getComponentType());
         return classCache.get(c);
+    }
+
+    /** Variante de {@link #readerFor(Type)} sans adapter mais préservant les ParameterizedType. */
+    private BindingReader readerForGeneric(java.lang.reflect.Type t) {
+        if (t == null) return this::dynamicValue;
+        if (t instanceof java.lang.reflect.ParameterizedType p) {
+            return typeCache.computeIfAbsent(p.getTypeName(), k -> parameterizedReader(p));
+        }
+        if (t instanceof java.lang.reflect.GenericArrayType ga) {
+            Type comp = ga.getGenericComponentType();
+            Class<?> rawComp = comp instanceof Class<?> cc ? cc
+                    : comp instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
+                    : Object.class;
+            return arrayReader(rawComp);
+        }
+        if (t instanceof Class<?> c) return readerForRaw(c);
+        return this::dynamicValue;
     }
 
     // ===== Resolution by raw class =====
@@ -314,13 +331,21 @@ final class RuntimeReadRegistry {
             try { m.setAccessible(true); } catch (Exception ignore) {}
             String name = methodJsonbName(m, getter, prop);
             Class<?> paramType = m.getParameterTypes()[0];
+            Field underlyingF = findFieldByName(type, prop);
             BindingReader reader;
-            BindingReader dateR = dateReaderFor(paramType, m, getter, type);
-            if (dateR != null) {
-                reader = dateR;
+            // §4.7 — @JsonbTypeAdapter sur setter / getter / underlying field.
+            var adapterR = customAdapterReader(m, underlyingF);
+            if (adapterR.isEmpty() && getter != null) adapterR = customAdapterReader(getter, underlyingF);
+            if (adapterR.isPresent()) {
+                reader = adapterR.get();
             } else {
-                BindingReader numR = numberReaderFor(paramType, m, getter, type);
-                reader = numR != null ? numR : readerFor(m.getGenericParameterTypes()[0]);
+                BindingReader dateR = dateReaderFor(paramType, m, getter, type);
+                if (dateR != null) {
+                    reader = dateR;
+                } else {
+                    BindingReader numR = numberReaderFor(paramType, m, getter, type);
+                    reader = numR != null ? numR : readerFor(m.getGenericParameterTypes()[0]);
+                }
             }
             writersByName.put(name, new MethodSetter(m, reader));
         }
@@ -335,7 +360,8 @@ final class RuntimeReadRegistry {
             String name = jsonbName(f);
             if (writersByName.containsKey(name)) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
-            BindingReader reader = readerFor(f.getGenericType());
+            BindingReader reader = customAdapterReader(f, null)
+                    .orElseGet(() -> readerFor(f.getGenericType()));
             writersByName.put(name, new FieldSetter(f, reader));
         }
 
@@ -1420,23 +1446,38 @@ final class RuntimeReadRegistry {
      * 2. délègue la lecture au reader du type {@code Adapted},
      * 3. invoque {@code adaptFromJson(adapted)} pour reconstruire l'Original.
      */
-    @SuppressWarnings({"rawtypes", "unchecked"})
     private java.util.Optional<BindingReader> customAdapterReader(RecordComponent c) {
         var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
         var fromAccessor = direct == null
                 ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class)
                 : null;
-        var ann = direct != null ? direct : fromAccessor;
+        return adapterReaderFromAnnotation(direct != null ? direct : fromAccessor);
+    }
+
+    /** @JsonbTypeAdapter sur un member (setter, field) avec repli sur underlying field. */
+    java.util.Optional<BindingReader> customAdapterReader(java.lang.reflect.AnnotatedElement member,
+                                                          java.lang.reflect.Field underlying) {
+        var ann = member == null ? null : member.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        if (ann == null && underlying != null) {
+            ann = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        }
+        return adapterReaderFromAnnotation(ann);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private java.util.Optional<BindingReader> adapterReaderFromAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter ann) {
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
         jakarta.json.bind.adapter.JsonbAdapter adapter;
         try {
-            adapter = adapterClass.getDeclaredConstructor().newInstance();
+            var ctor = adapterClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            adapter = ctor.newInstance();
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
         }
-        Class<?> adaptedType = RuntimeBindingRegistry.findAdaptedType(adapterClass);
-        BindingReader inner = readerFor(adaptedType);
+        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(adapterClass);
+        BindingReader inner = readerForGeneric(adaptedGeneric);
         return java.util.Optional.of(parser -> {
             Object adapted = inner.read(parser);
             if (adapted == null) return null;

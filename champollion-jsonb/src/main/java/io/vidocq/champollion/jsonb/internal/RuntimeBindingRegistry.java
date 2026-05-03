@@ -127,8 +127,8 @@ final class RuntimeBindingRegistry {
         }
         if (direct == null) return null;
         final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
-        Class<?> adaptedType = findAdaptedType((Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
-        BindingWriter inner = writerForRaw(adaptedType);
+        java.lang.reflect.Type adaptedGeneric = findAdaptedGenericType((Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
+        BindingWriter inner = writerForGeneric(adaptedGeneric);
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             Object adapted;
@@ -365,22 +365,41 @@ final class RuntimeBindingRegistry {
      * 3. délègue l'écriture du résultat au writer du type {@code Adapted} (déduit du
      *    super interface paramétré {@code JsonbAdapter<Original, Adapted>}).
      */
-    @SuppressWarnings({"rawtypes", "unchecked"})
     private java.util.Optional<BindingWriter> customAdapterWriter(RecordComponent c) {
         var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
         if (ann == null) {
             ann = c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
         }
+        return adapterWriterFromAnnotation(ann);
+    }
+
+    /**
+     * Cherche {@code @JsonbTypeAdapter} sur {@code member} (field ou method) ou,
+     * en repli, sur le {@code underlying} field. Retourne le writer adapté ou empty.
+     */
+    java.util.Optional<BindingWriter> customAdapterWriter(java.lang.reflect.AnnotatedElement member,
+                                                          java.lang.reflect.Field underlying) {
+        var ann = member == null ? null : member.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        if (ann == null && underlying != null) {
+            ann = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        }
+        return adapterWriterFromAnnotation(ann);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private java.util.Optional<BindingWriter> adapterWriterFromAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter ann) {
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
         jakarta.json.bind.adapter.JsonbAdapter adapter;
         try {
-            adapter = adapterClass.getDeclaredConstructor().newInstance();
+            var ctor = adapterClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            adapter = ctor.newInstance();
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
         }
-        Class<?> adaptedType = findAdaptedType(adapterClass);
-        BindingWriter inner = writerFor(adaptedType);
+        java.lang.reflect.Type adaptedGeneric = findAdaptedGenericType(adapterClass);
+        BindingWriter inner = writerForGeneric(adaptedGeneric);
         return java.util.Optional.of((g, value) -> {
             Object adapted;
             try { adapted = adapter.adaptToJson(value); }
@@ -390,15 +409,33 @@ final class RuntimeBindingRegistry {
         });
     }
 
+    /** Variante de {@link #writerFor(Type)} sans court-circuit adapter. Préserve les ParameterizedType. */
+    private BindingWriter writerForGeneric(java.lang.reflect.Type t) {
+        if (t == null) return dynamicWriter();
+        if (t instanceof java.lang.reflect.ParameterizedType p) return parameterizedWriter(p);
+        if (t instanceof java.lang.reflect.GenericArrayType ga) return arrayWriter(rawOf(ga.getGenericComponentType()));
+        Class<?> raw = rawOf(t);
+        return writerForRaw(raw);
+    }
+
     /** Examine les génériques de l'interface {@code JsonbAdapter<Original, Adapted>}. */
     @SuppressWarnings("rawtypes")
     static Class<?> findAdaptedType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
-        for (java.lang.reflect.Type t : adapterClass.getGenericInterfaces()) {
-            if (t instanceof java.lang.reflect.ParameterizedType pt
-                    && pt.getRawType() == jakarta.json.bind.adapter.JsonbAdapter.class) {
-                java.lang.reflect.Type adapted = pt.getActualTypeArguments()[1];
-                if (adapted instanceof Class<?> c) return c;
-                if (adapted instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
+        java.lang.reflect.Type t = findAdaptedGenericType(adapterClass);
+        if (t instanceof Class<?> c) return c;
+        if (t instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
+        return Object.class;
+    }
+
+    /** Renvoie le {@link java.lang.reflect.Type} complet (avec génériques) du paramètre Adapted. */
+    @SuppressWarnings("rawtypes")
+    static java.lang.reflect.Type findAdaptedGenericType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
+        for (Class<?> c = adapterClass; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Type t : c.getGenericInterfaces()) {
+                if (t instanceof java.lang.reflect.ParameterizedType pt
+                        && pt.getRawType() == jakarta.json.bind.adapter.JsonbAdapter.class) {
+                    return pt.getActualTypeArguments()[1];
+                }
             }
         }
         return Object.class;
@@ -705,7 +742,10 @@ final class RuntimeBindingRegistry {
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? underlying : null);
             java.lang.reflect.AnnotatedElement memberForNumber = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class)
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class) ? underlying : null);
-            BindingWriter w = dateWriter(m.getReturnType(), memberForDate, type)
+            // §4.7 — @JsonbTypeAdapter sur le getter ou son field underlying.
+            final Field underlying2 = underlying;
+            BindingWriter w = customAdapterWriter(m, underlying2)
+                    .or(() -> dateWriter(m.getReturnType(), memberForDate, type))
                     .or(() -> globalDateWriter(m.getReturnType()))
                     .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
                     .orElseGet(() -> writerFor(m.getGenericReturnType()));
@@ -723,7 +763,8 @@ final class RuntimeBindingRegistry {
             try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
             boolean nillable = computeNillable(null, f, type);
-            BindingWriter w = dateWriter(f.getType(), f, type)
+            BindingWriter w = customAdapterWriter(f, null)
+                    .or(() -> dateWriter(f.getType(), f, type))
                     .or(() -> globalDateWriter(f.getType()))
                     .or(() -> numberWriter(f.getType(), f, type))
                     .orElseGet(() -> writerFor(f.getGenericType()));
