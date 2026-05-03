@@ -7,7 +7,7 @@
 
 - **Branche** : `main`
 - **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : **256/256** ✅ (`mvn test` sur le reactor)
+- **Tests** : **259/259** ✅ (`mvn test` sur le reactor)
 - **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
 
 ## Modules
@@ -46,7 +46,8 @@
 | **M4.4c** | `@JsonbNillable` runtime + bytecode | ✅ 3 tests |
 | **M4.4d** | `@JsonbDateFormat` runtime (java.time) | ✅ 3 tests |
 | **M4.4e** | `@JsonbCreator` runtime (ctor + static factory) | ✅ 2 tests |
-| **M4.4f** | `@JsonbAdapter` + `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ pas commencé |
+| **M4.4f** | `@JsonbTypeAdapter` runtime | ✅ 3 tests |
+| **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ pas commencé |
 | **M4.5** | Polymorphisme `@JsonbTypeInfo`/`@JsonbSubtype` | ❌ pas commencé |
 | **M5.1** | SPI `JsonbBinding` + lookup-first | ✅ 6 tests |
 | **M5.2** | `@JsonbStatic` + APT `JsonbStaticProcessor` | ✅ 4 tests |
