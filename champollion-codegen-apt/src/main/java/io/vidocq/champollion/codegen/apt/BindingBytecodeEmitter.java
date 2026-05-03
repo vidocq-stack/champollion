@@ -2,6 +2,7 @@ package io.vidocq.champollion.codegen.apt;
 
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -61,8 +62,21 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_JSON_GENERATOR = ClassDesc.of("jakarta.json.stream.JsonGenerator");
     private static final ClassDesc CD_JSON_PARSER = ClassDesc.of("jakarta.json.stream.JsonParser");
     private static final ClassDesc CD_JSON_PARSER_EVENT = ClassDesc.of("jakarta.json.stream.JsonParser$Event");
+    private static final ClassDesc CD_ARRAYLIST = ClassDesc.of("java.util.ArrayList");
+    private static final ClassDesc CD_BIGDECIMAL = ClassDesc.of("java.math.BigDecimal");
 
-    /** Test : tous les composants sont-ils dans le subset bytecode (primitives + String + enum) ? */
+    /**
+     * Slots locaux fixes utilisés par les méthodes de container côté <em>write</em>.
+     * Les locals 0-3 sont occupés par {@code this/g/v/t}.
+     */
+    private static final int W_TMP = 4;
+    private static final int W_IDX = 5;
+    private static final int W_LEN = 6;
+
+    /**
+     * Test : tous les composants sont-ils dans le subset bytecode ?
+     * Couverture actuelle : primitives, String, enums, arrays {int[]/long[]/double[]/boolean[]/String[]}.
+     */
     static boolean eligible(List<? extends RecordComponentElement> comps) {
         for (var c : comps) {
             TypeMirror tm = c.asType();
@@ -74,6 +88,15 @@ final class BindingBytecodeEmitter {
                     if ("java.lang.String".equals(fqn)) continue;
                     if (dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM) continue;
                     return false;
+                }
+                case ARRAY -> {
+                    TypeMirror comp = ((ArrayType) tm).getComponentType();
+                    boolean ok = switch (comp.getKind()) {
+                        case INT, LONG, DOUBLE, BOOLEAN -> true;
+                        case DECLARED -> "java.lang.String".equals(comp.toString());
+                        default -> false;
+                    };
+                    if (!ok) return false;
                 }
                 default -> { return false; }
             }
@@ -264,8 +287,128 @@ final class BindingBytecodeEmitter {
                     code.labelBinding(skip);
                 }
             }
+            case ARRAY -> emitWriteArray(code, CD_TARGET, name, (ArrayType) tm);
             default -> throw new IllegalStateException("Unsupported component for bytecode emitter: " + tm);
         }
+    }
+
+    /** Émet le bytecode write pour un composant array primitif ou {@code String[]}. */
+    private static void emitWriteArray(CodeBuilder code, ClassDesc CD_TARGET, String name, ArrayType arrTm) {
+        TypeMirror compTm = arrTm.getComponentType();
+        ClassDesc CD_COMP_ARR = arrayCDOf(compTm);
+
+        // if (t.<name>() != null) {
+        Label skipNull = code.newLabel();
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_COMP_ARR));
+        code.ifnull(skipNull);
+
+        // g.writeKey(name);
+        code.aload(1);
+        code.ldc(name);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+
+        // g.writeStartArray();
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeStartArray",
+                MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+
+        // <comp>[] arr = t.<name>();
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_COMP_ARR));
+        code.astore(W_TMP);
+        // int len = arr.length;
+        code.aload(W_TMP);
+        code.arraylength();
+        code.istore(W_LEN);
+        // int i = 0;
+        code.iconst_0();
+        code.istore(W_IDX);
+
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.iload(W_IDX);
+        code.iload(W_LEN);
+        code.if_icmpge(loopEnd);
+
+        // body : g.write(arr[i])
+        code.aload(1);                       // [g]
+        code.aload(W_TMP);          // [g, arr]
+        code.iload(W_IDX);          // [g, arr, i]
+        switch (compTm.getKind()) {
+            case INT -> {
+                code.iaload();
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_int));
+            }
+            case LONG -> {
+                code.laload();
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_long));
+            }
+            case DOUBLE -> {
+                code.daload();
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_double));
+            }
+            case BOOLEAN -> {
+                code.baload();
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_boolean));
+            }
+            case DECLARED -> {
+                // String[] : on doit gérer null pour chaque élément
+                code.aaload();              // [g, String|null]
+                Label nullElem = code.newLabel();
+                Label afterElem = code.newLabel();
+                code.dup();
+                code.ifnull(nullElem);
+                // not null : g.write(s)
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+                code.goto_(afterElem);
+                code.labelBinding(nullElem);
+                // null : pop la null + g already on stack? Non, dup a laissé : [g, null]
+                // On a fait dup → [g, null, null]. ifnull a sauté quand top était null,
+                // mais on a aussi consommé un null par ifnull. Reste : [g, null]. Il faut
+                // pop le null restant et appeler g.writeNull().
+                code.pop();
+                code.invokeinterface(CD_JSON_GENERATOR, "writeNull",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR));
+                code.labelBinding(afterElem);
+            }
+            default -> throw new IllegalStateException();
+        }
+        code.pop();
+
+        // i++
+        code.iinc(W_IDX, 1);
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        // g.writeEnd();
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeEnd",
+                MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+
+        code.labelBinding(skipNull);
+    }
+
+    /** ClassDesc d'un array dont la composante est {@code compTm}. */
+    private static ClassDesc arrayCDOf(TypeMirror compTm) {
+        return switch (compTm.getKind()) {
+            case INT -> ConstantDescs.CD_int.arrayType();
+            case LONG -> ConstantDescs.CD_long.arrayType();
+            case DOUBLE -> ConstantDescs.CD_double.arrayType();
+            case BOOLEAN -> ConstantDescs.CD_boolean.arrayType();
+            case DECLARED -> ClassDesc.of(((DeclaredType) compTm).asElement().toString()).arrayType();
+            default -> throw new IllegalStateException();
+        };
     }
 
     // ============================================================
@@ -288,6 +431,9 @@ final class BindingBytecodeEmitter {
                         slotByIdx[i] = slot;
                         slot += slotsFor(comps.get(i).asType());
                     }
+                    // Base des slots temporaires utilisés par les containers (arrays...) :
+                    // après le dernier slot composant pour éviter toute collision.
+                    final int tmpBase = slot;
 
                     // Initialise les slots à leur défaut.
                     for (int i = 0; i < comps.size(); i++) {
@@ -340,7 +486,7 @@ final class BindingBytecodeEmitter {
                         code.invokevirtual(CD_STRING, "equals",
                                 MethodTypeDesc.of(ConstantDescs.CD_boolean, CD_OBJECT));
                         code.ifeq(notMatch);
-                        emitReadComponent(code, c.asType(), slotByIdx[i]);
+                        emitReadComponent(code, c.asType(), slotByIdx[i], tmpBase);
                         code.goto_(nextIter);
                         code.labelBinding(notMatch);
                     }
@@ -387,12 +533,12 @@ final class BindingBytecodeEmitter {
             case DOUBLE -> { code.dconst_0(); code.dstore(slot); }
             case FLOAT -> { code.fconst_0(); code.fstore(slot); }
             case BOOLEAN -> { code.iconst_0(); code.istore(slot); }
-            case DECLARED -> { code.aconst_null(); code.astore(slot); }
+            case DECLARED, ARRAY -> { code.aconst_null(); code.astore(slot); }
             default -> throw new IllegalStateException("Unsupported");
         }
     }
 
-    private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot) {
+    private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot, int tmpBase) {
         // Si _ev == VALUE_NULL on saute (le slot reste à sa valeur par défaut).
         Label nullSkip = code.newLabel();
         Label after = code.newLabel();
@@ -467,11 +613,192 @@ final class BindingBytecodeEmitter {
                     code.astore(slot);
                 }
             }
+            case ARRAY -> emitReadArray(code, (ArrayType) tm, slot, tmpBase);
             default -> throw new IllegalStateException("Unsupported");
         }
         code.goto_(after);
         code.labelBinding(nullSkip);
         code.labelBinding(after);
+    }
+
+    /**
+     * Émet le bytecode read pour un composant array primitif ou {@code String[]}.
+     *
+     * <p>Stratégie : on accumule dans un {@link java.util.ArrayList}, puis on transfère
+     * vers un array du type cible. Coût : une boxing par élément primitif. Optimisable
+     * en lecture directe à taille connue, mais le parser ne donne pas la taille à l'avance.</p>
+     */
+    private static void emitReadArray(CodeBuilder code, ArrayType arrTm, int slot, int tmpBase) {
+        TypeMirror compTm = arrTm.getComponentType();
+        final int R_TMP = tmpBase;
+        final int R_IDX = tmpBase + 1;
+        final int R_LEN = tmpBase + 2;
+
+        // Vérification : _ev (slot 2) doit être START_ARRAY (sinon le source path
+        // throw IllegalStateException ; on reproduit ce comportement).
+        Label okStart = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "START_ARRAY", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(okStart);
+        code.new_(ClassDesc.of("java.lang.IllegalStateException"));
+        code.dup();
+        code.ldc("Expected START_ARRAY");
+        code.invokespecial(ClassDesc.of("java.lang.IllegalStateException"), "<init>",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+        code.athrow();
+        code.labelBinding(okStart);
+
+        // ArrayList<T> list = new ArrayList<>();
+        code.new_(CD_ARRAYLIST);
+        code.dup();
+        code.invokespecial(CD_ARRAYLIST, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+        code.astore(R_TMP);
+
+        // boucle : while ((aev = p.next()) != END_ARRAY) list.add(read());
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.aload(1);
+        code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
+        // store aev en slot 2 (réutilise _ev)
+        code.astore(2);
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "END_ARRAY", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(loopEnd);
+
+        // list.add(<element>)
+        code.aload(R_TMP);
+        // Pour les primitifs : box → Integer/Long/Double/Boolean ; pour String : valeur directe
+        switch (compTm.getKind()) {
+            case INT -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getInt", MethodTypeDesc.of(ConstantDescs.CD_int));
+                code.invokestatic(ConstantDescs.CD_Integer, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Integer, ConstantDescs.CD_int));
+            }
+            case LONG -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getLong", MethodTypeDesc.of(ConstantDescs.CD_long));
+                code.invokestatic(ConstantDescs.CD_Long, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Long, ConstantDescs.CD_long));
+            }
+            case DOUBLE -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getBigDecimal", MethodTypeDesc.of(CD_BIGDECIMAL));
+                code.invokevirtual(CD_BIGDECIMAL, "doubleValue", MethodTypeDesc.of(ConstantDescs.CD_double));
+                code.invokestatic(ConstantDescs.CD_Double, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Double, ConstantDescs.CD_double));
+            }
+            case BOOLEAN -> {
+                // aev == VALUE_TRUE
+                Label fal = code.newLabel();
+                Label join = code.newLabel();
+                code.aload(2);
+                code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_TRUE", CD_JSON_PARSER_EVENT);
+                code.if_acmpne(fal);
+                code.iconst_1();
+                code.goto_(join);
+                code.labelBinding(fal);
+                code.iconst_0();
+                code.labelBinding(join);
+                code.invokestatic(ConstantDescs.CD_Boolean, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Boolean, ConstantDescs.CD_boolean));
+            }
+            case DECLARED -> {
+                // String : null si VALUE_NULL, sinon p.getString()
+                Label nul = code.newLabel();
+                Label join = code.newLabel();
+                code.aload(2);
+                code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_NULL", CD_JSON_PARSER_EVENT);
+                code.if_acmpne(nul);
+                code.aconst_null();
+                code.goto_(join);
+                code.labelBinding(nul);
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+                code.labelBinding(join);
+            }
+            default -> throw new IllegalStateException();
+        }
+        code.invokevirtual(CD_ARRAYLIST, "add",
+                MethodTypeDesc.of(ConstantDescs.CD_boolean, CD_OBJECT));
+        code.pop();
+
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        // Maintenant convertit la List en array typé.
+        // int n = list.size();
+        code.aload(R_TMP);
+        code.invokevirtual(CD_ARRAYLIST, "size", MethodTypeDesc.of(ConstantDescs.CD_int));
+        code.dup();
+        code.istore(R_LEN);
+
+        // crée le tableau cible
+        switch (compTm.getKind()) {
+            case INT -> code.newarray(java.lang.classfile.TypeKind.INT);
+            case LONG -> code.newarray(java.lang.classfile.TypeKind.LONG);
+            case DOUBLE -> code.newarray(java.lang.classfile.TypeKind.DOUBLE);
+            case BOOLEAN -> code.newarray(java.lang.classfile.TypeKind.BOOLEAN);
+            case DECLARED -> code.anewarray(CD_STRING);
+            default -> throw new IllegalStateException();
+        }
+        // store en slot, puis on remplit à partir de la list
+        code.astore(slot);
+
+        // for (int i = 0; i < n; i++) arr[i] = (cast) list.get(i)[.<unbox>()]
+        code.iconst_0();
+        code.istore(R_IDX);
+
+        Label fillStart = code.newLabel();
+        Label fillEnd = code.newLabel();
+        code.labelBinding(fillStart);
+        code.iload(R_IDX);
+        code.iload(R_LEN);
+        code.if_icmpge(fillEnd);
+
+        code.aload(slot);                       // [arr]
+        code.iload(R_IDX);             // [arr, i]
+        code.aload(R_TMP);             // [arr, i, list]
+        code.iload(R_IDX);             // [arr, i, list, i]
+        code.invokevirtual(CD_ARRAYLIST, "get",
+                MethodTypeDesc.of(CD_OBJECT, ConstantDescs.CD_int));      // [arr, i, Object]
+
+        switch (compTm.getKind()) {
+            case INT -> {
+                code.checkcast(ConstantDescs.CD_Integer);
+                code.invokevirtual(ConstantDescs.CD_Integer, "intValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_int));
+                code.iastore();
+            }
+            case LONG -> {
+                code.checkcast(ConstantDescs.CD_Long);
+                code.invokevirtual(ConstantDescs.CD_Long, "longValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_long));
+                code.lastore();
+            }
+            case DOUBLE -> {
+                code.checkcast(ConstantDescs.CD_Double);
+                code.invokevirtual(ConstantDescs.CD_Double, "doubleValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_double));
+                code.dastore();
+            }
+            case BOOLEAN -> {
+                code.checkcast(ConstantDescs.CD_Boolean);
+                code.invokevirtual(ConstantDescs.CD_Boolean, "booleanValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_boolean));
+                code.bastore();
+            }
+            case DECLARED -> {
+                code.checkcast(CD_STRING);
+                code.aastore();
+            }
+            default -> throw new IllegalStateException();
+        }
+
+        code.iinc(R_IDX, 1);
+        code.goto_(fillStart);
+        code.labelBinding(fillEnd);
     }
 
     private static void emitLoad(CodeBuilder code, TypeMirror tm, int slot) {
@@ -480,7 +807,7 @@ final class BindingBytecodeEmitter {
             case LONG -> code.lload(slot);
             case DOUBLE -> code.dload(slot);
             case FLOAT -> code.fload(slot);
-            case DECLARED -> code.aload(slot);
+            case DECLARED, ARRAY -> code.aload(slot);
             default -> throw new IllegalStateException("Unsupported");
         }
     }
@@ -502,6 +829,7 @@ final class BindingBytecodeEmitter {
             case BYTE -> ConstantDescs.CD_byte;
             case BOOLEAN -> ConstantDescs.CD_boolean;
             case DECLARED -> ClassDesc.of(((DeclaredType) tm).asElement().toString());
+            case ARRAY -> arrayCDOf(((ArrayType) tm).getComponentType());
             default -> throw new IllegalStateException();
         };
     }
