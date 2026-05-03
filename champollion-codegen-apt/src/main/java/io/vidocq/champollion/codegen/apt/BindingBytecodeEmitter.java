@@ -80,6 +80,7 @@ final class BindingBytecodeEmitter {
     private static final int W_TMP = 4;
     private static final int W_IDX = 5;
     private static final int W_LEN = 6;
+    private static final int W_TMP2 = 7;   // utilisé pour les pivots nested record dans les boucles
 
     /**
      * Test : tous les composants sont-ils dans le subset bytecode ?
@@ -150,7 +151,8 @@ final class BindingBytecodeEmitter {
         String fqn = dt.asElement().toString();
         return "java.lang.String".equals(fqn)
                 || dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM
-                || isLeafBox(fqn);
+                || isLeafBox(fqn)
+                || isStaticRecord(dt);
     }
 
     /** Émet le bytecode du binding pour {@code record}. */
@@ -631,6 +633,25 @@ final class BindingBytecodeEmitter {
      * boxed sur la stack.
      */
     private static void readLeafBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
+        if (innerTm.getKind() == TypeKind.DECLARED && isStaticRecord((DeclaredType) innerTm)) {
+            // Nested @JsonbStatic record dans un container. Délégation au binding enfant
+            // via PrimedJsonParser avec l'event courant en slot 2.
+            DeclaredType dt = (DeclaredType) innerTm;
+            ClassDesc CD_BIND = bindingCDOf(dt);
+            ClassDesc CD_PRIMED = ClassDesc.of("io.vidocq.champollion.jsonb.spi.PrimedJsonParser");
+            code.new_(CD_BIND);
+            code.dup();
+            code.invokespecial(CD_BIND, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+            // PrimedJsonParser(_ev, p)
+            code.new_(CD_PRIMED);
+            code.dup();
+            code.aload(2);
+            code.aload(1);
+            code.invokespecial(CD_PRIMED, "<init>",
+                    MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_PARSER_EVENT, CD_JSON_PARSER));
+            code.invokevirtual(CD_BIND, "read", MethodTypeDesc.of(CD_OBJECT, CD_JSON_PARSER));
+            return;
+        }
         if (isEnum(innerTm)) {
             ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
             code.aload(1);
@@ -686,6 +707,22 @@ final class BindingBytecodeEmitter {
      * en unboxant si nécessaire. Stack post : [g] (pop le retour de l'invokeinterface).
      */
     private static void writeLeafFromBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
+        if (innerTm.getKind() == TypeKind.DECLARED && isStaticRecord((DeclaredType) innerTm)) {
+            // Stack pré : [g, val(Object)]. On veut appeler new Inner$$Binding().write(g, val).
+            // Stratégie : sauve val dans W_TMP2, pop g, instancie le binding, recharge g + val.
+            DeclaredType dt = (DeclaredType) innerTm;
+            ClassDesc CD_BIND = bindingCDOf(dt);
+            code.astore(W_TMP2);
+            code.pop();
+            code.new_(CD_BIND);
+            code.dup();
+            code.invokespecial(CD_BIND, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+            code.aload(1);                // g
+            code.aload(W_TMP2);           // val
+            code.invokevirtual(CD_BIND, "write",
+                    MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT));
+            return;
+        }
         if (isEnum(innerTm)) {
             ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
             code.checkcast(CD_ENUM);
