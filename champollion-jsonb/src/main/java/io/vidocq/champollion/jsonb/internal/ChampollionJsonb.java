@@ -43,8 +43,16 @@ public final class ChampollionJsonb implements Jsonb {
         this.prettyPrinting = booleanProp(config, JsonbConfig.FORMATTING);
         this.writeNullValues = booleanProp(config, JsonbConfig.NULL_VALUES);
         String defaultDateFormat = stringProp(config, JsonbConfig.DATE_FORMAT);
-        this.writeRegistry = new RuntimeBindingRegistry(defaultDateFormat, this.writeNullValues);
-        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat);
+        String binaryStrategy = stringProp(config, JsonbConfig.BINARY_DATA_STRATEGY);
+        String namingStrategy = stringProp(config, JsonbConfig.PROPERTY_NAMING_STRATEGY);
+        String orderStrategy = stringProp(config, JsonbConfig.PROPERTY_ORDER_STRATEGY);
+        var visibilityStrategy = (jakarta.json.bind.config.PropertyVisibilityStrategy)
+                config.getProperty(JsonbConfig.PROPERTY_VISIBILITY_STRATEGY).orElse(null);
+        var configLocale = (java.util.Locale) config.getProperty(JsonbConfig.LOCALE).orElse(null);
+        boolean failOnUnknown = booleanProp(config, "jsonb.fail-on-unknown-properties");
+        this.writeRegistry = new RuntimeBindingRegistry(defaultDateFormat, this.writeNullValues, binaryStrategy,
+                namingStrategy, orderStrategy, visibilityStrategy, configLocale);
+        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown);
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
     }
 

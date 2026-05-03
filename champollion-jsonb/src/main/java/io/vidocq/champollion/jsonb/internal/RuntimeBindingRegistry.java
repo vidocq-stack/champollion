@@ -31,19 +31,41 @@ final class RuntimeBindingRegistry {
 
     private final String defaultDateFormat;
     private final boolean writeNullValues;
+    private final String binaryDataStrategy;
+    private final String propertyNamingStrategy;
+    private final String propertyOrderStrategy;
+    private final jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy;
+    private final java.util.Locale configLocale;
 
-    /** Constructeur par défaut : pas de date format global, null members omis. */
     RuntimeBindingRegistry() {
-        this(null, false);
+        this(null, false, null, null, null, null, null);
     }
 
-    /**
-     * @param defaultDateFormat pattern global pour les types java.time (JSONB_DATE_FORMAT)
-     * @param writeNullValues   si true, écrit les null au lieu de les omettre (JSONB_NULL_VALUES)
-     */
     RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues) {
+        this(defaultDateFormat, writeNullValues, null, null, null, null, null);
+    }
+
+    RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy) {
+        this(defaultDateFormat, writeNullValues, binaryDataStrategy, null, null, null, null);
+    }
+
+    RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy,
+                           String propertyNamingStrategy, String propertyOrderStrategy,
+                           jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy) {
+        this(defaultDateFormat, writeNullValues, binaryDataStrategy, propertyNamingStrategy, propertyOrderStrategy, propertyVisibilityStrategy, null);
+    }
+
+    RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy,
+                           String propertyNamingStrategy, String propertyOrderStrategy,
+                           jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
+                           java.util.Locale configLocale) {
         this.defaultDateFormat = defaultDateFormat;
         this.writeNullValues = writeNullValues;
+        this.binaryDataStrategy = binaryDataStrategy;
+        this.propertyNamingStrategy = propertyNamingStrategy;
+        this.propertyOrderStrategy = propertyOrderStrategy;
+        this.propertyVisibilityStrategy = propertyVisibilityStrategy;
+        this.configLocale = configLocale;
     }
 
     private final ClassValue<BindingWriter> cache = new ClassValue<>() {
@@ -55,9 +77,20 @@ final class RuntimeBindingRegistry {
         if (t instanceof Class<?> c) {
             if (c.isArray()) return arrayWriter(c.getComponentType());
             if (c == Object.class) return dynamicWriter();
+            if (c.isInterface() && !java.util.Map.class.isAssignableFrom(c)
+                    && !java.util.Collection.class.isAssignableFrom(c)) {
+                // Interface générique (ex. TypeContainer<T>) : différer au runtime via la classe concrète.
+                return dynamicWriter();
+            }
             return cache.get(c);
         }
         if (t instanceof java.lang.reflect.ParameterizedType p) return parameterizedWriter(p);
+        if (t instanceof java.lang.reflect.GenericArrayType ga) {
+            return arrayWriter(rawOf(ga.getGenericComponentType()));
+        }
+        if (t instanceof java.lang.reflect.TypeVariable<?> || t instanceof java.lang.reflect.WildcardType) {
+            return dynamicWriter();
+        }
         return cache.get(rawOf(t));
     }
 
@@ -101,6 +134,7 @@ final class RuntimeBindingRegistry {
     }
 
     private BindingWriter arrayWriter(Class<?> componentType) {
+        if (componentType == byte.class) return byteArrayWriter();
         if (componentType == int.class) return (g, v) -> {
             g.writeStartArray();
             for (int x : (int[]) v) g.write(x);
@@ -116,6 +150,21 @@ final class RuntimeBindingRegistry {
             for (double x : (double[]) v) g.write(x);
             g.writeEnd();
         };
+        if (componentType == float.class) return (g, v) -> {
+            g.writeStartArray();
+            for (float x : (float[]) v) g.write((double) x);
+            g.writeEnd();
+        };
+        if (componentType == short.class) return (g, v) -> {
+            g.writeStartArray();
+            for (short x : (short[]) v) g.write((int) x);
+            g.writeEnd();
+        };
+        if (componentType == char.class) return (g, v) -> {
+            g.writeStartArray();
+            for (char x : (char[]) v) g.write(String.valueOf(x));
+            g.writeEnd();
+        };
         if (componentType == boolean.class) return (g, v) -> {
             g.writeStartArray();
             for (boolean x : (boolean[]) v) g.write(x);
@@ -128,6 +177,30 @@ final class RuntimeBindingRegistry {
                 if (x == null) g.writeNull();
                 else elem.write(g, x);
             }
+            g.writeEnd();
+        };
+    }
+
+    /**
+     * JSON-B 3.0 §3.3.1 — byte[] :
+     * <ul>
+     *   <li>BYTE (défaut) : array d'entiers signés [-128..127]</li>
+     *   <li>BASE_64 : string base64 standard avec padding</li>
+     *   <li>BASE_64_URL : string base64 URL-safe sans padding</li>
+     * </ul>
+     */
+    private BindingWriter byteArrayWriter() {
+        String s = binaryDataStrategy;
+        if ("BASE_64".equals(s)) {
+            return (g, v) -> g.write(java.util.Base64.getEncoder().encodeToString((byte[]) v));
+        }
+        if ("BASE_64_URL".equals(s)) {
+            return (g, v) -> g.write(java.util.Base64.getUrlEncoder().encodeToString((byte[]) v));
+        }
+        // BYTE par défaut
+        return (g, v) -> {
+            g.writeStartArray();
+            for (byte b : (byte[]) v) g.write((int) b);
             g.writeEnd();
         };
     }
@@ -174,6 +247,12 @@ final class RuntimeBindingRegistry {
         BindingWriter built = Builtins.lookup(type);
         if (built != null) return built;
         if (type.isEnum()) return Builtins.ENUM;
+        if (type == Number.class) return dynamicWriter();   // abstract → résoudre par valeur runtime
+        if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()
+                && !java.util.Map.class.isAssignableFrom(type)
+                && !java.util.Collection.class.isAssignableFrom(type)) {
+            return dynamicWriter();
+        }
         // M4.5 : polymorphisme — si @JsonbTypeInfo (sur la classe ou un supertype),
         // émet un membre discriminant avant les membres du concrete type.
         var info = findTypeInfo(type);
@@ -274,24 +353,163 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Writer global pour les types {@code java.time.*} basé sur {@code JSONB_DATE_FORMAT}
-     * (config). Renvoie empty si pas de pattern global ou si {@code rawType} n'est pas
-     * un type java.time supporté.
+     * Writer date pour un member donné (field ou method) en cherchant @JsonbDateFormat à
+     * plusieurs niveaux : member > déclarant type > package > JsonbConfig.DATE_FORMAT.
+     * Renvoie empty si {@code rawType} n'est pas un type date supporté ou si aucun pattern.
      */
+    private java.util.Optional<BindingWriter> dateWriter(Class<?> rawType, java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
+        if (!isDateLikeType(rawType)) return java.util.Optional.empty();
+        DateFormatSpec spec = findDateFormatSpec(member, declaringType);
+        if (spec == null) return java.util.Optional.empty();
+        return java.util.Optional.of(makeDateWriter(rawType, spec));
+    }
+
     private java.util.Optional<BindingWriter> globalDateWriter(Class<?> rawType) {
+        if (!isDateLikeType(rawType)) return java.util.Optional.empty();
         if (defaultDateFormat == null) return java.util.Optional.empty();
-        if (rawType != java.time.LocalDate.class
-                && rawType != java.time.LocalDateTime.class
-                && rawType != java.time.OffsetDateTime.class
-                && rawType != java.time.ZonedDateTime.class
-                && rawType != java.time.Instant.class) {
-            return java.util.Optional.empty();
+        java.util.Locale loc = configLocale != null ? configLocale : java.util.Locale.getDefault();
+        return java.util.Optional.of(makeDateWriter(rawType, new DateFormatSpec(defaultDateFormat, loc)));
+    }
+
+    /**
+     * Writer numérique customisé via @JsonbNumberFormat (member > type > package > config).
+     * Renvoie empty si pas applicable.
+     */
+    private java.util.Optional<BindingWriter> numberWriter(Class<?> rawType, java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
+        if (!isNumericType(rawType)) return java.util.Optional.empty();
+        var spec = findNumberFormatSpec(member, declaringType);
+        if (spec == null) return java.util.Optional.empty();
+        java.text.NumberFormat fmt;
+        if ("##default".equals(spec.pattern()) || spec.pattern().isEmpty()) {
+            fmt = java.text.NumberFormat.getInstance(spec.locale());
+        } else {
+            fmt = new java.text.DecimalFormat(spec.pattern(), new java.text.DecimalFormatSymbols(spec.locale()));
         }
-        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(defaultDateFormat);
         return java.util.Optional.of((g, value) -> {
-            if (value == null) { g.writeNull(); return; }
-            g.write(fmt.format((java.time.temporal.TemporalAccessor) value));
+            if (value == null) g.writeNull();
+            else g.write(fmt.format(value));
         });
+    }
+
+    static boolean isNumericType(Class<?> rawType) {
+        if (rawType.isPrimitive()) {
+            return rawType == int.class || rawType == long.class || rawType == double.class
+                    || rawType == float.class || rawType == short.class || rawType == byte.class;
+        }
+        return Number.class.isAssignableFrom(rawType);
+    }
+
+    record NumberFormatSpec(String pattern, java.util.Locale locale) {}
+
+    private NumberFormatSpec findNumberFormatSpec(java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
+        if (member != null) {
+            var ann = member.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
+            if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
+        }
+        if (declaringType != null) {
+            for (Class<?> c = declaringType; c != null && c != Object.class; c = c.getSuperclass()) {
+                var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
+                if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
+            }
+            for (Class<?> c = declaringType; c != null && c != Object.class; c = c.getSuperclass()) {
+                var pkg = c.getPackage();
+                if (pkg == null) continue;
+                ClassLoader cl = c.getClassLoader();
+                if (cl == null) cl = ClassLoader.getSystemClassLoader();
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+                var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
+                if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
+            }
+        }
+        return null;
+    }
+
+    static boolean isDateLikeType(Class<?> rawType) {
+        return rawType == java.time.LocalDate.class
+                || rawType == java.time.LocalDateTime.class
+                || rawType == java.time.OffsetDateTime.class
+                || rawType == java.time.ZonedDateTime.class
+                || rawType == java.time.Instant.class
+                || rawType == java.time.LocalTime.class
+                || rawType == java.time.OffsetTime.class
+                || rawType == java.time.Duration.class
+                || rawType == java.time.Period.class
+                || java.util.Date.class.isAssignableFrom(rawType)
+                || java.util.Calendar.class.isAssignableFrom(rawType);
+    }
+
+    record DateFormatSpec(String pattern, java.util.Locale locale) {
+        boolean isDefault() { return "##default".equals(pattern); }
+    }
+
+    static DateFormatSpec findDateFormatSpec(java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
+        if (member != null) {
+            var ann = member.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+            if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
+        }
+        if (declaringType != null) {
+            for (Class<?> c = declaringType; c != null && c != Object.class; c = c.getSuperclass()) {
+                var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+                if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
+            }
+            // Walk superclass packages (anonymous inner classes héritent du parent)
+            for (Class<?> c = declaringType; c != null && c != Object.class; c = c.getSuperclass()) {
+                var pkg = c.getPackage();
+                if (pkg == null) continue;
+                ClassLoader cl = c.getClassLoader();
+                if (cl == null) cl = ClassLoader.getSystemClassLoader();
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); }
+                catch (Throwable ignored) {}
+                var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+                if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
+            }
+        }
+        return null;
+    }
+
+    private static java.util.Locale parseLocale(String tag) {
+        if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.getDefault();
+        return java.util.Locale.forLanguageTag(tag);
+    }
+
+    private BindingWriter makeDateWriter(Class<?> rawType, DateFormatSpec spec) {
+        if (java.util.Date.class.isAssignableFrom(rawType)) {
+            return (g, value) -> {
+                if (value == null) { g.writeNull(); return; }
+                if (spec.isDefault()) {
+                    g.write(((java.util.Date) value).toInstant().atZone(java.time.ZoneId.of("UTC"))
+                            .format(java.time.format.DateTimeFormatter.ISO_ZONED_DATE_TIME));
+                } else {
+                    var sdf = new java.text.SimpleDateFormat(spec.pattern(), spec.locale());
+                    sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                    g.write(sdf.format((java.util.Date) value));
+                }
+            };
+        }
+        if (java.util.Calendar.class.isAssignableFrom(rawType)) {
+            return (g, value) -> {
+                if (value == null) { g.writeNull(); return; }
+                var cal = (java.util.Calendar) value;
+                if (spec.isDefault()) {
+                    var zdt = cal.toInstant().atZone(cal.getTimeZone().toZoneId());
+                    g.write(zdt.format(java.time.format.DateTimeFormatter.ISO_ZONED_DATE_TIME));
+                } else {
+                    var sdf = new java.text.SimpleDateFormat(spec.pattern(), spec.locale());
+                    sdf.setTimeZone(cal.getTimeZone());
+                    g.write(sdf.format(cal.getTime()));
+                }
+            };
+        }
+        // java.time
+        return (g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            if (spec.isDefault()) {
+                g.write(value.toString());
+            } else {
+                var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
+                g.write(fmt.format((java.time.temporal.TemporalAccessor) value));
+            }
+        };
     }
 
     /**
@@ -319,50 +537,412 @@ final class RuntimeBindingRegistry {
     }
 
     private BindingWriter resolvePojo(Class<?> type) {
+        validateTransientCombinations(type);
         var props = new ArrayList<Property>();
         var seen = new java.util.HashSet<String>();
 
-        // 1) JavaBean getters publics (priorité §3.7) : getXxx() / isXxx() boolean.
-        for (Method m : type.getMethods()) {
-            int mods = m.getModifiers();
-            if (Modifier.isStatic(mods)) continue;
-            if (m.getDeclaringClass() == Object.class) continue;
-            if (m.getParameterCount() != 0) continue;
-            if (m.getReturnType() == void.class) continue;
-            String propName = beanPropertyOf(m);
-            if (propName == null) continue;
-            if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+        // 1) Découvrir tous les getters de la hiérarchie (incluant private/protected/package).
+        // JSON-B 3.0 §3.7.1 : seuls les public getters sont considérés par défaut, mais
+        // l'EXISTENCE d'un accesseur non-public masque la property (le field public ne suffit pas).
+        var getterByProp = new java.util.LinkedHashMap<String, Method>();
+        var hiddenProps = new java.util.HashSet<String>();
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                int mods = m.getModifiers();
+                if (Modifier.isStatic(mods)) continue;
+                if (m.isBridge() || m.isSynthetic()) continue;
+                if (m.getParameterCount() != 0) continue;
+                if (m.getReturnType() == void.class) continue;
+                String propName = beanPropertyOf(m);
+                if (propName == null) continue;
+                if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) {
+                    hiddenProps.add(propName);
+                    continue;
+                }
+                if (!Modifier.isPublic(mods)) {
+                    // Getter non-public → la property est masquée (même si un field public existe)
+                    hiddenProps.add(propName);
+                    continue;
+                }
+                // §3.7.1 : si le field underlying est static ou transient, skip.
+                Field underlying = findFieldByName(type, propName);
+                if (underlying != null) {
+                    int fMods = underlying.getModifiers();
+                    if (Modifier.isStatic(fMods) || Modifier.isTransient(fMods)) {
+                        hiddenProps.add(propName);
+                        continue;
+                    }
+                    if (underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) {
+                        hiddenProps.add(propName);
+                        continue;
+                    }
+                }
+                Method existing = getterByProp.get(propName);
+                if (existing == null) {
+                    getterByProp.put(propName, m);
+                } else {
+                    boolean existingIsGet = existing.getName().startsWith("get");
+                    boolean newIsGet = m.getName().startsWith("get");
+                    if (newIsGet && !existingIsGet) getterByProp.put(propName, m);
+                    else if (existing.getReturnType().isAssignableFrom(m.getReturnType())
+                            && existing.getReturnType() != m.getReturnType()) {
+                        getterByProp.put(propName, m);
+                    }
+                }
+            }
+        }
+        // Retire les props masquées au cas où on aurait à la fois public/non-public
+        getterByProp.keySet().removeAll(hiddenProps);
+        for (var e : getterByProp.entrySet()) {
+            String propName = e.getKey();
+            Method m = e.getValue();
             try { m.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbNameFromMethod(m, propName);
-            boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)
-                    || writeNullValues;
-            BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
+            Field underlying0 = findFieldByName(type, propName);
+            boolean nillable = computeNillable(m, underlying0, type);
+            // Date / Number format : @JsonbDateFormat / @JsonbNumberFormat sur method, field underlying, type, package, ou config global.
+            Field underlying = findFieldByName(type, propName);
+            java.lang.reflect.AnnotatedElement memberForDate = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)
+                    ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? underlying : null);
+            java.lang.reflect.AnnotatedElement memberForNumber = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class)
+                    ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class) ? underlying : null);
+            BindingWriter w = dateWriter(m.getReturnType(), memberForDate, type)
+                    .or(() -> globalDateWriter(m.getReturnType()))
+                    .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
+                    .orElseGet(() -> writerFor(m.getGenericReturnType()));
             seen.add(propName);
             props.add(new Property(name, new MethodAccessor(m), w, nillable));
         }
 
-        // 2) Champs publics non couverts par un getter.
+        // 2) Champs publics non couverts par un getter et non masqués.
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            if (seen.contains(f.getName())) continue;   // déjà couvert par un getter
+            if (seen.contains(f.getName())) continue;
+            if (hiddenProps.contains(f.getName())) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
-            boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)
-                    || writeNullValues;
-            BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
+            boolean nillable = computeNillable(null, f, type);
+            BindingWriter w = dateWriter(f.getType(), f, type)
+                    .or(() -> globalDateWriter(f.getType()))
+                    .or(() -> numberWriter(f.getType(), f, type))
+                    .orElseGet(() -> writerFor(f.getGenericType()));
             props.add(new Property(name, new FieldAccessor(f), w, nillable));
         }
 
+        // Application de PropertyVisibilityStrategy si configurée (config ou @JsonbVisibility).
+        var visibility = effectiveVisibility(type);
+        if (visibility != null) {
+            var visibleProps = new ArrayList<Property>(props.size());
+            for (Property pr : props) {
+                if (isVisibleByStrategy(visibility, type, pr)) visibleProps.add(pr);
+            }
+            props.clear();
+            props.addAll(visibleProps);
+        }
+
+        // Détection de doublons sur le nom JSON final.
+        var names = new java.util.HashSet<String>();
+        for (var pr : props) {
+            if (!names.add(pr.name)) {
+                throw new JsonbException("Duplicate JSON property name '" + pr.name + "' on " + type);
+            }
+        }
+
+        // Tri selon @JsonbPropertyOrder + JsonbConfig.PROPERTY_ORDER_STRATEGY.
+        applyPropertyOrder(type, props);
+
         if (props.isEmpty()) {
-            // Fallback : toString() pour les types opaques sans builtin et sans champs.
+            // JSON-B 3.0 §3.7 : objet sans property visible → objet JSON vide {}.
             return (g, value) -> {
                 if (value == null) g.writeNull();
-                else g.write(value.toString());
+                else { g.writeStartObject(); g.writeEnd(); }
             };
         }
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    private jakarta.json.bind.config.PropertyVisibilityStrategy effectiveVisibility(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
+            if (ann != null) {
+                try { return ann.value().getDeclaredConstructor().newInstance(); }
+                catch (Exception e) { throw new JsonbException("Cannot instantiate @JsonbVisibility " + ann.value(), e); }
+            }
+        }
+        // Walk superclass chain for package visibility (anonymous inner classes héritent du parent)
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            var fromPackage = packageVisibility(c);
+            if (fromPackage != null) return fromPackage;
+        }
+        return propertyVisibilityStrategy;
+    }
+
+    /**
+     * Lit la {@code @JsonbVisibility} déclarée sur le package-info de la classe.
+     * Utilise plusieurs stratégies pour contourner les ClassLoader / module-path
+     * où {@code Class.getPackage().getAnnotation()} peut retourner null si le
+     * package-info n'a pas encore été chargé.
+     */
+    private jakarta.json.bind.config.PropertyVisibilityStrategy packageVisibility(Class<?> type) {
+        var pkg = type.getPackage();
+        if (pkg == null) return null;
+        ClassLoader cl = type.getClassLoader();
+        if (cl == null) cl = ClassLoader.getSystemClassLoader();
+        // 1) Charger explicitement package-info et lire l'annotation directement.
+        try {
+            Class<?> pkgInfo = Class.forName(pkg.getName() + ".package-info", false, cl);
+            var pann = pkgInfo.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
+            if (pann != null) {
+                return pann.value().getDeclaredConstructor().newInstance();
+            }
+        } catch (ClassNotFoundException ignored) {
+        } catch (Exception e) {
+            throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
+        }
+        // 2) Package.getAnnotation (fonctionne uniquement après chargement)
+        var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
+        if (pann != null) {
+            try { return pann.value().getDeclaredConstructor().newInstance(); }
+            catch (Exception e) { throw new JsonbException("Cannot instantiate package @JsonbVisibility " + pann.value(), e); }
+        }
+        return null;
+    }
+
+    private static boolean isVisibleByStrategy(jakarta.json.bind.config.PropertyVisibilityStrategy s, Class<?> type, Property pr) {
+        // Spec §4.5 : on consulte BOTH le field underlying (si présent) ET la méthode.
+        // Une property est visible si l'une ou l'autre return true (logique OR).
+        if (pr.accessor instanceof FieldAccessor fa) {
+            return s.isVisible(fa.f);
+        }
+        if (pr.accessor instanceof MethodAccessor ma) {
+            boolean methodVisible = s.isVisible(ma.m);
+            // Cherche le field underlying par nom de bean property
+            String propName = beanPropertyOf(ma.m);
+            if (propName != null) {
+                Field f = findFieldByName(type, propName);
+                if (f != null) return methodVisible || s.isVisible(f);
+            }
+            return methodVisible;
+        }
+        return true;
+    }
+
+    /**
+     * Applique l'ordre :
+     * <ol>
+     *   <li>Property dans @JsonbPropertyOrder dans l'ordre déclaré ;</li>
+     *   <li>autres properties triées via {@link jakarta.json.bind.config.PropertyOrderStrategy}
+     *       (LEXICOGRAPHICAL = défaut, REVERSE, ANY = ordre d'insertion).</li>
+     * </ol>
+     */
+    private void applyPropertyOrder(Class<?> type, List<Property> props) {
+        jakarta.json.bind.annotation.JsonbPropertyOrder order = null;
+        for (Class<?> c = type; c != null && c != Object.class && order == null; c = c.getSuperclass()) {
+            order = c.getAnnotation(jakarta.json.bind.annotation.JsonbPropertyOrder.class);
+        }
+        String[] explicit = order == null ? new String[0] : order.value();
+        // Resolve explicit names through naming strategy: les noms du @JsonbPropertyOrder se réfèrent
+        // soit au nom de property (camelCase) soit au nom JSON. On accepte les deux.
+        // On compare le nom JSON final ; si l'utilisateur a annoté avec le nom JSON, OK ; sinon on tente
+        // le nom de property non transformé.
+        var byName = new java.util.LinkedHashMap<String, Property>();
+        for (var p : props) byName.put(p.name, p);
+        var ordered = new ArrayList<Property>(props.size());
+        for (String n : explicit) {
+            Property p = byName.remove(n);
+            if (p == null) {
+                // Try with naming strategy applied
+                String transformed = applyNamingStrategy(n, false);
+                p = byName.remove(transformed);
+            }
+            if (p != null) ordered.add(p);
+        }
+        var rest = new ArrayList<>(byName.values());
+        String strat = propertyOrderStrategy;
+        // Default JSON-B 3.0 §4.4 : LEXICOGRAPHICAL.
+        if (strat == null) strat = "LEXICOGRAPHICAL";
+        // Group by declaring class (parent → child) for class hierarchy ordering
+        var byClass = new java.util.LinkedHashMap<Class<?>, java.util.List<Property>>();
+        // Build chain super→sub
+        var chain = new ArrayList<Class<?>>();
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) chain.add(c);
+        java.util.Collections.reverse(chain);
+        for (Class<?> c : chain) byClass.put(c, new ArrayList<>());
+        for (Property pr : rest) {
+            Class<?> dc = declaringClassOf(pr, type);
+            byClass.computeIfAbsent(dc, k -> new ArrayList<>()).add(pr);
+        }
+        var sortedRest = new ArrayList<Property>(rest.size());
+        for (var e : byClass.entrySet()) {
+            var group = e.getValue();
+            switch (strat) {
+                case "LEXICOGRAPHICAL" -> group.sort(java.util.Comparator.comparing(p -> p.name));
+                case "REVERSE" -> group.sort(java.util.Comparator.<Property, String>comparing(p -> p.name).reversed());
+                case "ANY" -> { }
+                default -> { }
+            }
+            sortedRest.addAll(group);
+        }
+        ordered.addAll(sortedRest);
+        props.clear();
+        props.addAll(ordered);
+    }
+
+    private static Class<?> declaringClassOf(Property pr, Class<?> fallback) {
+        if (pr.accessor instanceof FieldAccessor fa) return fa.f.getDeclaringClass();
+        if (pr.accessor instanceof MethodAccessor ma) return ma.m.getDeclaringClass();
+        return fallback;
+    }
+
+    /**
+     * Applique la stratégie de naming JSON-B 3.0 §4.1.1 sur un nom déjà déterminé via
+     * convention bean (ou via @JsonbProperty/JsonbPropertyOrder qui ont la priorité).
+     *
+     * <p>Si {@code annotated} est vrai (le nom vient d'une annotation explicite), on ne
+     * transforme pas — l'annotation a la priorité absolue.</p>
+     */
+    String applyNamingStrategy(String name, boolean annotated) {
+        if (annotated || propertyNamingStrategy == null) return name;
+        return transformName(name, propertyNamingStrategy);
+    }
+
+    static String transformName(String name, String strategy) {
+        return switch (strategy) {
+            case "IDENTITY", "CASE_INSENSITIVE" -> name;
+            case "LOWER_CASE_WITH_DASHES" -> camelToDelimited(name, '-');
+            case "LOWER_CASE_WITH_UNDERSCORES" -> camelToDelimited(name, '_');
+            case "UPPER_CAMEL_CASE" -> name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            case "UPPER_CAMEL_CASE_WITH_SPACES" -> {
+                String upper = name.isEmpty() ? name : Character.toUpperCase(name.charAt(0)) + name.substring(1);
+                yield insertSpaces(upper);
+            }
+            default -> name;
+        };
+    }
+
+    private static String camelToDelimited(String s, char delim) {
+        var sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isUpperCase(c) && i > 0) sb.append(delim);
+            sb.append(Character.toLowerCase(c));
+        }
+        return sb.toString();
+    }
+
+    private static String insertSpaces(String s) {
+        var sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isUpperCase(c) && i > 0) sb.append(' ');
+            sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    String propertyOrderStrategy() { return propertyOrderStrategy; }
+
+    jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy() { return propertyVisibilityStrategy; }
+
+    /**
+     * JSON-B 3.0 §4.7 : si {@code @JsonbTransient} apparaît sur un membre (field/getter/setter)
+     * et qu'une AUTRE annotation Jsonb apparaît sur le même membre OU sur le pair (field/getter/setter)
+     * de la même property, c'est une combinaison invalide → JsonbException.
+     */
+    static void validateTransientCombinations(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                String prop = f.getName();
+                Method getter = findAccessor(c, prop, true);
+                Method setter = findAccessor(c, prop, false);
+                boolean fieldTransient = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+                boolean getterTransient = getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+                boolean setterTransient = setter != null && setter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+                if (!fieldTransient && !getterTransient && !setterTransient) continue;
+                java.util.List<java.lang.reflect.AnnotatedElement> targets = new java.util.ArrayList<>();
+                targets.add(f);
+                if (getter != null) targets.add(getter);
+                if (setter != null) targets.add(setter);
+                for (var t : targets) {
+                    for (var ann : t.getAnnotations()) {
+                        var atype = ann.annotationType();
+                        if (!atype.getPackageName().startsWith("jakarta.json.bind")) continue;
+                        if (atype == jakarta.json.bind.annotation.JsonbTransient.class) continue;
+                        throw new JsonbException("JSON-B §4.7 : property '" + prop + "' on " + type
+                                + " has @JsonbTransient combined with " + atype.getSimpleName());
+                    }
+                }
+            }
+        }
+    }
+
+    private static Method findAccessor(Class<?> c, String prop, boolean isGetter) {
+        String cap = Character.toUpperCase(prop.charAt(0)) + prop.substring(1);
+        for (Method m : c.getDeclaredMethods()) {
+            if (isGetter) {
+                if ((m.getName().equals("get" + cap) || m.getName().equals("is" + cap)) && m.getParameterCount() == 0) return m;
+            } else {
+                if (m.getName().equals("set" + cap) && m.getParameterCount() == 1) return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Calcule le statut nillable d'une property :
+     * <ol>
+     *   <li>@JsonbProperty(nillable=true) ou @JsonbNillable explicite → true (annotation gagne)</li>
+     *   <li>@JsonbNillable(false) explicite → false (annotation gagne)</li>
+     *   <li>type level @JsonbNillable → true</li>
+     *   <li>package level @JsonbNillable → true</li>
+     *   <li>JsonbConfig.NULL_VALUES → true</li>
+     *   <li>Sinon → false (default : omit)</li>
+     * </ol>
+     */
+    private boolean computeNillable(Method getter, Field underlying, Class<?> type) {
+        // Annotations directes sur member
+        Boolean direct = directNillable(getter);
+        if (direct != null) return direct;
+        if (underlying != null) {
+            Boolean d2 = directNillable(underlying);
+            if (d2 != null) return d2;
+        }
+        // Type chain @JsonbNillable
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
+            if (ann != null) return ann.value();
+        }
+        // Package @JsonbNillable (walk superclass packages too)
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            var pkg = c.getPackage();
+            if (pkg == null) continue;
+            ClassLoader cl = c.getClassLoader();
+            if (cl == null) cl = ClassLoader.getSystemClassLoader();
+            try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+            var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
+            if (ann != null) return ann.value();
+        }
+        return writeNullValues;
+    }
+
+    private static Boolean directNillable(java.lang.reflect.AnnotatedElement el) {
+        if (el == null) return null;
+        var n = el.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
+        if (n != null) return n.value();
+        var p = el.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        if (p != null && p.nillable()) return true;
+        return null;
+    }
+
+    /** Cherche un field (public, protected, package, private) sur la classe ou ses parents. */
+    private static Field findFieldByName(Class<?> type, String name) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            try { return c.getDeclaredField(name); }
+            catch (NoSuchFieldException ignored) {}
+        }
+        return null;
     }
 
     /**
@@ -497,26 +1077,42 @@ final class RuntimeBindingRegistry {
     }
 
     /** Renommage via {@code @JsonbProperty(name)} sur un component ; fallback {@code defaultName}. */
-    private static String jsonbName(RecordComponent c, String defaultName) {
+    private String jsonbName(RecordComponent c, String defaultName) {
         var prop = c.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
-        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
         var accessorProp = c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
-        if (accessorProp != null && !accessorProp.value().isEmpty()) return accessorProp.value();
-        return defaultName;
+        if (accessorProp != null && !accessorProp.value().isEmpty()) return applyNamingStrategy(accessorProp.value(), true);
+        return applyNamingStrategy(defaultName, false);
     }
 
     /** Renommage via {@code @JsonbProperty(name)} sur un field ; fallback {@code defaultName}. */
-    private static String jsonbName(Field f, String defaultName) {
+    private String jsonbName(Field f, String defaultName) {
         var prop = f.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
-        if (prop != null && !prop.value().isEmpty()) return prop.value();
-        return defaultName;
+        if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
+        return applyNamingStrategy(defaultName, false);
     }
 
-    /** Renommage via {@code @JsonbProperty(name)} sur un method ; fallback {@code defaultName}. */
-    static String jsonbNameFromMethod(Method m, String defaultName) {
+    /** Renommage via {@code @JsonbProperty(name)} sur un method, son setter pair ou le field underlying. */
+    String jsonbNameFromMethod(Method m, String defaultName) {
         var prop = m.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
-        if (prop != null && !prop.value().isEmpty()) return prop.value();
-        return defaultName;
+        if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
+        // Recherche aussi sur le setter associé et le field underlying (spec §4.1.2).
+        Class<?> declaring = m.getDeclaringClass();
+        Field underlying = findFieldByName(declaring, defaultName);
+        if (underlying != null) {
+            var fp = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+            if (fp != null && !fp.value().isEmpty()) return applyNamingStrategy(fp.value(), true);
+        }
+        // Setter associé
+        for (Method other : declaring.getDeclaredMethods()) {
+            if (other.getName().equals("set" + Character.toUpperCase(defaultName.charAt(0)) + defaultName.substring(1))
+                    && other.getParameterCount() == 1) {
+                var sp = other.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+                if (sp != null && !sp.value().isEmpty()) return applyNamingStrategy(sp.value(), true);
+                break;
+            }
+        }
+        return applyNamingStrategy(defaultName, false);
     }
 
     /**
@@ -577,6 +1173,18 @@ final class RuntimeBindingRegistry {
                 }
                 continue;
             }
+            if (v instanceof java.util.OptionalInt oi && oi.isEmpty()) {
+                if (p.nillable) { g.writeKey(p.name); g.writeNull(); }
+                continue;
+            }
+            if (v instanceof java.util.OptionalLong ol && ol.isEmpty()) {
+                if (p.nillable) { g.writeKey(p.name); g.writeNull(); }
+                continue;
+            }
+            if (v instanceof java.util.OptionalDouble od && od.isEmpty()) {
+                if (p.nillable) { g.writeKey(p.name); g.writeNull(); }
+                continue;
+            }
             g.writeKey(p.name);
             p.writer.write(g, v);
         }
@@ -617,7 +1225,7 @@ final class RuntimeBindingRegistry {
         static final BindingWriter INT = (g, v) -> g.write(((Number) v).intValue());
         static final BindingWriter LONG = (g, v) -> g.write(((Number) v).longValue());
         static final BindingWriter DOUBLE = (g, v) -> g.write(((Number) v).doubleValue());
-        static final BindingWriter FLOAT = (g, v) -> g.write(((Number) v).doubleValue());
+        static final BindingWriter FLOAT = (g, v) -> g.write(new BigDecimal(Float.toString(((Number) v).floatValue())));
         static final BindingWriter SHORT = (g, v) -> g.write(((Number) v).intValue());
         static final BindingWriter BYTE = (g, v) -> g.write(((Number) v).intValue());
         static final BindingWriter BIG_DECIMAL = (g, v) -> g.write((BigDecimal) v);
@@ -627,15 +1235,60 @@ final class RuntimeBindingRegistry {
         static final BindingWriter CHAR = (g, v) -> g.write(String.valueOf((Character) v));
 
         static final BindingWriter UUID_W = (g, v) -> g.write(((UUID) v).toString());
+        static final BindingWriter URI_W = (g, v) -> g.write(v.toString());
+        static final BindingWriter URL_W = (g, v) -> g.write(v.toString());
+        static final BindingWriter PATH_W = (g, v) -> g.write(v.toString());
+        static final BindingWriter OPT_INT = (g, v) -> {
+            var o = (java.util.OptionalInt) v;
+            if (o.isPresent()) g.write(o.getAsInt()); else g.writeNull();
+        };
+        static final BindingWriter OPT_LONG = (g, v) -> {
+            var o = (java.util.OptionalLong) v;
+            if (o.isPresent()) g.write(o.getAsLong()); else g.writeNull();
+        };
+        static final BindingWriter OPT_DOUBLE = (g, v) -> {
+            var o = (java.util.OptionalDouble) v;
+            if (o.isPresent()) g.write(o.getAsDouble()); else g.writeNull();
+        };
         static final BindingWriter ENUM = (g, v) -> g.write(((Enum<?>) v).name());
 
         static final BindingWriter INSTANT = (g, v) -> g.write(((Instant) v).toString());
         static final BindingWriter LOCAL_DATE = (g, v) -> g.write(((LocalDate) v).format(DateTimeFormatter.ISO_LOCAL_DATE));
+        static final BindingWriter LOCAL_TIME = (g, v) -> g.write(((java.time.LocalTime) v).format(DateTimeFormatter.ISO_LOCAL_TIME));
         static final BindingWriter LOCAL_DATETIME = (g, v) -> g.write(((LocalDateTime) v).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         static final BindingWriter OFFSET_DATETIME = (g, v) -> g.write(((OffsetDateTime) v).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        static final BindingWriter OFFSET_TIME = (g, v) -> g.write(((java.time.OffsetTime) v).format(DateTimeFormatter.ISO_OFFSET_TIME));
         static final BindingWriter ZONED_DATETIME = (g, v) -> g.write(((ZonedDateTime) v).format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
+        static final BindingWriter DURATION = (g, v) -> g.write(((java.time.Duration) v).toString());
+        static final BindingWriter PERIOD = (g, v) -> g.write(((java.time.Period) v).toString());
+        static final BindingWriter ZONE_ID = (g, v) -> g.write(((java.time.ZoneId) v).getId());
+        static final BindingWriter ZONE_OFFSET = (g, v) -> g.write(((java.time.ZoneOffset) v).getId());
+        static final BindingWriter MONTH_DAY = (g, v) -> g.write(((java.time.MonthDay) v).toString());
+        static final BindingWriter YEAR_MONTH = (g, v) -> g.write(((java.time.YearMonth) v).toString());
+        static final BindingWriter YEAR = (g, v) -> g.write(((java.time.Year) v).toString());
+        // JSON-B 3.0 §3.5.1 : java.util.Date → ZonedDateTime UTC ISO format
+        static final BindingWriter UTIL_DATE = (g, v) -> {
+            var d = (java.util.Date) v;
+            g.write(d.toInstant().atZone(java.time.ZoneId.of("UTC")).format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
+        };
+        static final BindingWriter CALENDAR = (g, v) -> {
+            var c = (java.util.Calendar) v;
+            var zdt = c.toInstant().atZone(c.getTimeZone().toZoneId());
+            // JSON-B 3.0 §3.5.1 : si time = 00:00:00.000, format ISO_OFFSET_DATE.
+            if (zdt.getHour() == 0 && zdt.getMinute() == 0 && zdt.getSecond() == 0 && zdt.getNano() == 0) {
+                g.write(zdt.toLocalDate().atStartOfDay(zdt.getZone()).toOffsetDateTime()
+                        .format(DateTimeFormatter.ISO_OFFSET_DATE));
+            } else {
+                g.write(zdt.format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
+            }
+        };
+        static final BindingWriter TIMEZONE = (g, v) -> g.write(((java.util.TimeZone) v).getID());
+
+        // JSON-B §3.6 : JSON-P types passent par g.write(JsonValue)
+        static final BindingWriter JSON_VALUE = (g, v) -> g.write((jakarta.json.JsonValue) v);
 
         static BindingWriter lookup(Class<?> type) {
+            if (jakarta.json.JsonValue.class.isAssignableFrom(type)) return JSON_VALUE;
             if (type == String.class) return STRING;
             if (type == Integer.class || type == int.class) return INT;
             if (type == Long.class || type == long.class) return LONG;
@@ -648,11 +1301,29 @@ final class RuntimeBindingRegistry {
             if (type == BigDecimal.class) return BIG_DECIMAL;
             if (type == BigInteger.class) return BIG_INTEGER;
             if (type == UUID.class) return UUID_W;
+            if (type == java.net.URI.class) return URI_W;
+            if (type == java.net.URL.class) return URL_W;
+            if (java.nio.file.Path.class.isAssignableFrom(type)) return PATH_W;
+            if (type == java.util.OptionalInt.class) return OPT_INT;
+            if (type == java.util.OptionalLong.class) return OPT_LONG;
+            if (type == java.util.OptionalDouble.class) return OPT_DOUBLE;
             if (type == Instant.class) return INSTANT;
             if (type == LocalDate.class) return LOCAL_DATE;
+            if (type == java.time.LocalTime.class) return LOCAL_TIME;
             if (type == LocalDateTime.class) return LOCAL_DATETIME;
             if (type == OffsetDateTime.class) return OFFSET_DATETIME;
+            if (type == java.time.OffsetTime.class) return OFFSET_TIME;
             if (type == ZonedDateTime.class) return ZONED_DATETIME;
+            if (type == java.time.Duration.class) return DURATION;
+            if (type == java.time.Period.class) return PERIOD;
+            if (type == java.time.MonthDay.class) return MONTH_DAY;
+            if (type == java.time.YearMonth.class) return YEAR_MONTH;
+            if (type == java.time.Year.class) return YEAR;
+            if (java.time.ZoneOffset.class.isAssignableFrom(type)) return ZONE_OFFSET;
+            if (java.time.ZoneId.class.isAssignableFrom(type)) return ZONE_ID;
+            if (java.util.Calendar.class.isAssignableFrom(type)) return CALENDAR;
+            if (java.util.Date.class.isAssignableFrom(type)) return UTIL_DATE;
+            if (java.util.TimeZone.class.isAssignableFrom(type)) return TIMEZONE;
             return null;
         }
     }

@@ -174,16 +174,63 @@ Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationEx
 
 ### JSON-B 3.0
 
-| Métrique | Valeur |
-|---|---|
-| Tests exécutés | 295 |
-| **PASS** | **75** (25 %) |
-| FAIL | 182 |
-| ERROR | 33 |
-| SKIP | 5 |
+| Métrique | 2026-05-03 baseline | Après M7.x |
+|---|---|---|
+| Tests exécutés | 295 | 295 |
+| **PASS** | **78** (26,4 %) | **248** (84,1 %) ✅ |
+| FAIL | 179 | 35 |
+| ERROR | 33 | 7 |
+| SKIP | 5 | 5 |
 
-Score initial à investiguer : naming strategies, configuration, mapping types tiers
-non encore couverts.
+**Modules à 100 %** :
+- `defaultmapping.basictypes.BasicJavaTypesMapping` (10/10)
+- `defaultmapping.dates.DatesMapping` (24/24)
+- `defaultmapping.collections.CollectionsMapping` (20/20)
+- `defaultmapping.classes.ClassesMapping` (23/23)
+- `defaultmapping.specifictypes.SpecificTypesMapping` (14/14)
+- `defaultmapping.jsonptypes.JSONPTypesMapping` (10/10)
+- `defaultmapping.attributeorder.AttributeOrderMapping` (2/2)
+- `defaultmapping.identifiers.NamesAndIdentifiersMapping` (2/2)
+- `defaultmapping.untyped.UntypedMapping` (2/2)
+- `defaultmapping.uniqueness.PropertyUniqueness` (1/1)
+- `defaultmapping.polymorphictypes.DefaultPolymorphicMapping` (1/1)
+- `customizedmapping.binarydata.BinaryDataCustomization` (3/3)
+- `customizedmapping.dateformat.DateFormatCustomization` (11/11)
+- `customizedmapping.nullhandling.NullHandlingCustomization` (14/14)
+- `customizedmapping.propertynames.PropertyNameCustomization` (20/20)
+- `customizedmapping.propertyorder.PropertyOrderCustomization` (8/8)
+- `customizedmapping.visibility.VisibilityCustomization` (3/3)
+
+**Fixes structurels majeurs** :
+- Bridges/synthetic methods filtrés en POJO introspection (M7.2)
+- Generic interface (`TypeContainer<T>`) → `dynamicWriter` runtime resolution (M7.2)
+- Abstract classes (`Number`, `TimeZone`, etc.) → résolution dynamique (M7.2)
+- `GenericArrayType` (ex. `Optional<String>[]`) géré explicitement (M7.5)
+- `byte[]` strategy: BYTE/BASE_64/BASE_64_URL via `JsonbConfig.BINARY_DATA_STRATEGY` (M7.1)
+- Date/Time builtins : Duration, Period, LocalTime, OffsetTime, ZoneId, ZoneOffset, MonthDay, YearMonth, Year, Date, Calendar, TimeZone, SimpleTimeZone (M7.3)
+- Collections raw type → impl spécifique (`Queue→LinkedList`, `Deque→ArrayDeque`, `SortedSet→TreeSet`, etc.) (M7.4)
+- Property visibility hierarchy : `private getter` masque `public field` (M7.5)
+- `final` fields skip côté lecture (M7.5)
+- Naming strategies (LOWER_CASE_WITH_DASHES/UNDERSCORES, UPPER_CAMEL_CASE, UPPER_CAMEL_CASE_WITH_SPACES, IDENTITY, CASE_INSENSITIVE) (M7.6)
+- PropertyOrderStrategy (LEXICOGRAPHICAL/REVERSE/ANY) + `@JsonbPropertyOrder` + classe parent → enfant (M7.6)
+- PropertyVisibilityStrategy via `JsonbConfig` / `@JsonbVisibility` sur classe / package (M7.6)
+- @JsonbTransient + autre annotation Jsonb → JsonbException (M7.6)
+- Détection de duplicate property names → JsonbException (M7.6)
+- @JsonbDateFormat / @JsonbNumberFormat à plusieurs niveaux (member, type, package, config) avec locale (M7.7)
+- @JsonbNillable propagation type/package + @JsonbProperty(nillable=true) (M7.7)
+- JSON-P types (JsonObject/JsonArray/JsonValue/JsonString/JsonNumber) traités natifs (M7.7)
+- @JsonbTypeInfo dispatch sur POJO non-record (M7.7)
+- `JsonbConfig.FAIL_ON_UNKNOWN_PROPERTIES`, `JsonbConfig.LOCALE` (M7.7)
+
+**Restant** (35 FAIL + 7 ERROR) :
+- IJSON strict mode (`JsonbConfig.STRICT_IJSON`) — 8 FAIL
+- @JsonbTypeAdapter / @JsonbTypeSerializer / @JsonbTypeDeserializer — 6 FAIL (gros chantier custom)
+- Polymorphism multi-level (`@JsonbTypeInfo` chains) — 8 FAIL
+- @JsonbCreator édge cases (Optional creator params) — 7 FAIL
+- @JsonbNumberFormat sur container hiérarchique — 5 FAIL
+- AnnotationTest exception cases — 2 FAIL
+- CDI integration — 2 ERROR (NoClassDefFound jakarta.enterprise.inject.se.SeContainer — env)
+- JSONBSigTest — 1 ERROR (challenge env)
 
 ### Plan d'attaque pour 100 % PASS
 
