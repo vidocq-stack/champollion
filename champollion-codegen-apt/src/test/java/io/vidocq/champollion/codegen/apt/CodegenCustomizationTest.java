@@ -89,6 +89,32 @@ class CodegenCustomizationTest {
     }
 
     @Test
+    void jsonb_nillable_forces_null_inclusion(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.cust;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                import jakarta.json.bind.annotation.JsonbNillable;
+                @JsonbStatic
+                public record Doc(String title, @JsonbNillable String description) {}
+                """;
+        Setup s = setup(tmp, "generated.cust.Doc", src);
+
+        Object inst = s.targetClass.getDeclaredConstructor(String.class, String.class)
+                .newInstance("Champollion", null);
+
+        var sw = new StringWriter();
+        try (JsonGenerator g = Json.createGenerator(sw)) {
+            s.staticBinding.write(g, inst);
+        }
+        // description avec null inclus, title sans @JsonbNillable laissé tranquille (non-null ici).
+        assertEquals("{\"title\":\"Champollion\",\"description\":null}", sw.toString());
+
+        // Differential : runtime doit produire le même JSON.
+        String runtimeJson = JsonbBuilder.create().toJson(inst, (Type) s.targetClass);
+        assertEquals(runtimeJson, sw.toString());
+    }
+
+    @Test
     void mixed_renamed_and_transient(@TempDir Path tmp) throws Exception {
         String src = """
                 package generated.cust;

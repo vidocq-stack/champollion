@@ -1,6 +1,7 @@
 package io.vidocq.champollion.jsonb.internal;
 
 import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.annotation.JsonbNillable;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTransient;
 import org.junit.jupiter.api.DisplayName;
@@ -73,6 +74,32 @@ class JsonbCustomizationTest {
                 Account a = j.fromJson("{\"username\":\"bob\",\"password\":\"s3cret\"}", Account.class);
                 assertEquals("bob", a.username);
                 assertNull(a.password, "Champ @JsonbTransient ne doit pas être affecté par la lecture.");
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbNillable — force-include null members")
+    class NillableInclusion {
+
+        record Doc(String title, @JsonbNillable String description) {}
+
+        @Test
+        void nillable_member_serialized_as_null_when_null() {
+            try (var j = JsonbBuilder.create()) {
+                String json = j.toJson(new Doc("Champollion", null));
+                // description doit apparaître avec null, pas être omise.
+                assertEquals("{\"title\":\"Champollion\",\"description\":null}", json);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        void non_nillable_null_remains_omitted() {
+            // title sans @JsonbNillable, son null reste omis.
+            record Plain(String title, String desc) {}
+            try (var j = JsonbBuilder.create()) {
+                String json = j.toJson(new Plain(null, null));
+                assertEquals("{}", json);
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }

@@ -1,6 +1,7 @@
 package io.vidocq.champollion.codegen.apt;
 
 import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+import jakarta.json.bind.annotation.JsonbNillable;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTransient;
 
@@ -170,11 +171,13 @@ final class BindingBytecodeEmitter {
         String[] jsonNames = new String[comps.size()];
         String[] preQuoted = new String[comps.size()];
         boolean[] transientFlag = new boolean[comps.size()];
+        boolean[] nillableFlag = new boolean[comps.size()];
         for (int i = 0; i < comps.size(); i++) {
             var c = comps.get(i);
             jsonNames[i] = jsonbName(c);
             preQuoted[i] = preQuoteJson(jsonNames[i]);
             transientFlag[i] = isJsonbTransient(c);
+            nillableFlag[i] = isJsonbNillable(c);
         }
 
         return ClassFile.of().build(CD_BINDING, cb -> {
@@ -185,7 +188,7 @@ final class BindingBytecodeEmitter {
 
             emitDefaultCtor(cb);
             emitTypeMethod(cb, CD_TARGET);
-            emitWrite(cb, CD_TARGET, comps, jsonNames, preQuoted, transientFlag);
+            emitWrite(cb, CD_TARGET, comps, jsonNames, preQuoted, transientFlag, nillableFlag);
             emitRead(cb, CD_TARGET, comps, jsonNames, transientFlag);
         });
     }
@@ -207,6 +210,13 @@ final class BindingBytecodeEmitter {
         if (c.getAnnotation(JsonbTransient.class) != null) return true;
         var accessor = c.getAccessor();
         return accessor != null && accessor.getAnnotation(JsonbTransient.class) != null;
+    }
+
+    /** Vrai si le composant ou son accesseur portent {@code @JsonbNillable}. */
+    private static boolean isJsonbNillable(RecordComponentElement c) {
+        if (c.getAnnotation(JsonbNillable.class) != null) return true;
+        var accessor = c.getAccessor();
+        return accessor != null && accessor.getAnnotation(JsonbNillable.class) != null;
     }
 
     /**
@@ -264,7 +274,7 @@ final class BindingBytecodeEmitter {
     // ============================================================
 
     private static void emitWrite(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps,
-                                  String[] jsonNames, String[] preQuoted, boolean[] transientFlag) {
+                                  String[] jsonNames, String[] preQuoted, boolean[] transientFlag, boolean[] nillableFlag) {
         // Locals : 0 this, 1 g, 2 v(Object), 3 t(Target)
         cb.withMethodBody("write",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT),
@@ -294,7 +304,7 @@ final class BindingBytecodeEmitter {
 
                     for (int i = 0; i < comps.size(); i++) {
                         if (transientFlag[i]) continue;   // @JsonbTransient : pas d'écriture
-                        emitWriteComponent(code, CD_TARGET, comps.get(i), jsonNames[i], preQuoted[i]);
+                        emitWriteComponent(code, CD_TARGET, comps.get(i), jsonNames[i], preQuoted[i], nillableFlag[i]);
                     }
 
                     // g.writeEnd();
@@ -306,7 +316,7 @@ final class BindingBytecodeEmitter {
                 });
     }
 
-    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String jsonName, String preQuoted) {
+    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String jsonName, String preQuoted, boolean nillable) {
         // 'name' = nom de la méthode accessor sur le record (toujours le simpleName du composant).
         // 'jsonName' = nom du membre dans le JSON (peut différer via @JsonbProperty).
         String name = c.getSimpleName().toString();
@@ -348,7 +358,7 @@ final class BindingBytecodeEmitter {
                 if (isEnum(tm)) {
                     emitKeyValueEnum(code, CD_TARGET, name, jsonName, preQuoted, (DeclaredType) tm);
                 } else {
-                    emitKeyValueString(code, CD_TARGET, name, jsonName, preQuoted);
+                    emitKeyValueString(code, CD_TARGET, name, jsonName, preQuoted, nillable);
                 }
             }
             case ARRAY -> emitWriteArray(code, CD_TARGET, name, jsonName, (ArrayType) tm);
@@ -408,13 +418,14 @@ final class BindingBytecodeEmitter {
         code.labelBinding(end);
     }
 
-    /** Voie rapide / lente pour les composants String avec gestion null. */
-    private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted) {
+    /** Voie rapide / lente pour les composants String avec gestion null + @JsonbNillable. */
+    private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted, boolean nillable) {
         Label skip = code.newLabel();
-        // if (t.name() == null) skip
+        Label nullPath = code.newLabel();
+        // if (t.name() == null) goto nullPath sinon proceed
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
-        code.ifnull(skip);
+        code.ifnull(nullPath);
 
         Label slow = code.newLabel();
         Label end = code.newLabel();
@@ -445,6 +456,22 @@ final class BindingBytecodeEmitter {
         code.invokeinterface(CD_JSON_GENERATOR, "write",
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
         code.pop();
+        code.goto_(end);
+
+        // NULL PATH : si @JsonbNillable, écrire la clé + null ; sinon skip.
+        code.labelBinding(nullPath);
+        if (nillable) {
+            code.aload(1);
+            code.ldc(jsonName);
+            code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                    MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+            code.pop();
+            code.aload(1);
+            code.invokeinterface(CD_JSON_GENERATOR, "writeNull",
+                    MethodTypeDesc.of(CD_JSON_GENERATOR));
+            code.pop();
+        }
+
         code.labelBinding(end);
         code.labelBinding(skip);
     }

@@ -190,18 +190,17 @@ final class RuntimeBindingRegistry {
         RecordComponent[] comps = type.getRecordComponents();
         var props = new ArrayList<Property>(comps.length);
         for (RecordComponent c : comps) {
-            // @JsonbTransient : exclu (consultable sur le component, l'accessor ou le field).
             if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
             try { accessor.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(c, c.getName());
-            props.add(new Property(name, new MethodAccessor(accessor), writerFor(c.getGenericType())));
+            boolean nillable = isJsonbNillable(c);
+            props.add(new Property(name, new MethodAccessor(accessor), writerFor(c.getGenericType()), nillable));
         }
         return (g, value) -> writeObject(g, value, props);
     }
 
     private BindingWriter resolvePojo(Class<?> type) {
-        // M4.1 : champs publics + getters conventionnels. M4.4 : @JsonbTransient + @JsonbProperty.
         var props = new ArrayList<Property>();
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
@@ -209,7 +208,8 @@ final class RuntimeBindingRegistry {
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
-            props.add(new Property(name, new FieldAccessor(f), writerFor(f.getGenericType())));
+            boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
+            props.add(new Property(name, new FieldAccessor(f), writerFor(f.getGenericType()), nillable));
         }
         if (props.isEmpty()) {
             // Fallback : toString() pour les types opaques sans builtin et sans champs.
@@ -230,6 +230,16 @@ final class RuntimeBindingRegistry {
         if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) return true;
         Method accessor = c.getAccessor();
         return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
+    }
+
+    /**
+     * Vrai si le composant ou son accesseur portent {@code @JsonbNillable}.
+     * Spec §4.3.3 : force l'écriture du membre même quand sa valeur est null.
+     */
+    private static boolean isJsonbNillable(RecordComponent c) {
+        if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)) return true;
+        Method accessor = c.getAccessor();
+        return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
     }
 
     /** Renommage via {@code @JsonbProperty(name)} sur un component ; fallback {@code defaultName}. */
@@ -260,10 +270,19 @@ final class RuntimeBindingRegistry {
             }
             if (v == null) {
                 // Spec §3.14.2 : null members omis par défaut.
+                // §4.3.3 @JsonbNillable : force-include.
+                if (p.nillable) {
+                    g.writeKey(p.name);
+                    g.writeNull();
+                }
                 continue;
             }
             if (v instanceof java.util.Optional<?> opt && opt.isEmpty()) {
-                // Optional.empty() = absence sémantique → membre omis.
+                // Optional.empty() = absence sémantique → membre omis (sauf @JsonbNillable).
+                if (p.nillable) {
+                    g.writeKey(p.name);
+                    g.writeNull();
+                }
                 continue;
             }
             g.writeKey(p.name);
@@ -285,7 +304,11 @@ final class RuntimeBindingRegistry {
         public Object read(Object target) throws Throwable { return f.get(target); }
     }
 
-    private record Property(String name, Accessor accessor, BindingWriter writer) {}
+    private record Property(String name, Accessor accessor, BindingWriter writer, boolean nillable) {
+        Property(String name, Accessor accessor, BindingWriter writer) {
+            this(name, accessor, writer, false);
+        }
+    }
 
     // ============================================================
     // Built-in writers
