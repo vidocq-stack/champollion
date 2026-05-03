@@ -91,12 +91,19 @@ Scan complet du flux d'événements (`hasNext`/`next`) sans construction d'objec
 
 Émission d'un objet structuré équivalent à `mediumJson()` via API streaming.
 
+> **Note méthodologique sur P2** — le bench utilise `StringWriter` comme cible,
+> qui bufferise déjà en interne. L'optimisation P2 (`BufferedWriter` autour de
+> tout `Writer` non-déjà-bufferisé) n'apparaît donc pas dans cette table —
+> elle se manifestera sur les cibles réelles `OutputStreamWriter` (cas REST
+> via `entityStream`). Pour mesurer P2, refaire le bench avec
+> `OutputStreamWriter(new FileOutputStream(...))` ou similaire.
+
 ### Throughput (ops/µs)
 
 | Workload | Champollion | Parsson | Ratio |
 |---|---:|---:|---:|
-| SMALL  | 5,915 | 15,207 | 0,39× |
-| MEDIUM | 0,631 | 2,184  | 0,29× |
+| SMALL  | 5,918 | 15,147 | 0,39× |
+| MEDIUM | 0,620 | 2,218  | 0,28× |
 
 ### Latence (µs/op)
 

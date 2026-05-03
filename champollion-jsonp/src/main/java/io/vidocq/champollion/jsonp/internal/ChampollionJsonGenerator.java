@@ -6,6 +6,7 @@ import jakarta.json.JsonValue;
 import jakarta.json.stream.JsonGenerationException;
 import jakarta.json.stream.JsonGenerator;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.Writer;
 import java.math.BigDecimal;
@@ -42,7 +43,15 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
         if (out == null) throw new IllegalArgumentException("writer is null");
-        this.out = out;
+        // P2 — buffer 1 KB par défaut sur le Writer cible. Évite des dizaines
+        // de petits writes par valeur sur OutputStreamWriter/StringWriter et
+        // amortit le coût d'écriture des escapes string char-par-char.
+        // Si l'appelant a déjà fourni un Writer bufferisé, on évite la double
+        // bufferisation.
+        this.out = (out instanceof BufferedWriter || out instanceof java.io.StringWriter
+                || out instanceof java.io.CharArrayWriter)
+                ? out
+                : new BufferedWriter(out, 1024);
         this.pretty = pretty;
         this.stack.push(Ctx.ROOT_BEFORE);
     }
