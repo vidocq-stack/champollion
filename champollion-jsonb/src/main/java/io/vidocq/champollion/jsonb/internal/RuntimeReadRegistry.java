@@ -758,7 +758,9 @@ final class RuntimeReadRegistry {
         Object inst;
         try { inst = ctor.newInstance(); }
         catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed", ex); }
-        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
+        while (true) {
+            e = p.next();
+            if (e == JsonParser.Event.END_OBJECT) break;
             if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
             String key = p.getString();
             BeanWriter w = writers.get(key);
@@ -769,6 +771,9 @@ final class RuntimeReadRegistry {
                 skipValue(p);
             } else {
                 w.apply(inst, p);
+                // Si un BindingReader custom (ex. JsonbDeserializer du TCK) a sur-consommé
+                // jusqu'au END_OBJECT du parent, on sort proprement.
+                if (p.currentEvent() == JsonParser.Event.END_OBJECT) break;
             }
         }
         return inst;
@@ -1303,6 +1308,9 @@ final class RuntimeReadRegistry {
         @Override public Event next() {
             if (primed != null) { var e = primed; primed = null; return e; }
             return delegate.next();
+        }
+        @Override public Event currentEvent() {
+            return primed != null ? null : delegate.currentEvent();
         }
         @Override public String getString() { return delegate.getString(); }
         @Override public boolean isIntegralNumber() { return delegate.isIntegralNumber(); }
