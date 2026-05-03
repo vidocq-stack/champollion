@@ -362,7 +362,21 @@ final class RuntimeReadRegistry {
             throw new JsonbException("No accessible no-arg constructor for " + type
                     + " (consider adding @JsonbCreator).");
         }
-        try { ctor.setAccessible(true); } catch (Exception ignore) {}
+        // §R-2 — préférer publicLookup pour les POJOs publics (évite opens côté
+        // consommateur). Fallback Reflection pour ctor protected ou type non-exporté.
+        java.lang.invoke.MethodHandle ctorMh = null;
+        if (Modifier.isPublic(cMods) && Modifier.isPublic(type.getModifiers())) {
+            try {
+                ctorMh = java.lang.invoke.MethodHandles.publicLookup()
+                        .findConstructor(type, java.lang.invoke.MethodType.methodType(void.class));
+            } catch (NoSuchMethodException | IllegalAccessException ignored) {
+                ctorMh = null;
+            }
+        }
+        if (ctorMh == null) {
+            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+        }
+        final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
         // Découverte des setters JavaBean (§3.7) + champs publics fallback.
         Map<String, BeanWriter> writersByName = new HashMap<>();
 
@@ -437,7 +451,24 @@ final class RuntimeReadRegistry {
                     reader = numR != null ? numR : readerFor(m.getGenericParameterTypes()[0]);
                 }
             }
-            writersByName.put(name, new MethodSetter(m, reader));
+            // §R-2 — privilégier publicLookup pour le setter quand il est public
+            // ET dans une classe publique (JPMS strict). Fallback Reflection sinon.
+            BeanWriter setter = null;
+            if (Modifier.isPublic(m.getModifiers()) && Modifier.isPublic(m.getDeclaringClass().getModifiers())) {
+                try {
+                    var mh = java.lang.invoke.MethodHandles.publicLookup()
+                            .findVirtual(m.getDeclaringClass(), m.getName(),
+                                    java.lang.invoke.MethodType.methodType(void.class, paramType));
+                    setter = new MhSetter(mh, m, reader);
+                } catch (NoSuchMethodException | IllegalAccessException ignored) {
+                    setter = null;
+                }
+            }
+            if (setter == null) {
+                try { m.setAccessible(true); } catch (Exception ignore) {}
+                setter = new MethodSetter(m, reader);
+            }
+            writersByName.put(name, setter);
         }
 
         // 2) Champs publics non couverts par un setter et non masqués.
@@ -463,9 +494,11 @@ final class RuntimeReadRegistry {
             for (var entry : writersByName.entrySet()) {
                 BeanWriter bw = entry.getValue();
                 boolean visible;
-                if (bw instanceof MethodSetter ms) {
-                    boolean methodVisible = visibility.isVisible(ms.m);
-                    String prop = RuntimeBindingRegistry.beanSetterOf(ms.m);
+                Method method = bw instanceof MethodSetter ms ? ms.m
+                        : bw instanceof MhSetter mhs ? mhs.m : null;
+                if (method != null) {
+                    boolean methodVisible = visibility.isVisible(method);
+                    String prop = RuntimeBindingRegistry.beanSetterOf(method);
                     Field underlying = prop == null ? null : findFieldByName(type, prop);
                     visible = underlying == null ? methodVisible : (methodVisible || visibility.isVisible(underlying));
                 } else if (bw instanceof FieldSetter fs) {
@@ -479,7 +512,8 @@ final class RuntimeReadRegistry {
             writersByName.putAll(keep);
         }
 
-        return parser -> readObjectAndApply(parser, ctor, writersByName);
+        final Constructor<?> finalCtor = ctor;
+        return parser -> readObjectAndApply(parser, finalCtor, finalCtorMh, type, writersByName);
     }
 
     private jakarta.json.bind.config.PropertyVisibilityStrategy effectiveVisibility(Class<?> type) {
@@ -766,6 +800,27 @@ final class RuntimeReadRegistry {
         }
     }
 
+    /**
+     * Setter via {@link java.lang.invoke.MethodHandle} (publicLookup) — utilisé
+     * pour les POJOs publics avec setters publics. Évite {@code setAccessible}
+     * et {@code opens}, conforme JPMS strict.
+     */
+    private record MhSetter(java.lang.invoke.MethodHandle mh, Method m, BindingReader reader) implements BeanWriter {
+        public void apply(Object target, JsonParser p) {
+            Object value;
+            try { value = reader.read(p); }
+            catch (JsonbException e) { throw e; }
+            catch (RuntimeException e) { throw new JsonbException("Failed to read property " + m.getName() + ": " + e.getMessage(), e); }
+            applyValue(target, value);
+        }
+        public void applyValue(Object target, Object value) {
+            try { mh.invoke(target, value); }
+            catch (Throwable t) {
+                throw new JsonbException("Setter failed on '" + m.getName() + "': " + t.getMessage(), t);
+            }
+        }
+    }
+
     private record FieldSetter(Field f, BindingReader reader) implements BeanWriter {
         public void apply(Object target, JsonParser p) {
             Object value;
@@ -782,13 +837,20 @@ final class RuntimeReadRegistry {
         }
     }
 
-    private Object readObjectAndApply(JsonParser p, Constructor<?> ctor, Map<String, BeanWriter> writers) {
+    private Object readObjectAndApply(JsonParser p, Constructor<?> ctor,
+                                      java.lang.invoke.MethodHandle ctorMh, Class<?> type,
+                                      Map<String, BeanWriter> writers) {
         JsonParser.Event e = p.next();
         if (e == JsonParser.Event.VALUE_NULL) return null;
         if (e != JsonParser.Event.START_OBJECT) throw new JsonbException("Expected object, got " + e);
         Object inst;
-        try { inst = ctor.newInstance(); }
-        catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed", ex); }
+        try {
+            // §R-2 — privilégier MethodHandle (publicLookup) pour les POJOs publics.
+            if (ctorMh != null) inst = ctorMh.invoke();
+            else inst = ctor.newInstance();
+        } catch (Throwable ex) {
+            throw new JsonbException("ctor failed for " + type, ex);
+        }
         while (true) {
             e = p.next();
             if (e == JsonParser.Event.END_OBJECT) break;
