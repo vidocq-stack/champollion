@@ -64,6 +64,7 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_JSON_PARSER_EVENT = ClassDesc.of("jakarta.json.stream.JsonParser$Event");
     private static final ClassDesc CD_ARRAYLIST = ClassDesc.of("java.util.ArrayList");
     private static final ClassDesc CD_BIGDECIMAL = ClassDesc.of("java.math.BigDecimal");
+    private static final ClassDesc CD_OPTIONAL = ClassDesc.of("java.util.Optional");
 
     /**
      * Slots locaux fixes utilisés par les méthodes de container côté <em>write</em>.
@@ -87,6 +88,18 @@ final class BindingBytecodeEmitter {
                     String fqn = dt.asElement().toString();
                     if ("java.lang.String".equals(fqn)) continue;
                     if (dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM) continue;
+                    if ("java.util.Optional".equals(fqn)) {
+                        var args = dt.getTypeArguments();
+                        if (args.size() != 1) return false;
+                        TypeMirror inner = args.get(0);
+                        boolean okInner = inner.getKind() == TypeKind.DECLARED
+                                && (("java.lang.String".equals(((DeclaredType) inner).asElement().toString()))
+                                    || ((DeclaredType) inner).asElement().getKind()
+                                            == javax.lang.model.element.ElementKind.ENUM
+                                    || isLeafBox(((DeclaredType) inner).asElement().toString()));
+                        if (!okInner) return false;
+                        continue;
+                    }
                     return false;
                 }
                 case ARRAY -> {
@@ -107,6 +120,14 @@ final class BindingBytecodeEmitter {
     private static boolean isEnum(TypeMirror tm) {
         return tm.getKind() == TypeKind.DECLARED
                 && ((DeclaredType) tm).asElement().getKind() == javax.lang.model.element.ElementKind.ENUM;
+    }
+
+    private static boolean isLeafBox(String fqn) {
+        return switch (fqn) {
+            case "java.lang.Integer", "java.lang.Long", "java.lang.Double", "java.lang.Float",
+                 "java.lang.Short", "java.lang.Byte", "java.lang.Boolean" -> true;
+            default -> false;
+        };
     }
 
     /** Émet le bytecode du binding pour {@code record}. */
@@ -254,6 +275,10 @@ final class BindingBytecodeEmitter {
                 code.pop();
             }
             case DECLARED -> {
+                if (isOptional(tm)) {
+                    emitWriteOptional(code, CD_TARGET, name, (DeclaredType) tm);
+                    return;
+                }
                 if (isEnum(tm)) {
                     // if (t.name() != null) g.write("name", t.<accessor>().name());
                     ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
@@ -399,6 +424,168 @@ final class BindingBytecodeEmitter {
         code.labelBinding(skipNull);
     }
 
+    // ============================================================
+    // Optional<X>
+    // ============================================================
+
+    /**
+     * Émet le bytecode write pour {@code Optional<X>}.
+     *
+     * <p>Si l'Optional est null ou empty → pas d'émission (cohérent runtime §3.14.2).
+     * Sinon, on extrait via {@code .get()} et on émet via {@code g.write(name, val)}
+     * avec unbox au besoin pour les wrappers primitifs.</p>
+     */
+    private static void emitWriteOptional(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType optTm) {
+        TypeMirror inner = optTm.getTypeArguments().get(0);
+        String innerFqn = ((DeclaredType) inner).asElement().toString();
+
+        Label skip = code.newLabel();
+
+        // if (t.field() == null) skip
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_OPTIONAL));
+        code.ifnull(skip);
+
+        // if (!t.field().isPresent()) skip
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_OPTIONAL));
+        code.invokevirtual(CD_OPTIONAL, "isPresent", MethodTypeDesc.of(ConstantDescs.CD_boolean));
+        code.ifeq(skip);
+
+        // g.writeKey(name);
+        code.aload(1);
+        code.ldc(name);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+
+        // g.write(t.field().get().<unbox>());
+        code.aload(1);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_OPTIONAL));
+        code.invokevirtual(CD_OPTIONAL, "get", MethodTypeDesc.of(CD_OBJECT));
+
+        if (isEnum(inner)) {
+            ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
+            code.checkcast(CD_ENUM);
+            code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name", MethodTypeDesc.of(CD_STRING));
+            code.invokeinterface(CD_JSON_GENERATOR, "write",
+                    MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        } else {
+            switch (innerFqn) {
+                case "java.lang.String" -> {
+                    code.checkcast(CD_STRING);
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+                }
+                case "java.lang.Integer", "java.lang.Short", "java.lang.Byte" -> {
+                    code.checkcast(ConstantDescs.CD_Integer);
+                    code.invokevirtual(ConstantDescs.CD_Integer, "intValue",
+                            MethodTypeDesc.of(ConstantDescs.CD_int));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_int));
+                }
+                case "java.lang.Long" -> {
+                    code.checkcast(ConstantDescs.CD_Long);
+                    code.invokevirtual(ConstantDescs.CD_Long, "longValue",
+                            MethodTypeDesc.of(ConstantDescs.CD_long));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_long));
+                }
+                case "java.lang.Double", "java.lang.Float" -> {
+                    code.checkcast(ConstantDescs.CD_Double);
+                    code.invokevirtual(ConstantDescs.CD_Double, "doubleValue",
+                            MethodTypeDesc.of(ConstantDescs.CD_double));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_double));
+                }
+                case "java.lang.Boolean" -> {
+                    code.checkcast(ConstantDescs.CD_Boolean);
+                    code.invokevirtual(ConstantDescs.CD_Boolean, "booleanValue",
+                            MethodTypeDesc.of(ConstantDescs.CD_boolean));
+                    code.invokeinterface(CD_JSON_GENERATOR, "write",
+                            MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_boolean));
+                }
+                default -> throw new IllegalStateException("Unsupported Optional inner: " + innerFqn);
+            }
+        }
+        code.pop();
+        code.labelBinding(skip);
+    }
+
+    /**
+     * Émet le bytecode read pour {@code Optional<X>}.
+     *
+     * <p>{@code _ev == VALUE_NULL} → {@code Optional.empty()}, sinon
+     * {@code Optional.of(<read leaf>)} où le leaf est lu via le parser et boxé.</p>
+     */
+    private static void emitReadOptional(CodeBuilder code, DeclaredType optTm, int slot) {
+        TypeMirror inner = optTm.getTypeArguments().get(0);
+        String innerFqn = ((DeclaredType) inner).asElement().toString();
+
+        Label nul = code.newLabel();
+        Label join = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_NULL", CD_JSON_PARSER_EVENT);
+        code.if_acmpne(nul);
+        code.invokestatic(CD_OPTIONAL, "empty", MethodTypeDesc.of(CD_OPTIONAL));
+        code.goto_(join);
+        code.labelBinding(nul);
+
+        // Lit la valeur leaf et la boxe en Object pour Optional.of(Object).
+        if (isEnum(inner)) {
+            ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
+            code.aload(1);
+            code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+            code.invokestatic(CD_ENUM, "valueOf", MethodTypeDesc.of(CD_ENUM, CD_STRING));
+        } else {
+            switch (innerFqn) {
+                case "java.lang.String" -> {
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+                }
+                case "java.lang.Integer", "java.lang.Short", "java.lang.Byte" -> {
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getInt", MethodTypeDesc.of(ConstantDescs.CD_int));
+                    code.invokestatic(ConstantDescs.CD_Integer, "valueOf",
+                            MethodTypeDesc.of(ConstantDescs.CD_Integer, ConstantDescs.CD_int));
+                }
+                case "java.lang.Long" -> {
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getLong", MethodTypeDesc.of(ConstantDescs.CD_long));
+                    code.invokestatic(ConstantDescs.CD_Long, "valueOf",
+                            MethodTypeDesc.of(ConstantDescs.CD_Long, ConstantDescs.CD_long));
+                }
+                case "java.lang.Double", "java.lang.Float" -> {
+                    code.aload(1);
+                    code.invokeinterface(CD_JSON_PARSER, "getBigDecimal", MethodTypeDesc.of(CD_BIGDECIMAL));
+                    code.invokevirtual(CD_BIGDECIMAL, "doubleValue",
+                            MethodTypeDesc.of(ConstantDescs.CD_double));
+                    code.invokestatic(ConstantDescs.CD_Double, "valueOf",
+                            MethodTypeDesc.of(ConstantDescs.CD_Double, ConstantDescs.CD_double));
+                }
+                case "java.lang.Boolean" -> {
+                    Label fal = code.newLabel();
+                    Label j2 = code.newLabel();
+                    code.aload(2);
+                    code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_TRUE", CD_JSON_PARSER_EVENT);
+                    code.if_acmpne(fal);
+                    code.iconst_1();
+                    code.goto_(j2);
+                    code.labelBinding(fal);
+                    code.iconst_0();
+                    code.labelBinding(j2);
+                    code.invokestatic(ConstantDescs.CD_Boolean, "valueOf",
+                            MethodTypeDesc.of(ConstantDescs.CD_Boolean, ConstantDescs.CD_boolean));
+                }
+                default -> throw new IllegalStateException("Unsupported Optional inner: " + innerFqn);
+            }
+        }
+        code.invokestatic(CD_OPTIONAL, "of", MethodTypeDesc.of(CD_OPTIONAL, CD_OBJECT));
+        code.labelBinding(join);
+        code.astore(slot);
+    }
+
     /** ClassDesc d'un array dont la composante est {@code compTm}. */
     private static ClassDesc arrayCDOf(TypeMirror compTm) {
         return switch (compTm.getKind()) {
@@ -533,9 +720,24 @@ final class BindingBytecodeEmitter {
             case DOUBLE -> { code.dconst_0(); code.dstore(slot); }
             case FLOAT -> { code.fconst_0(); code.fstore(slot); }
             case BOOLEAN -> { code.iconst_0(); code.istore(slot); }
-            case DECLARED, ARRAY -> { code.aconst_null(); code.astore(slot); }
+            case DECLARED -> {
+                // Optional<X> : default = Optional.empty() (cohérent avec le source path).
+                if (isOptional(tm)) {
+                    code.invokestatic(CD_OPTIONAL, "empty", MethodTypeDesc.of(CD_OPTIONAL));
+                    code.astore(slot);
+                } else {
+                    code.aconst_null();
+                    code.astore(slot);
+                }
+            }
+            case ARRAY -> { code.aconst_null(); code.astore(slot); }
             default -> throw new IllegalStateException("Unsupported");
         }
+    }
+
+    private static boolean isOptional(TypeMirror tm) {
+        return tm.getKind() == TypeKind.DECLARED
+                && "java.util.Optional".equals(((DeclaredType) tm).asElement().toString());
     }
 
     private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot, int tmpBase) {
@@ -600,7 +802,9 @@ final class BindingBytecodeEmitter {
                 code.istore(slot);
             }
             case DECLARED -> {
-                if (isEnum(tm)) {
+                if (isOptional(tm)) {
+                    emitReadOptional(code, (DeclaredType) tm, slot);
+                } else if (isEnum(tm)) {
                     // <Enum>.valueOf(p.getString())
                     ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
                     code.aload(1);
