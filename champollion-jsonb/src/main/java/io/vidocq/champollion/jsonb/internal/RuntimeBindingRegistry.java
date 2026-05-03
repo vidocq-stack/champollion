@@ -1148,32 +1148,73 @@ final class RuntimeBindingRegistry {
      * Cherche {@code @JsonbTypeInfo} sur {@code type} ou ses supertypes (interfaces et
      * superclasses). Spec §4.8 : peut être déclarée sur l'interface sealed parente.
      *
-     * <p>Lève {@link JsonbException} si plusieurs ancêtres distincts portent
-     * {@code @JsonbTypeInfo} (multi-inheritance non supportée — TCK
+     * <p>Pour une chaîne linéaire d'héritage (A → B → C où chaque interface porte
+     * @JsonbTypeInfo), retourne l'annotation la PLUS PROCHE (la plus spécifique).
+     * Lève {@link JsonbException} uniquement quand plusieurs interfaces SŒURS portent
+     * indépendamment l'annotation (vraie multi-inheritance — TCK
      * {@code TypeInfoExceptionsTest.testSerializeTypeInfoMultiInheritance}).</p>
      */
     static jakarta.json.bind.annotation.JsonbTypeInfo findTypeInfo(Class<?> type) {
         if (type == null || type == Object.class) return null;
         var direct = type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
         if (direct != null) return direct;
-        // Collecter @JsonbTypeInfo via toutes les interfaces / la superclass.
-        java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> found = new java.util.ArrayList<>();
+        // Collecter sur les interfaces directes ET la superclass.
+        java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> direct1 = new java.util.ArrayList<>();
+        for (Class<?> i : type.getInterfaces()) {
+            var d = i.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+            if (d != null) direct1.add(d);
+        }
+        if (type.getSuperclass() != null && type.getSuperclass() != Object.class) {
+            var d = type.getSuperclass().getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+            if (d != null) direct1.add(d);
+        }
+        // Si plusieurs ancêtres directs portent @JsonbTypeInfo, multi-inheritance non supportée.
+        if (direct1.size() > 1) {
+            var first = direct1.get(0);
+            for (int i = 1; i < direct1.size(); i++) {
+                if (direct1.get(i) != first) {
+                    throw new JsonbException("Multi-inheritance of @JsonbTypeInfo is not supported on " + type.getName());
+                }
+            }
+            return first;
+        }
+        if (direct1.size() == 1) return direct1.get(0);
+        // Aucune annotation directe : chercher récursivement sur les ancêtres.
         for (Class<?> i : type.getInterfaces()) {
             var f = findTypeInfo(i);
-            if (f != null) found.add(f);
+            if (f != null) return f;
         }
-        var fromSuper = findTypeInfo(type.getSuperclass());
-        if (fromSuper != null) found.add(fromSuper);
-        if (found.isEmpty()) return null;
-        if (found.size() == 1) return found.get(0);
-        // Plusieurs : déduplication par identité d'annotation.
-        var first = found.get(0);
-        for (int i = 1; i < found.size(); i++) {
-            if (found.get(i) != first) {
-                throw new JsonbException("Multi-inheritance of @JsonbTypeInfo is not supported on " + type.getName());
+        return findTypeInfo(type.getSuperclass());
+    }
+
+    /**
+     * Collecte la chaîne complète de {@code @JsonbTypeInfo} dans l'ordre
+     * <strong>parent → enfant</strong> (le plus général en premier). Utilisé pour
+     * écrire des discriminators en cascade (MultipleTypeInfoTest).
+     */
+    static java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> typeInfoChain(Class<?> type) {
+        java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> chain = new java.util.ArrayList<>();
+        // Walk linéaire : à chaque niveau, prendre l'annotation directe la plus PROCHE
+        // (depuis type vers les ancêtres) et l'ajouter au CHEMIN.
+        Class<?> current = type;
+        while (current != null && current != Object.class) {
+            var direct = current.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+            if (direct != null) chain.add(0, direct); // parent en premier
+            // Cherche dans les interfaces directes
+            for (Class<?> i : current.getInterfaces()) {
+                addChainFromInterface(i, chain);
             }
+            current = current.getSuperclass();
         }
-        return first;
+        return chain;
+    }
+
+    private static void addChainFromInterface(Class<?> i, java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> chain) {
+        var direct = i.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+        if (direct != null && !chain.contains(direct)) chain.add(0, direct);
+        for (Class<?> p : i.getInterfaces()) {
+            addChainFromInterface(p, chain);
+        }
     }
 
     /**
@@ -1215,6 +1256,18 @@ final class RuntimeBindingRegistry {
         }
     }
 
+    /**
+     * Cherche dans {@code info.value()} l'alias correspondant à un subtype assignable
+     * depuis {@code concrete}. Retourne null si aucun match (peut arriver pour des
+     * niveaux intermédiaires d'une cascade, ex. Animal/Dog interfaces sans subtype direct).
+     */
+    private static String aliasFor(jakarta.json.bind.annotation.JsonbTypeInfo info, Class<?> concrete) {
+        for (var sub : info.value()) {
+            if (sub.type().isAssignableFrom(concrete)) return sub.alias();
+        }
+        return null;
+    }
+
     private static Class<?> bearerOfTypeInfo(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
         if (type == null || type == Object.class) return null;
         if (type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class) == info) return type;
@@ -1231,24 +1284,21 @@ final class RuntimeBindingRegistry {
      * de la classe concrète.
      */
     private BindingWriter polymorphicWriter(jakarta.json.bind.annotation.JsonbTypeInfo info) {
-        String key = info.key();
-        java.util.Map<Class<?>, String> aliasByType = new java.util.HashMap<>();
-        for (var sub : info.value()) {
-            aliasByType.put(sub.type(), sub.alias());
-        }
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             Class<?> concrete = value.getClass();
-            // Validations §4.8 (TypeInfoExceptionsTest) : aliases pointent vers des subtypes
-            // assignables, et la clé ne collide pas avec une propriété.
+            // Validations §4.8 sur la première annotation rencontrée.
             validateTypeInfo(concrete, info);
-            String alias = aliasByType.get(concrete);
-            if (alias == null) {
-                throw new JsonbException("@JsonbTypeInfo : aucun @JsonbSubtype matchant pour " + concrete);
+            // Cascade : écrire chaque (key, alias) de la chaîne d'@JsonbTypeInfo
+            // depuis l'ancêtre le plus général jusqu'à l'enfant le plus spécifique
+            // (MultipleTypeInfoTest.testMultipleTypeInfoPropertySerialization).
+            var chain = typeInfoChain(concrete);
+            g.writeStartObject();
+            for (var ann : chain) {
+                String alias = aliasFor(ann, concrete);
+                if (alias != null) g.write(ann.key(), alias);
             }
             List<Property> props = concretePropertiesOf(concrete);
-            g.writeStartObject();
-            g.write(key, alias);
             for (Property p : props) {
                 Object v;
                 try { v = p.accessor.read(value); }
@@ -1320,6 +1370,9 @@ final class RuntimeBindingRegistry {
             BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
             props.add(new Property(name, new FieldAccessor(f), w, nillable));
         }
+        // Appliquer le tri parent → enfant + lex (cas hiérarchique avec @JsonbTypeInfo,
+        // MultipleTypeInfoTest.testSerializeMultipleTypeInfoInSingleChain).
+        applyPropertyOrder(type, props);
         return props;
     }
 

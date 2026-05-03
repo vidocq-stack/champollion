@@ -243,8 +243,11 @@ final class RuntimeReadRegistry {
         BindingReader b = Builtins.lookup(type);
         if (b != null) return b;
         if (type.isEnum()) return enumReader(type);
-        // M4.5 : polymorphisme — si @JsonbTypeInfo, dispatch sur l'alias.
-        var info = RuntimeBindingRegistry.findTypeInfo(type);
+        // M4.5 : polymorphisme — si @JsonbTypeInfo, dispatch sur la cascade.
+        // Pour suivre l'ordre d'écriture (ancêtre le plus général en premier), on
+        // démarre la lecture avec l'@JsonbTypeInfo du TOP de la chaîne.
+        var chain = RuntimeBindingRegistry.typeInfoChain(type);
+        var info = chain.isEmpty() ? null : chain.get(0);
         if (info != null) return polymorphicReader(info);
         if (type.isRecord()) return resolveRecord(type);
         if (type.isPrimitive()) return classCache.get(box(type));
@@ -1375,14 +1378,7 @@ final class RuntimeReadRegistry {
      * faudrait bufferiser tout l'objet — reporté.</p>
      */
     private BindingReader polymorphicReader(jakarta.json.bind.annotation.JsonbTypeInfo info) {
-        String discriminantKey = info.key();
-        Map<String, Class<?>> aliasToType = new HashMap<>();
-        for (var sub : info.value()) {
-            aliasToType.put(sub.alias(), sub.type());
-        }
-        // Validation : multi-inheritance / alias-not-subtype / key-collision via les
-        // sous-types déclarés (TypeInfoExceptionsTest.testDeserializeTypeInfoMultiInheritance,
-        // testInvalidAlias, testNameCollision).
+        // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest).
         for (var sub : info.value()) {
             RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
         }
@@ -1392,23 +1388,37 @@ final class RuntimeReadRegistry {
             if (e != JsonParser.Event.START_OBJECT) {
                 throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
             }
-            // Lit la première clé : doit être discriminantKey
-            e = parser.next();
-            if (e != JsonParser.Event.KEY_NAME) {
-                throw new JsonbException("Expected KEY_NAME, got " + e);
-            }
-            String key = parser.getString();
-            if (!key.equals(discriminantKey)) {
-                throw new JsonbException("Expected discriminator '" + discriminantKey + "' as first member, got '" + key + "'");
-            }
-            e = parser.next();
-            if (e != JsonParser.Event.VALUE_STRING) {
-                throw new JsonbException("Expected VALUE_STRING for discriminator, got " + e);
-            }
-            String alias = parser.getString();
-            Class<?> concrete = aliasToType.get(alias);
-            if (concrete == null) {
-                throw new JsonbException("Unknown @JsonbSubtype alias: " + alias);
+            // Cascade : à partir de la première discriminator key, suivre la chaîne
+            // d'@JsonbTypeInfo de l'ancêtre vers l'enfant. Chaque étape : lire la
+            // discriminator key courante, mapper l'alias vers un subtype, puis si
+            // ce subtype porte LUI-MÊME un @JsonbTypeInfo, recommencer.
+            jakarta.json.bind.annotation.JsonbTypeInfo currentInfo = info;
+            Class<?> concrete = null;
+            while (true) {
+                e = parser.next();
+                if (e != JsonParser.Event.KEY_NAME) {
+                    throw new JsonbException("Expected KEY_NAME (discriminator '"
+                            + currentInfo.key() + "'), got " + e);
+                }
+                String key = parser.getString();
+                if (!key.equals(currentInfo.key())) {
+                    throw new JsonbException("Expected discriminator '" + currentInfo.key()
+                            + "' as next member, got '" + key + "'");
+                }
+                e = parser.next();
+                if (e != JsonParser.Event.VALUE_STRING) {
+                    throw new JsonbException("Expected VALUE_STRING for discriminator, got " + e);
+                }
+                String alias = parser.getString();
+                Class<?> next = null;
+                for (var sub : currentInfo.value()) {
+                    if (sub.alias().equals(alias)) { next = sub.type(); break; }
+                }
+                if (next == null) throw new JsonbException("Unknown @JsonbSubtype alias: " + alias);
+                concrete = next;
+                var nextInfo = next.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
+                if (nextInfo == null) break; // plus de discriminators à lire
+                currentInfo = nextInfo;
             }
             return readMembersOnly(parser, concrete);
         };
@@ -1585,6 +1595,7 @@ final class RuntimeReadRegistry {
             catch (Exception ex) { throw new JsonbException("Adapter failure on fromJson: " + ex.getMessage(), ex); }
         });
     }
+
 
     /**
      * Si le composant a {@code @JsonbDateFormat}, retourne un reader custom.
