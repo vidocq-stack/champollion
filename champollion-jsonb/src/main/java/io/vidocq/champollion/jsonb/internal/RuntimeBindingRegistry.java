@@ -38,6 +38,15 @@ final class RuntimeBindingRegistry {
     private final java.util.Locale configLocale;
     @SuppressWarnings("rawtypes")
     private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters;
+    @SuppressWarnings("rawtypes")
+    private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> globalSerializers = new java.util.LinkedHashMap<>();
+    private final ChampollionSerializationContext serContext = new ChampollionSerializationContext(this);
+
+    @SuppressWarnings("rawtypes")
+    void setGlobalSerializers(java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> map) {
+        this.globalSerializers.clear();
+        if (map != null) this.globalSerializers.putAll(map);
+    }
 
     RuntimeBindingRegistry() {
         this(null, false, null, null, null, null, null, java.util.Map.of());
@@ -86,10 +95,12 @@ final class RuntimeBindingRegistry {
 
     BindingWriter writerFor(Type t) {
         if (t == null) return dynamicWriter();
-        // Adapter global enregistré pour ce type (JsonbConfig.withAdapters) : court-circuit.
+        // Adapter ou Serializer global enregistré pour ce type : court-circuit.
         Class<?> raw = rawOf(t);
         var adapterWriter = adapterWriterFor(raw);
         if (adapterWriter != null) return adapterWriter;
+        var serializerWriter = serializerWriterFor(raw);
+        if (serializerWriter != null) return serializerWriter;
         if (t instanceof Class<?> c) {
             if (c.isArray()) return arrayWriter(c.getComponentType());
             if (c == Object.class) return dynamicWriter();
@@ -144,6 +155,52 @@ final class RuntimeBindingRegistry {
         if (c == null || c == Object.class) return dynamicWriter();
         if (c.isArray()) return arrayWriter(c.getComponentType());
         return cache.get(c);
+    }
+
+    /**
+     * Cherche un {@code JsonbSerializer} global enregistré dont le type {@code T}
+     * est assignable depuis {@code raw}. Renvoie un writer qui invoque
+     * {@code serialize(value, gen, ctx)}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private BindingWriter serializerWriterFor(Class<?> raw) {
+        if (globalSerializers.isEmpty() || raw == null || raw == Object.class) return null;
+        var direct = globalSerializers.get(raw);
+        if (direct == null) {
+            for (var entry : globalSerializers.entrySet()) {
+                if (entry.getKey().isAssignableFrom(raw)) { direct = entry.getValue(); break; }
+            }
+        }
+        if (direct == null) return null;
+        final jakarta.json.bind.serializer.JsonbSerializer ser = direct;
+        return (g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            ser.serialize(value, g, serContext);
+        };
+    }
+
+    /** Writer pour {@code @JsonbTypeSerializer} sur record component / Method / Field. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    java.util.Optional<BindingWriter> customSerializerWriter(java.lang.reflect.AnnotatedElement member,
+                                                             java.lang.reflect.Field underlying) {
+        var ann = member == null ? null : member.getAnnotation(jakarta.json.bind.annotation.JsonbTypeSerializer.class);
+        if (ann == null && underlying != null) {
+            ann = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbTypeSerializer.class);
+        }
+        if (ann == null) return java.util.Optional.empty();
+        Class<? extends jakarta.json.bind.serializer.JsonbSerializer> serClass = ann.value();
+        jakarta.json.bind.serializer.JsonbSerializer ser;
+        try {
+            var ctor = serClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            ser = ctor.newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new JsonbException("Cannot instantiate JsonbSerializer " + serClass, e);
+        }
+        return java.util.Optional.of((g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            ser.serialize(value, g, serContext);
+        });
     }
 
     /** Writer qui résout au runtime par {@code value.getClass()} : nécessaire pour
@@ -742,9 +799,10 @@ final class RuntimeBindingRegistry {
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? underlying : null);
             java.lang.reflect.AnnotatedElement memberForNumber = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class)
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class) ? underlying : null);
-            // §4.7 — @JsonbTypeAdapter sur le getter ou son field underlying.
+            // §4.7 — @JsonbTypeAdapter / @JsonbTypeSerializer sur le getter ou son field underlying.
             final Field underlying2 = underlying;
             BindingWriter w = customAdapterWriter(m, underlying2)
+                    .or(() -> customSerializerWriter(m, underlying2))
                     .or(() -> dateWriter(m.getReturnType(), memberForDate, type))
                     .or(() -> globalDateWriter(m.getReturnType()))
                     .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
@@ -764,6 +822,7 @@ final class RuntimeBindingRegistry {
             String name = jsonbName(f, f.getName());
             boolean nillable = computeNillable(null, f, type);
             BindingWriter w = customAdapterWriter(f, null)
+                    .or(() -> customSerializerWriter(f, null))
                     .or(() -> dateWriter(f.getType(), f, type))
                     .or(() -> globalDateWriter(f.getType()))
                     .or(() -> numberWriter(f.getType(), f, type))

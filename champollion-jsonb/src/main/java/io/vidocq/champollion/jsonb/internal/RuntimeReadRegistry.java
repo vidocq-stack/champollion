@@ -44,6 +44,15 @@ final class RuntimeReadRegistry {
     private final boolean creatorParametersRequired;
     @SuppressWarnings("rawtypes")
     private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters;
+    @SuppressWarnings("rawtypes")
+    private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> globalDeserializers = new java.util.LinkedHashMap<>();
+    private final ChampollionDeserializationContext deserContext = new ChampollionDeserializationContext(this);
+
+    @SuppressWarnings("rawtypes")
+    void setGlobalDeserializers(java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> map) {
+        this.globalDeserializers.clear();
+        if (map != null) this.globalDeserializers.putAll(map);
+    }
 
     RuntimeReadRegistry() { this(null, null, null, null, null, false, false, java.util.Map.of()); }
 
@@ -108,12 +117,14 @@ final class RuntimeReadRegistry {
     private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     BindingReader readerFor(Type t) {
-        // Adapter global enregistré pour ce type ?
+        // Adapter ou Deserializer global enregistré pour ce type ?
         Class<?> rawAd = t instanceof Class<?> cc ? cc
                 : t instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
                 : null;
         var adapterReader = adapterReaderFor(rawAd);
         if (adapterReader != null) return adapterReader;
+        var deserializerReader = deserializerReaderFor(rawAd, t);
+        if (deserializerReader != null) return deserializerReader;
         if (t instanceof Class<?> c) {
             if (c.isArray()) return arrayReader(c.getComponentType());
             return classCache.get(c);
@@ -166,6 +177,47 @@ final class RuntimeReadRegistry {
         if (c == null || c == Object.class) return this::dynamicValue;
         if (c.isArray()) return arrayReader(c.getComponentType());
         return classCache.get(c);
+    }
+
+    /**
+     * Cherche un {@code JsonbDeserializer} global enregistré dont le type {@code T}
+     * est assignable depuis {@code raw}. Renvoie un reader qui invoque
+     * {@code deserialize(parser, ctx, type)}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private BindingReader deserializerReaderFor(Class<?> raw, Type fullType) {
+        if (globalDeserializers.isEmpty() || raw == null || raw == Object.class) return null;
+        var direct = globalDeserializers.get(raw);
+        if (direct == null) {
+            for (var entry : globalDeserializers.entrySet()) {
+                if (entry.getKey().isAssignableFrom(raw)) { direct = entry.getValue(); break; }
+            }
+        }
+        if (direct == null) return null;
+        final jakarta.json.bind.serializer.JsonbDeserializer deser = direct;
+        return parser -> deser.deserialize(parser, deserContext, fullType);
+    }
+
+    /** Reader pour {@code @JsonbTypeDeserializer} sur record component / Method / Field. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    java.util.Optional<BindingReader> customDeserializerReader(java.lang.reflect.AnnotatedElement member,
+                                                               java.lang.reflect.Field underlying,
+                                                               Type targetType) {
+        var ann = member == null ? null : member.getAnnotation(jakarta.json.bind.annotation.JsonbTypeDeserializer.class);
+        if (ann == null && underlying != null) {
+            ann = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbTypeDeserializer.class);
+        }
+        if (ann == null) return java.util.Optional.empty();
+        Class<? extends jakarta.json.bind.serializer.JsonbDeserializer> dClass = ann.value();
+        jakarta.json.bind.serializer.JsonbDeserializer deser;
+        try {
+            var ctor = dClass.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            deser = ctor.newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
+        }
+        return java.util.Optional.of(parser -> deser.deserialize(parser, deserContext, targetType));
     }
 
     /** Variante de {@link #readerFor(Type)} sans adapter mais préservant les ParameterizedType. */
@@ -333,11 +385,15 @@ final class RuntimeReadRegistry {
             Class<?> paramType = m.getParameterTypes()[0];
             Field underlyingF = findFieldByName(type, prop);
             BindingReader reader;
-            // §4.7 — @JsonbTypeAdapter sur setter / getter / underlying field.
+            // §4.7 — @JsonbTypeAdapter / @JsonbTypeDeserializer sur setter / getter / underlying field.
             var adapterR = customAdapterReader(m, underlyingF);
             if (adapterR.isEmpty() && getter != null) adapterR = customAdapterReader(getter, underlyingF);
-            if (adapterR.isPresent()) {
-                reader = adapterR.get();
+            var deserR = adapterR.isPresent() ? adapterR
+                    : customDeserializerReader(m, underlyingF, m.getGenericParameterTypes()[0]);
+            if (deserR.isEmpty() && getter != null)
+                deserR = customDeserializerReader(getter, underlyingF, m.getGenericParameterTypes()[0]);
+            if (deserR.isPresent()) {
+                reader = deserR.get();
             } else {
                 BindingReader dateR = dateReaderFor(paramType, m, getter, type);
                 if (dateR != null) {
@@ -361,6 +417,7 @@ final class RuntimeReadRegistry {
             if (writersByName.containsKey(name)) continue;
             try { f.setAccessible(true); } catch (Exception ignore) {}
             BindingReader reader = customAdapterReader(f, null)
+                    .or(() -> customDeserializerReader(f, null, f.getGenericType()))
                     .orElseGet(() -> readerFor(f.getGenericType()));
             writersByName.put(name, new FieldSetter(f, reader));
         }

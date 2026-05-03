@@ -66,6 +66,8 @@ public final class ChampollionJsonb implements Jsonb {
         this.writeRegistry = new RuntimeBindingRegistry(effectiveDateFormat, this.writeNullValues, binaryStrategy,
                 namingStrategy, orderStrategy, visibilityStrategy, configLocale, adapterMap);
         this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired, adapterMap);
+        this.writeRegistry.setGlobalSerializers(collectSerializers(config));
+        this.readRegistry.setGlobalDeserializers(collectDeserializers(config));
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
     }
 
@@ -106,6 +108,48 @@ public final class ChampollionJsonb implements Jsonb {
                     java.lang.reflect.Type orig = pt.getActualTypeArguments()[0];
                     if (orig instanceof Class<?> oc) return oc;
                     if (orig instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
+                }
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> collectSerializers(JsonbConfig config) {
+        if (config == null) return java.util.Map.of();
+        var opt = config.getProperty(JsonbConfig.SERIALIZERS);
+        if (opt.isEmpty()) return java.util.Map.of();
+        var arr = (jakarta.json.bind.serializer.JsonbSerializer[]) opt.get();
+        java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> out = new java.util.LinkedHashMap<>();
+        for (var s : arr) {
+            Class<?> handled = findGenericArg(s.getClass(), jakarta.json.bind.serializer.JsonbSerializer.class);
+            if (handled != null) out.put(handled, s);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> collectDeserializers(JsonbConfig config) {
+        if (config == null) return java.util.Map.of();
+        var opt = config.getProperty(JsonbConfig.DESERIALIZERS);
+        if (opt.isEmpty()) return java.util.Map.of();
+        var arr = (jakarta.json.bind.serializer.JsonbDeserializer[]) opt.get();
+        java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> out = new java.util.LinkedHashMap<>();
+        for (var d : arr) {
+            Class<?> handled = findGenericArg(d.getClass(), jakarta.json.bind.serializer.JsonbDeserializer.class);
+            if (handled != null) out.put(handled, d);
+        }
+        return out;
+    }
+
+    /** Cherche le 1er paramètre générique de l'interface {@code iface} sur la classe (récursif sur supers). */
+    private static Class<?> findGenericArg(Class<?> impl, Class<?> iface) {
+        for (Class<?> c = impl; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Type t : c.getGenericInterfaces()) {
+                if (t instanceof java.lang.reflect.ParameterizedType pt && pt.getRawType() == iface) {
+                    java.lang.reflect.Type arg = pt.getActualTypeArguments()[0];
+                    if (arg instanceof Class<?> ac) return ac;
+                    if (arg instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
                 }
             }
         }
