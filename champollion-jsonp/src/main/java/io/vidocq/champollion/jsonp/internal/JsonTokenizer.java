@@ -34,6 +34,15 @@ public final class JsonTokenizer {
         this.reader = reader;
     }
 
+    /** Ferme le {@link Reader} sous-jacent. Spec : propage IOException en JsonException. */
+    void close() {
+        try {
+            reader.close();
+        } catch (IOException e) {
+            throw new JsonException("I/O error closing reader", e);
+        }
+    }
+
     /**
      * Lit le prochain token. Whitespace RFC 8259 §2 sauté.
      */

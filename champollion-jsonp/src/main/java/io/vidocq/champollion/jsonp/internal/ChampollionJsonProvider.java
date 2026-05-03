@@ -70,6 +70,70 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return new InputStreamReader(in, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Auto-detection de l'encodage selon RFC 8259 §8.1. Lit les 4 premiers octets
+     * (BOM ou heuristique) puis crée le {@link Reader} avec le bon Charset. Le flux
+     * sous-jacent est wrappé dans un {@link java.io.PushbackInputStream} qui rend
+     * les octets non-BOM disponibles à la lecture.
+     */
+    private static Reader autoDetectingReader(InputStream raw) {
+        var pb = new java.io.PushbackInputStream(raw, 4);
+        try {
+            byte[] head = new byte[4];
+            int read = 0;
+            while (read < 4) {
+                int n = pb.read(head, read, 4 - read);
+                if (n < 0) break;
+                read += n;
+            }
+            // BOM ?
+            if (read >= 4 && head[0] == 0x00 && head[1] == 0x00
+                    && (head[2] & 0xff) == 0xFE && (head[3] & 0xff) == 0xFF) {
+                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
+            }
+            if (read >= 4 && (head[0] & 0xff) == 0xFF && (head[1] & 0xff) == 0xFE
+                    && head[2] == 0x00 && head[3] == 0x00) {
+                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
+            }
+            if (read >= 2 && (head[0] & 0xff) == 0xFE && (head[1] & 0xff) == 0xFF) {
+                pb.unread(head, 2, read - 2);
+                return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
+            }
+            if (read >= 2 && (head[0] & 0xff) == 0xFF && (head[1] & 0xff) == 0xFE) {
+                pb.unread(head, 2, read - 2);
+                return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
+            }
+            if (read >= 3 && (head[0] & 0xff) == 0xEF && (head[1] & 0xff) == 0xBB
+                    && (head[2] & 0xff) == 0xBF) {
+                pb.unread(head, 3, read - 3);
+                return new InputStreamReader(pb, StandardCharsets.UTF_8);
+            }
+            // Pas de BOM : heuristique RFC 8259 §8.1 sur les 4 premiers octets.
+            // Le premier caractère JSON significatif est ASCII (whitespace ou structurel).
+            // Si head[0] == 0 et head[1] == 0 → UTF-32BE
+            // Si head[1] == 0 et head[3] == 0 → UTF-16LE
+            // Si head[0] == 0 et head[2] == 0 → UTF-16BE
+            // Si head[1] == 0 et head[2] == 0 → UTF-32LE
+            // Sinon → UTF-8
+            if (read > 0) pb.unread(head, 0, read);
+            if (read >= 4 && head[0] == 0 && head[1] == 0) {
+                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
+            }
+            if (read >= 4 && head[1] == 0 && head[2] == 0 && head[3] == 0) {
+                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
+            }
+            if (read >= 2 && head[0] == 0) {
+                return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
+            }
+            if (read >= 2 && head[1] == 0) {
+                return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
+            }
+            return new InputStreamReader(pb, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new jakarta.json.JsonException("I/O error during encoding detection", e);
+        }
+    }
+
     private static Writer utf8Writer(OutputStream out) {
         return new OutputStreamWriter(out, StandardCharsets.UTF_8);
     }
@@ -81,7 +145,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonParser createParser(InputStream in) {
-        return new ChampollionJsonParser(utf8Reader(in));
+        return new ChampollionJsonParser(autoDetectingReader(in));
     }
 
     @Override public JsonParserFactory createParserFactory(Map<String, ?> config) {
@@ -89,7 +153,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
         Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
         return new JsonParserFactory() {
             @Override public JsonParser createParser(Reader reader) { return new ChampollionJsonParser(reader); }
-            @Override public JsonParser createParser(InputStream in) { return new ChampollionJsonParser(utf8Reader(in)); }
+            @Override public JsonParser createParser(InputStream in) { return new ChampollionJsonParser(autoDetectingReader(in)); }
             @Override public JsonParser createParser(InputStream in, Charset charset) {
                 return new ChampollionJsonParser(new InputStreamReader(in, charset));
             }
@@ -137,7 +201,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonReader createReader(InputStream in) {
-        return new ChampollionJsonReader(utf8Reader(in));
+        return new ChampollionJsonReader(autoDetectingReader(in));
     }
 
     @Override public JsonReaderFactory createReaderFactory(Map<String, ?> config) {
@@ -148,7 +212,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 return new ChampollionJsonReader(new ChampollionJsonParser(reader), ks);
             }
             @Override public JsonReader createReader(InputStream in) {
-                return new ChampollionJsonReader(new ChampollionJsonParser(utf8Reader(in)), ks);
+                return new ChampollionJsonReader(new ChampollionJsonParser(autoDetectingReader(in)), ks);
             }
             @Override public JsonReader createReader(InputStream in, Charset charset) {
                 return new ChampollionJsonReader(new ChampollionJsonParser(new InputStreamReader(in, charset)), ks);

@@ -389,10 +389,11 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public void close() {
-        // Le Reader sous-jacent est sous la responsabilité de l'appelant de
-        // Json.createParser(Reader). Nous fermons quand même via tokenizer si nécessaire.
+        // Spec §3.6 : ferme le Reader/InputStream sous-jacent ; propage IOException
+        // en JsonException.
         scopes.clear();
         scopes.push(Scope.DONE);
+        tokenizer.close();
     }
 
     private void requireNumber() {
