@@ -136,9 +136,17 @@ le corpus TCK.
 | Métrique | 2026-05-03 baseline | Après M2.x + M3.4 |
 |---|---|---|
 | Tests exécutés | 197 | 197 |
-| **PASS** | **65** (33 %) | **69** (35 %) |
-| FAIL | 112 | 113 |
+| **PASS** | **65** (33 %) | **72** (37 %) |
+| FAIL | 112 | 110 |
 | ERROR | 20 | 15 |
+
+**Fixes ajoutés** (commit `44a83d9`) :
+- `JsonConfig.KEY_STRATEGY` (FIRST/LAST/NONE) côté reader
+- `readArray/readObject` lèvent `JsonException` si type incompatible
+- `close()` invalide le reader (Spec §3.6)
+- Tokenizer utilise `JsonParsingException` (sous-classe `JsonException`)
+- `Builder.build()` reset le builder (Spec 2.1 §4.7/§4.8)
+- `getConfigInUse()` filtre les properties supportées
 
 Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationException` qu'on s'était auto-marqués comme TODO) :
 - `Json.createDiff()` → M3.4 reporté
