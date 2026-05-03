@@ -41,26 +41,27 @@ final class RuntimeReadRegistry {
     private final jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy;
     private final java.util.Locale configLocale;
     private final boolean failOnUnknownProperties;
+    private final boolean creatorParametersRequired;
 
-    RuntimeReadRegistry() { this(null, null, null, null, null, false); }
+    RuntimeReadRegistry() { this(null, null, null, null, null, false, false); }
 
-    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false); }
+    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false, false); }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, null, null, null, false);
+        this(defaultDateFormat, binaryDataStrategy, null, null, null, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false);
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false);
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
@@ -68,12 +69,22 @@ final class RuntimeReadRegistry {
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale,
                         boolean failOnUnknownProperties) {
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, false);
+    }
+
+    RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
+                        String propertyNamingStrategy,
+                        jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
+                        java.util.Locale configLocale,
+                        boolean failOnUnknownProperties,
+                        boolean creatorParametersRequired) {
         this.defaultDateFormat = defaultDateFormat;
         this.binaryDataStrategy = binaryDataStrategy;
         this.propertyNamingStrategy = propertyNamingStrategy;
         this.propertyVisibilityStrategy = propertyVisibilityStrategy;
         this.configLocale = configLocale;
         this.failOnUnknownProperties = failOnUnknownProperties;
+        this.creatorParametersRequired = creatorParametersRequired;
     }
 
     private final ClassValue<BindingReader> classCache = new ClassValue<>() {
@@ -548,6 +559,8 @@ final class RuntimeReadRegistry {
     /** Setter polymorphe : reçoit l'instance + parser et applique la valeur lue. */
     interface BeanWriter {
         void apply(Object target, JsonParser p);
+        BindingReader reader();
+        void applyValue(Object target, Object value);
     }
 
     private record MethodSetter(Method m, BindingReader reader) implements BeanWriter {
@@ -556,6 +569,9 @@ final class RuntimeReadRegistry {
             try { value = reader.read(p); }
             catch (JsonbException e) { throw e; }
             catch (RuntimeException e) { throw new JsonbException("Failed to read property " + m.getName() + ": " + e.getMessage(), e); }
+            applyValue(target, value);
+        }
+        public void applyValue(Object target, Object value) {
             try { m.invoke(target, value); }
             catch (ReflectiveOperationException e) {
                 throw new JsonbException("Setter failed: " + m, e);
@@ -574,6 +590,9 @@ final class RuntimeReadRegistry {
             try { value = reader.read(p); }
             catch (JsonbException e) { throw e; }
             catch (RuntimeException e) { throw new JsonbException("Failed to read field " + f.getName() + ": " + e.getMessage(), e); }
+            applyValue(target, value);
+        }
+        public void applyValue(Object target, Object value) {
             try { f.set(target, value); }
             catch (IllegalAccessException e) {
                 throw new JsonbException("Field set failed: " + f, e);
@@ -606,17 +625,29 @@ final class RuntimeReadRegistry {
 
     /**
      * Cherche un constructor ou une static factory annotée {@code @JsonbCreator}.
-     * Renvoie null si aucun n'est trouvé. La spec §4.6 autorise au plus un creator.
+     * Renvoie null si aucun n'est trouvé. La spec §4.6 autorise au plus un creator,
+     * et si c'est une static factory son type de retour doit correspondre à {@code type}.
      */
     private static java.lang.reflect.Executable findJsonbCreator(Class<?> type) {
+        java.util.List<java.lang.reflect.Executable> creators = new java.util.ArrayList<>();
         for (Constructor<?> c : type.getDeclaredConstructors()) {
-            if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return c;
+            if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) creators.add(c);
         }
         for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
             if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
-                    && m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return m;
+                    && m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) {
+                if (!type.isAssignableFrom(m.getReturnType())) {
+                    throw new JsonbException("@JsonbCreator factory method " + m
+                            + " must return " + type.getName() + " (got " + m.getReturnType().getName() + ")");
+                }
+                creators.add(m);
+            }
         }
-        return null;
+        if (creators.size() > 1) {
+            throw new JsonbException("Class " + type.getName()
+                    + " has multiple @JsonbCreator-annotated executables — at most one is allowed.");
+        }
+        return creators.isEmpty() ? null : creators.get(0);
     }
 
     /**
@@ -628,6 +659,7 @@ final class RuntimeReadRegistry {
         try { creator.setAccessible(true); } catch (Exception ignore) {}
         java.lang.reflect.Parameter[] params = creator.getParameters();
         Class<?>[] paramTypes = creator.getParameterTypes();
+        boolean[] required = new boolean[params.length];
         BindingReader[] readers = new BindingReader[params.length];
         Map<String, Integer> indexByName = new HashMap<>(params.length * 2);
         for (int i = 0; i < params.length; i++) {
@@ -636,8 +668,64 @@ final class RuntimeReadRegistry {
                     : ((java.lang.reflect.Method) creator).getGenericParameterTypes()[i]);
             String name = paramJsonbName(params[i]);
             indexByName.put(name, i);
+            var prop = params[i].getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+            // §4.6 — par défaut, les creator parameters sont OPTIONNELS et reçoivent
+            // null / 0 / Optional.empty quand la clé est absente du JSON.
+            // Si JsonbConfig.CREATOR_PARAMETERS_REQUIRED=true est posé, alors TOUS
+            // les params deviennent required, sauf si @JsonbProperty(nillable=true)
+            // est explicitement présent.
+            required[i] = creatorParametersRequired && !(prop != null && prop.nillable());
         }
-        return parser -> readObjectAndInvokeCreator(parser, creator, paramTypes, readers, indexByName);
+        // Découverte des BeanWriters supplémentaires (setters/fields publics non couverts par le creator)
+        // pour testCustomConstructorPlusFields.
+        Class<?> declaring = creator.getDeclaringClass();
+        Map<String, BeanWriter> extras = discoverExtraWriters(declaring, indexByName.keySet());
+        return parser -> readObjectAndInvokeCreator(parser, creator, paramTypes, readers, indexByName, required, extras);
+    }
+
+    /**
+     * Calcule les BeanWriters publics (setters + fields) pour les propriétés qui ne sont
+     * PAS couvertes par les paramètres du creator. Utilisé pour appliquer les valeurs
+     * restantes après l'invocation du creator (JSON-B 3.0 §4.6).
+     */
+    private Map<String, BeanWriter> discoverExtraWriters(Class<?> type, java.util.Set<String> creatorNames) {
+        if (type.isInterface() || type.isPrimitive() || type.isArray()) return Map.of();
+        Map<String, BeanWriter> out = new java.util.LinkedHashMap<>();
+        // Setters publics
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                int mods = m.getModifiers();
+                if (Modifier.isStatic(mods) || !Modifier.isPublic(mods)) continue;
+                if (m.isBridge() || m.isSynthetic()) continue;
+                if (m.getReturnType() != void.class) continue;
+                if (m.getParameterCount() != 1) continue;
+                String prop = RuntimeBindingRegistry.beanSetterOf(m);
+                if (prop == null) continue;
+                if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+                Field underlying = findFieldByName(type, prop);
+                if (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+                Method getter = findGetter(type, prop);
+                String name = methodJsonbName(m, getter, prop);
+                if (creatorNames.contains(name)) continue;
+                if (out.containsKey(name)) continue;
+                try { m.setAccessible(true); } catch (Exception ignore) {}
+                BindingReader reader = readerFor(m.getGenericParameterTypes()[0]);
+                out.put(name, new MethodSetter(m, reader));
+            }
+        }
+        // Champs publics non couverts.
+        for (Field f : type.getFields()) {
+            int mods = f.getModifiers();
+            if (Modifier.isStatic(mods) || Modifier.isTransient(mods) || Modifier.isFinal(mods)) continue;
+            if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            String name = jsonbName(f);
+            if (creatorNames.contains(name)) continue;
+            if (out.containsKey(name)) continue;
+            try { f.setAccessible(true); } catch (Exception ignore) {}
+            BindingReader reader = readerFor(f.getGenericType());
+            out.put(name, new FieldSetter(f, reader));
+        }
+        return out;
     }
 
     private static String paramJsonbName(java.lang.reflect.Parameter p) {
@@ -649,32 +737,63 @@ final class RuntimeReadRegistry {
     @SuppressWarnings("unchecked")
     private Object readObjectAndInvokeCreator(JsonParser p, java.lang.reflect.Executable creator,
                                               Class<?>[] paramTypes, BindingReader[] readers,
-                                              Map<String, Integer> indexByName) {
+                                              Map<String, Integer> indexByName,
+                                              boolean[] required,
+                                              Map<String, BeanWriter> extras) {
         JsonParser.Event e = p.next();
         if (e == JsonParser.Event.VALUE_NULL) return null;
         if (e != JsonParser.Event.START_OBJECT) {
             throw new JsonbException("Expected object, got " + e);
         }
         Object[] args = new Object[paramTypes.length];
+        boolean[] seen = new boolean[paramTypes.length];
         for (int i = 0; i < paramTypes.length; i++) {
             args[i] = defaultFor(paramTypes[i]);
         }
+        // Buffer pour les setters/fields hors-creator-params.
+        java.util.List<Object[]> deferred = new java.util.ArrayList<>();
         while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
             if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
             String key = p.getString();
             Integer idx = indexByName.get(key);
-            if (idx == null) {
-                skipValue(p);
-            } else {
+            if (idx != null) {
                 args[idx] = readers[idx].read(p);
+                seen[idx] = true;
+            } else if (extras != null && extras.containsKey(key)) {
+                BeanWriter w = extras.get(key);
+                Object value = w.reader().read(p);
+                deferred.add(new Object[] { w, value });
+            } else {
+                if (failOnUnknownProperties) {
+                    throw new JsonbException("Unknown property: '" + key + "' on " + creator.getDeclaringClass());
+                }
+                skipValue(p);
             }
         }
+        // Validation : tout paramètre required absent → JsonbException.
+        if (required != null) {
+            for (int i = 0; i < paramTypes.length; i++) {
+                if (required[i] && !seen[i]) {
+                    String paramName = creator instanceof Constructor<?> cc
+                            ? cc.getParameters()[i].getName()
+                            : ((java.lang.reflect.Method) creator).getParameters()[i].getName();
+                    throw new JsonbException("Missing required @JsonbCreator parameter '" + paramName
+                            + "' for " + creator.getDeclaringClass().getName());
+                }
+            }
+        }
+        Object inst;
         try {
-            if (creator instanceof Constructor<?> c) return c.newInstance(args);
-            return ((java.lang.reflect.Method) creator).invoke(null, args);
+            if (creator instanceof Constructor<?> c) inst = c.newInstance(args);
+            else inst = ((java.lang.reflect.Method) creator).invoke(null, args);
         } catch (ReflectiveOperationException ex) {
             throw new JsonbException("Failed to invoke @JsonbCreator: " + ex.getMessage(), ex);
         }
+        // Application des setters/fields supplémentaires.
+        for (Object[] pair : deferred) {
+            ((BeanWriter) pair[0]).applyValue(inst, pair[1]);
+        }
+        return inst;
     }
 
     private Object readObjectAndConstruct(JsonParser p, Constructor<?> ctor,
@@ -730,6 +849,10 @@ final class RuntimeReadRegistry {
     }
 
     private static Object defaultFor(Class<?> type) {
+        if (type == java.util.Optional.class) return java.util.Optional.empty();
+        if (type == java.util.OptionalInt.class) return java.util.OptionalInt.empty();
+        if (type == java.util.OptionalLong.class) return java.util.OptionalLong.empty();
+        if (type == java.util.OptionalDouble.class) return java.util.OptionalDouble.empty();
         if (!type.isPrimitive()) return null;
         if (type == int.class) return 0;
         if (type == long.class) return 0L;

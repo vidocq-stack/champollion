@@ -50,9 +50,10 @@ public final class ChampollionJsonb implements Jsonb {
                 config.getProperty(JsonbConfig.PROPERTY_VISIBILITY_STRATEGY).orElse(null);
         var configLocale = (java.util.Locale) config.getProperty(JsonbConfig.LOCALE).orElse(null);
         boolean failOnUnknown = booleanProp(config, "jsonb.fail-on-unknown-properties");
+        boolean creatorParametersRequired = booleanProp(config, JsonbConfig.CREATOR_PARAMETERS_REQUIRED);
         this.writeRegistry = new RuntimeBindingRegistry(defaultDateFormat, this.writeNullValues, binaryStrategy,
                 namingStrategy, orderStrategy, visibilityStrategy, configLocale);
-        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown);
+        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired);
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
     }
 
