@@ -135,10 +135,16 @@ le corpus TCK.
 
 | Métrique | 2026-05-03 baseline | Après M2.x + M3.4 |
 |---|---|---|
-| Tests exécutés | 197 | 197 |
-| **PASS** | **65** (33 %) | **72** (37 %) |
-| FAIL | 112 | 110 |
-| ERROR | 20 | 15 |
+| Tests exécutés | 197 | 179 (api seulement) |
+| **PASS** | **65** (33 %) | **168** (94 %) ✅ |
+| FAIL | 112 | 7 |
+| ERROR | 20 | 4 |
+
+> **Saut majeur** : `JsonProviderTest.systemProperty()` du TCK polluait
+> `System.getProperty("jakarta.json.provider")` sans cleanup, ce qui
+> faisait shadow `JsonProvider.provider()` par un mock dans tous les
+> tests suivants. Fix : `forkCount=1, reuseForks=false` dans surefire
+> + séparation pluggability dans son propre profil.
 
 **Fixes ajoutés** (commit `44a83d9`) :
 - `JsonConfig.KEY_STRATEGY` (FIRST/LAST/NONE) côté reader
