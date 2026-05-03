@@ -16,10 +16,18 @@ import java.io.Reader;
  */
 public final class JsonTokenizer {
 
+    private static final int BUF_SIZE = 512;
+
     private final Reader reader;
     private final StringBuilder buffer = new StringBuilder(64);
 
-    /** Caractère pré-lu, ou {@code -2} si aucun. {@code -1} signifie EOF lu. */
+    /** Buffer char[] pré-alloué — lecture par bloc au lieu de char-par-char. */
+    private final char[] buf = new char[BUF_SIZE];
+    private int bufPos = 0;
+    private int bufEnd = 0;
+    private boolean eof = false;
+
+    /** Caractère pré-lu (pour {@link #peekRead()}), ou {@code -2} si aucun. */
     private int peek = NO_PEEK;
     private long line = 1;
     private long column = 0;
@@ -219,20 +227,32 @@ public final class JsonTokenizer {
             track(c);
             return c;
         }
-        try {
-            int c = reader.read();
-            track(c);
-            return c;
-        } catch (IOException e) {
-            throw new JsonException("I/O error reading JSON", e);
+        if (bufPos >= bufEnd) {
+            if (eof) return -1;
+            refill();
+            if (bufEnd == 0) return -1;
         }
+        int c = buf[bufPos++];
+        track(c);
+        return c;
     }
 
     private int peekRead() {
         if (peek != NO_PEEK) return peek;
+        if (bufPos >= bufEnd) {
+            if (eof) return -1;
+            refill();
+            if (bufEnd == 0) { peek = -1; return -1; }
+        }
+        peek = buf[bufPos++];
+        return peek;
+    }
+
+    private void refill() {
         try {
-            peek = reader.read();
-            return peek;
+            int n = reader.read(buf, 0, buf.length);
+            if (n <= 0) { eof = true; bufEnd = 0; bufPos = 0; }
+            else { bufEnd = n; bufPos = 0; }
         } catch (IOException e) {
             throw new JsonException("I/O error reading JSON", e);
         }

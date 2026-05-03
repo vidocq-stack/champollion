@@ -67,21 +67,23 @@ Scan complet du flux d'événements (`hasNext`/`next`) sans construction d'objec
 
 ### Throughput (ops/µs, plus c'est haut, mieux c'est)
 
-| Workload | Champollion | Parsson | Ratio |
-|---|---:|---:|---:|
-| SMALL  | 3,612 | 9,225  | 0,39× |
-| MEDIUM | 0,437 | 1,322  | 0,33× |
-| LARGE  | 0,005 | 0,015  | 0,32× |
+| Workload | Champollion baseline | Champollion **P1 (buf char[512])** | Parsson | Ratio P1/Parsson |
+|---|---:|---:|---:|---:|
+| SMALL  | 3,612 | 3,568 | 9,381  | 0,38× |
+| MEDIUM | 0,437 | **0,614** (+40 %) | 1,419  | 0,43× |
+| LARGE  | 0,005 | **0,008** (+60 %) | 0,016  | **0,50×** |
 
 ### Latence (µs/op, plus c'est bas, mieux c'est)
 
-| Workload | Champollion | Parsson |
+| Workload | Champollion P1 | Parsson |
 |---|---:|---:|
-| SMALL  | 0,277 µs   | 0,105 µs   |
-| MEDIUM | 2,279 µs   | 0,819 µs   |
-| LARGE  | 212,139 µs | 67,533 µs  |
+| SMALL  | ~0,28 µs   | 0,105 µs   |
+| MEDIUM | ~1,63 µs   | 0,71 µs    |
+| LARGE  | ~125 µs    | 62 µs      |
 
-**Lecture** : Parsson est ~2,5-3× plus rapide en streaming JSON-P. C'est attendu — Parsson a 15 ans de profilage et utilise des `char[]` pré-alloués. Champollion utilise un tokenizer simple basé sur `Reader.read()` ; un coup d'optimisation possible : passer en `java.lang.foreign` SIMD-scan ou bufferisation `char[]` (cf. ROADMAP M2).
+**Lecture** : depuis l'optimisation **P1 — Tokenizer `char[512]` bufferisé** (commit `<P1>`), le gap LARGE vs Parsson est réduit de **0,32× à 0,50×** (+60 % de throughput) sans régression sur SMALL. Pour MEDIUM, +40 %. Le sweet spot est `BUF_SIZE=512` : plus grand pénalise SMALL (allocation `char[]` non amortie), plus petit annule le gain LARGE.
+
+**Pistes restantes (P4 ROADMAP)** : passage à `java.lang.foreign` SIMD-scan pour le whitespace + détection de string literals. Cible à terme : ~0,8× Parsson sur LARGE.
 
 ---
 
