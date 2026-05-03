@@ -7,7 +7,7 @@
 
 - **Branche** : `main`
 - **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : **236/236** ✅ (`mvn test` sur le reactor)
+- **Tests** : **239/239** ✅ (`mvn test` sur le reactor)
 - **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
 
 ## Modules
@@ -18,7 +18,7 @@
 | `champollion-jsonp` | ✅ **complet pour la spec publique** | 161 tests. Streaming + object model + builders + Reader/Writer + Pointer + Patch + MergePatch + ServiceLoader. |
 | `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. toJson + fromJson runtime opérationnels (primitives, java.time, UUID, enum, records, POJOs, containers). SPI publique `JsonbBinding<T>` + `@JsonbStatic` exposée, ServiceLoader, lookup-first, fallback runtime. |
 | `champollion-codegen-apt` | ✅ **MVP fonctionnel** | 18 tests. APT `JsonbStaticProcessor` génère un `JsonbBinding<T>` par record annoté `@JsonbStatic` + ServiceLoader file. Couvre primitives + String + enums + List<E> + Optional<E> + Map<String,V> + arrays primitifs + String[] + nested records `@JsonbStatic`. Differential testing automatisé static vs runtime. |
-| `champollion-codegen-maven-plugin` | 🟡 squelette (`packaging=jar`) | `GenerateMojo` minimal. Le packaging `maven-plugin` reviendra en M5 avec un descriptor compatible Java 25. |
+| `champollion-codegen-maven-plugin` | ✅ **actif** (`packaging=maven-plugin`) | 3 tests. Mojo `generate` qui écrit des triggers `<FQN>$$Trigger.java` annotés `@JsonbStatic` puis lance `javac` avec le `JsonbStaticProcessor` sur le classpath compile du projet hôte. `maven-plugin-plugin 4.0.0-beta-2` supporte Java 25. |
 | `champollion-bench` | 🟡 vide | POM JMH prêt, aucun benchmark écrit. |
 | `champollion-examples` | 🟡 vide | POM prêt, aucun exemple écrit. |
 | `champollion-tck` | ❌ pas créé | Module hors reactor à créer en M6 (POM Model 4.0.0, scripts shell). |
@@ -50,7 +50,7 @@
 | **M5.5** | APT — Map<String,X> + nested records | ✅ 4 tests |
 | **M5.6** | APT — enums comme leaf type | ✅ 3 tests |
 | **M5.7** | APT bytecode direct (Class File API JDK 25) | ✅ records primitives + String + enums |
-| **M5.8** | Maven plugin `champollion-codegen-maven-plugin` | ❌ packaging=jar squelette |
+| **M5.8** | Maven plugin `champollion-codegen-maven-plugin` actif | ✅ — 3 tests |
 | **M5.9** | APT bytecode étendu : arrays primitifs + `String[]` + `Optional<X>` | ✅ |
 | **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ✅ — **fast path bytecode 100 %** |
 | **M5.11** | Pre-encoded property names + `writeKeyRaw` fast path | ✅ |
@@ -90,7 +90,6 @@
 - ✅ Couverture types : primitives, String, enums, List<E>, Optional<E>, Map<String,V>, arrays primitifs, String[], nested records `@JsonbStatic` (référence directe par `new <X>$$Binding()`)
 
 **À faire :**
-- **M5.8** Activation `champollion-codegen-maven-plugin` (packaging=maven-plugin) quand `maven-plugin-plugin` ≥ ASM lisant Java 25 sera publié. Aujourd'hui jar squelette.
 - **M5.13 (optionnel)** Validation `native-image` end-to-end avec GraalVM installé. La validation par inspection bytecode (M5.12) suffit déjà pour le contrat ; un test `native-image` ne ferait que confirmer pratiquement.
 
 ### Moyen terme — Tests d'envergure
