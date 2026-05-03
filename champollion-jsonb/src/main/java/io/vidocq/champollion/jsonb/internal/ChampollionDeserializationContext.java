@@ -20,11 +20,29 @@ final class ChampollionDeserializationContext implements DeserializationContext 
 
     @Override @SuppressWarnings("unchecked")
     public <T> T deserialize(Class<T> clazz, JsonParser parser) {
-        return (T) registry.readerFor(clazz).read(parser);
+        return (T) registry.readerFor(clazz).read(adjust(parser));
     }
 
     @Override @SuppressWarnings("unchecked")
     public <T> T deserialize(Type type, JsonParser parser) {
-        return (T) registry.readerFor(type).read(parser);
+        return (T) registry.readerFor(type).read(adjust(parser));
+    }
+
+    /**
+     * Si l'appelant (un JsonbDeserializer custom) a déjà consommé l'événement de début
+     * de la valeur (START_OBJECT / START_ARRAY / VALUE_xxx), le re-jouer pour que les
+     * BindingReader standards de Champollion (qui font {@code parser.next()} au début)
+     * voient bien cet événement.
+     */
+    private JsonParser adjust(JsonParser parser) {
+        var ev = parser.currentEvent();
+        if (ev == null) return parser;
+        switch (ev) {
+            case START_OBJECT, START_ARRAY,
+                 VALUE_STRING, VALUE_NUMBER, VALUE_TRUE, VALUE_FALSE, VALUE_NULL -> {
+                return new ReplayJsonParser(ev, parser);
+            }
+            default -> { return parser; }
+        }
     }
 }
