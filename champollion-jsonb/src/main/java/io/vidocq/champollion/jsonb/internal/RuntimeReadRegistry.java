@@ -35,6 +35,15 @@ import java.util.UUID;
  */
 final class RuntimeReadRegistry {
 
+    private final String defaultDateFormat;
+
+    RuntimeReadRegistry() { this(null); }
+
+    /** @param defaultDateFormat pattern global JSONB_DATE_FORMAT */
+    RuntimeReadRegistry(String defaultDateFormat) {
+        this.defaultDateFormat = defaultDateFormat;
+    }
+
     private final ClassValue<BindingReader> classCache = new ClassValue<>() {
         @Override protected BindingReader computeValue(Class<?> type) { return resolveClass(type); }
     };
@@ -87,9 +96,10 @@ final class RuntimeReadRegistry {
         for (int i = 0; i < comps.length; i++) {
             final RecordComponent comp = comps[i];
             paramTypes[i] = comp.getType();
-            // M4.4f : @JsonbTypeAdapter > M4.4d : @JsonbDateFormat > runtime standard.
+            // M4.4f @JsonbTypeAdapter > M4.4d @JsonbDateFormat > M4.7 JSONB_DATE_FORMAT > runtime.
             readers[i] = customAdapterReader(comp)
                     .or(() -> customDateReader(comp))
+                    .or(() -> globalDateReader(comp.getType()))
                     .orElseGet(() -> readerFor(comp.getGenericType()));
             if (isJsonbTransient(comp)) continue;
             indexByName.put(jsonbName(comp), i);
@@ -579,6 +589,32 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
+    }
+
+    /**
+     * Reader global pour les types {@code java.time.*} basé sur {@code JSONB_DATE_FORMAT}.
+     * Renvoie empty si pas de pattern global ou si {@code raw} n'est pas un type java.time supporté.
+     */
+    private java.util.Optional<BindingReader> globalDateReader(Class<?> raw) {
+        if (defaultDateFormat == null) return java.util.Optional.empty();
+        if (raw != java.time.LocalDate.class
+                && raw != java.time.LocalDateTime.class
+                && raw != java.time.OffsetDateTime.class
+                && raw != java.time.ZonedDateTime.class
+                && raw != java.time.Instant.class) {
+            return java.util.Optional.empty();
+        }
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(defaultDateFormat);
+        return java.util.Optional.of(parser -> {
+            JsonParser.Event ev = parser.next();
+            if (ev == JsonParser.Event.VALUE_NULL) return null;
+            String s = parser.getString();
+            if (raw == java.time.LocalDate.class) return java.time.LocalDate.parse(s, fmt);
+            if (raw == java.time.LocalDateTime.class) return java.time.LocalDateTime.parse(s, fmt);
+            if (raw == java.time.OffsetDateTime.class) return java.time.OffsetDateTime.parse(s, fmt);
+            if (raw == java.time.ZonedDateTime.class) return java.time.ZonedDateTime.parse(s, fmt);
+            return java.time.Instant.from(fmt.parse(s));
+        });
     }
 
     /**

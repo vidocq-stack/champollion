@@ -29,6 +29,23 @@ import java.util.UUID;
  */
 final class RuntimeBindingRegistry {
 
+    private final String defaultDateFormat;
+    private final boolean writeNullValues;
+
+    /** Constructeur par défaut : pas de date format global, null members omis. */
+    RuntimeBindingRegistry() {
+        this(null, false);
+    }
+
+    /**
+     * @param defaultDateFormat pattern global pour les types java.time (JSONB_DATE_FORMAT)
+     * @param writeNullValues   si true, écrit les null au lieu de les omettre (JSONB_NULL_VALUES)
+     */
+    RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues) {
+        this.defaultDateFormat = defaultDateFormat;
+        this.writeNullValues = writeNullValues;
+    }
+
     private final ClassValue<BindingWriter> cache = new ClassValue<>() {
         @Override protected BindingWriter computeValue(Class<?> type) { return resolveClass(type); }
     };
@@ -194,11 +211,12 @@ final class RuntimeBindingRegistry {
             Method accessor = c.getAccessor();
             try { accessor.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(c, c.getName());
-            boolean nillable = isJsonbNillable(c);
+            boolean nillable = isJsonbNillable(c) || writeNullValues;
             // M4.4f : @JsonbTypeAdapter → applique l'adapter avant écriture.
-            // M4.4d : @JsonbDateFormat → writer custom pour les types java.time.
+            // M4.4d : @JsonbDateFormat sur composant > M4.7 JSONB_DATE_FORMAT global > runtime ISO.
             BindingWriter w = customAdapterWriter(c)
                     .or(() -> customDateWriter(c))
+                    .or(() -> globalDateWriter(c.getType()))
                     .orElseGet(() -> writerFor(c.getGenericType()));
             props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
         }
@@ -252,6 +270,27 @@ final class RuntimeBindingRegistry {
     }
 
     /**
+     * Writer global pour les types {@code java.time.*} basé sur {@code JSONB_DATE_FORMAT}
+     * (config). Renvoie empty si pas de pattern global ou si {@code rawType} n'est pas
+     * un type java.time supporté.
+     */
+    private java.util.Optional<BindingWriter> globalDateWriter(Class<?> rawType) {
+        if (defaultDateFormat == null) return java.util.Optional.empty();
+        if (rawType != java.time.LocalDate.class
+                && rawType != java.time.LocalDateTime.class
+                && rawType != java.time.OffsetDateTime.class
+                && rawType != java.time.ZonedDateTime.class
+                && rawType != java.time.Instant.class) {
+            return java.util.Optional.empty();
+        }
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(defaultDateFormat);
+        return java.util.Optional.of((g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            g.write(fmt.format((java.time.temporal.TemporalAccessor) value));
+        });
+    }
+
+    /**
      * Si le composant a {@code @JsonbDateFormat}, retourne un writer qui formate
      * la valeur via {@link java.time.format.DateTimeFormatter#ofPattern}. Sinon empty.
      */
@@ -291,9 +330,11 @@ final class RuntimeBindingRegistry {
             if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             try { m.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbNameFromMethod(m, propName);
-            boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
+            boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)
+                    || writeNullValues;
+            BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
             seen.add(propName);
-            props.add(new Property(name, new MethodAccessor(m), writerFor(m.getGenericReturnType()), nillable));
+            props.add(new Property(name, new MethodAccessor(m), w, nillable));
         }
 
         // 2) Champs publics non couverts par un getter.
@@ -304,8 +345,10 @@ final class RuntimeBindingRegistry {
             if (seen.contains(f.getName())) continue;   // déjà couvert par un getter
             try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
-            boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
-            props.add(new Property(name, new FieldAccessor(f), writerFor(f.getGenericType()), nillable));
+            boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)
+                    || writeNullValues;
+            BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
+            props.add(new Property(name, new FieldAccessor(f), w, nillable));
         }
 
         if (props.isEmpty()) {

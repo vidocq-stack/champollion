@@ -34,13 +34,28 @@ public final class ChampollionJsonb implements Jsonb {
     private final RuntimeBindingRegistry writeRegistry;
     private final RuntimeReadRegistry readRegistry;
     private final StaticBindings staticBindings;
+    private final boolean prettyPrinting;
+    private final boolean writeNullValues;
 
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.config = config;
         this.jsonProvider = jsonProvider;
-        this.writeRegistry = new RuntimeBindingRegistry();
-        this.readRegistry = new RuntimeReadRegistry();
+        this.prettyPrinting = booleanProp(config, JsonbConfig.FORMATTING);
+        this.writeNullValues = booleanProp(config, JsonbConfig.NULL_VALUES);
+        String defaultDateFormat = stringProp(config, JsonbConfig.DATE_FORMAT);
+        this.writeRegistry = new RuntimeBindingRegistry(defaultDateFormat, this.writeNullValues);
+        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat);
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
+    }
+
+    private static boolean booleanProp(JsonbConfig config, String key) {
+        if (config == null) return false;
+        return config.getProperty(key).map(o -> Boolean.TRUE.equals(o) || "true".equals(o)).orElse(false);
+    }
+
+    private static String stringProp(JsonbConfig config, String key) {
+        if (config == null) return null;
+        return config.getProperty(key).map(Object::toString).orElse(null);
     }
 
     /** Vue immuable des bindings statiques résolus, pour diagnostic et tests. */
@@ -66,9 +81,25 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     @Override public void toJson(Object object, Type runtimeType, Writer writer) {
-        try (JsonGenerator g = jsonProvider.createGenerator(writer)) {
+        try (JsonGenerator g = createGenerator(writer)) {
             writeValue(g, object, runtimeType);
         }
+    }
+
+    private JsonGenerator createGenerator(Writer writer) {
+        if (prettyPrinting) {
+            return jsonProvider.createGeneratorFactory(
+                    java.util.Map.of(JsonGenerator.PRETTY_PRINTING, true)).createGenerator(writer);
+        }
+        return jsonProvider.createGenerator(writer);
+    }
+
+    private JsonGenerator createGenerator(OutputStream stream) {
+        if (prettyPrinting) {
+            return jsonProvider.createGeneratorFactory(
+                    java.util.Map.of(JsonGenerator.PRETTY_PRINTING, true)).createGenerator(stream);
+        }
+        return jsonProvider.createGenerator(stream);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -95,7 +126,7 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     @Override public void toJson(Object object, Type runtimeType, OutputStream stream) {
-        try (JsonGenerator g = jsonProvider.createGenerator(stream)) {
+        try (JsonGenerator g = createGenerator(stream)) {
             writeValue(g, object, runtimeType);
         }
     }
