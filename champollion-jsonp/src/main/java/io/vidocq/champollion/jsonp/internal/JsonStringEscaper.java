@@ -5,9 +5,17 @@ package io.vidocq.champollion.jsonp.internal;
  * {@link ChampollionJsonString#toString()} (pour avoir une représentation textuelle
  * directement valide en JSON).
  */
-final class JsonStringEscaper {
+public final class JsonStringEscaper {
 
     private JsonStringEscaper() {}
+
+    /**
+     * Variante publique pour les outils de codegen : retourne la chaîne
+     * {@code "<s>"} avec quotes englobantes et escape RFC 8259 §7 appliqué.
+     */
+    public static String preQuoted(String s) {
+        return quote(s);
+    }
 
     static String quote(String s) {
         var sb = new StringBuilder(s.length() + 2);

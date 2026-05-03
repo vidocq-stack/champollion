@@ -72,6 +72,7 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_MAP = ClassDesc.of("java.util.Map");
     private static final ClassDesc CD_MAP_ENTRY = ClassDesc.of("java.util.Map$Entry");
     private static final ClassDesc CD_LINKED_HASH_MAP = ClassDesc.of("java.util.LinkedHashMap");
+    private static final ClassDesc CD_RAW_KEY_WRITER = ClassDesc.of("io.vidocq.champollion.spi.RawJsonKeyWriter");
 
     /**
      * Slots locaux fixes utilisés par les méthodes de container côté <em>write</em>.
@@ -162,6 +163,14 @@ final class BindingBytecodeEmitter {
         ClassDesc CD_BINDING = ClassDesc.of(bindingFqn);
         List<? extends RecordComponentElement> comps = record.getRecordComponents();
 
+        // M5.11 : pré-encoder les noms de propriétés en JSON-quoted (avec escape RFC 8259).
+        // Stockés en String constants au constant pool — accessibles via ldc, pas de scan
+        // d'escape à l'exécution.
+        String[] preQuoted = new String[comps.size()];
+        for (int i = 0; i < comps.size(); i++) {
+            preQuoted[i] = preQuoteJson(comps.get(i).getSimpleName().toString());
+        }
+
         return ClassFile.of().build(CD_BINDING, cb -> {
             cb.withVersion(ClassFile.JAVA_25_VERSION, 0);
             cb.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL | ClassFile.ACC_SUPER);
@@ -170,9 +179,36 @@ final class BindingBytecodeEmitter {
 
             emitDefaultCtor(cb);
             emitTypeMethod(cb, CD_TARGET);
-            emitWrite(cb, CD_TARGET, comps);
+            emitWrite(cb, CD_TARGET, comps, preQuoted);
             emitRead(cb, CD_TARGET, comps);
         });
+    }
+
+    /**
+     * Pré-encode un nom de propriété en JSON quoted (RFC 8259 §7).
+     * Exemple : {@code name} → {@code "name"} ; {@code "a\""} → {@code "\"a\\\"\""}.
+     */
+    private static String preQuoteJson(String name) {
+        var sb = new StringBuilder(name.length() + 2);
+        sb.append('"');
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+                }
+            }
+        }
+        sb.append('"');
+        return sb.toString();
     }
 
     // ============================================================
@@ -202,7 +238,7 @@ final class BindingBytecodeEmitter {
     // public void write(JsonGenerator g, Object v)
     // ============================================================
 
-    private static void emitWrite(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps) {
+    private static void emitWrite(ClassBuilder cb, ClassDesc CD_TARGET, List<? extends RecordComponentElement> comps, String[] preQuoted) {
         // Locals : 0 this, 1 g, 2 v(Object), 3 t(Target)
         cb.withMethodBody("write",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT),
@@ -230,8 +266,8 @@ final class BindingBytecodeEmitter {
                             MethodTypeDesc.of(CD_JSON_GENERATOR));
                     code.pop();
 
-                    for (var c : comps) {
-                        emitWriteComponent(code, CD_TARGET, c);
+                    for (int i = 0; i < comps.size(); i++) {
+                        emitWriteComponent(code, CD_TARGET, comps.get(i), preQuoted[i]);
                     }
 
                     // g.writeEnd();
@@ -243,62 +279,26 @@ final class BindingBytecodeEmitter {
                 });
     }
 
-    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c) {
+    private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String preQuoted) {
         String name = c.getSimpleName().toString();
         TypeMirror tm = c.asType();
 
         switch (tm.getKind()) {
-            case INT, SHORT, BYTE -> {
-                // g.write("name", t.<name>())
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(toCD(tm)));
-                if (tm.getKind() == TypeKind.SHORT || tm.getKind() == TypeKind.BYTE) {
-                    // Already pushed as int
-                }
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, ConstantDescs.CD_int));
-                code.pop();
-            }
-            case LONG -> {
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(ConstantDescs.CD_long));
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, ConstantDescs.CD_long));
-                code.pop();
-            }
-            case DOUBLE -> {
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(ConstantDescs.CD_double));
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, ConstantDescs.CD_double));
-                code.pop();
-            }
-            case FLOAT -> {
-                // g.write(name, (double) t.name())
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(ConstantDescs.CD_float));
-                code.f2d();
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, ConstantDescs.CD_double));
-                code.pop();
-            }
-            case BOOLEAN -> {
-                code.aload(1);
-                code.ldc(name);
-                code.aload(3);
-                code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(ConstantDescs.CD_boolean));
-                code.invokeinterface(CD_JSON_GENERATOR, "write",
-                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, ConstantDescs.CD_boolean));
-                code.pop();
-            }
+            case INT, SHORT, BYTE ->
+                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                        ConstantDescs.CD_int, "I", false);
+            case LONG ->
+                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                        ConstantDescs.CD_long, "J", false);
+            case DOUBLE ->
+                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                        ConstantDescs.CD_double, "D", false);
+            case FLOAT ->
+                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                        ConstantDescs.CD_double, "D", true);
+            case BOOLEAN ->
+                emitKeyValuePrimitive(code, CD_TARGET, name, preQuoted, tm,
+                        ConstantDescs.CD_boolean, "Z", false);
             case DECLARED -> {
                 if (isOptional(tm)) {
                     emitWriteOptional(code, CD_TARGET, name, (DeclaredType) tm);
@@ -317,41 +317,150 @@ final class BindingBytecodeEmitter {
                     return;
                 }
                 if (isEnum(tm)) {
-                    // if (t.name() != null) g.write("name", t.<accessor>().name());
-                    ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
-                    Label skip = code.newLabel();
-                    code.aload(3);
-                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
-                    code.ifnull(skip);
-                    code.aload(1);
-                    code.ldc(name);
-                    code.aload(3);
-                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
-                    code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name",
-                            MethodTypeDesc.of(CD_STRING));
-                    code.invokeinterface(CD_JSON_GENERATOR, "write",
-                            MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
-                    code.pop();
-                    code.labelBinding(skip);
+                    emitKeyValueEnum(code, CD_TARGET, name, preQuoted, (DeclaredType) tm);
                 } else {
-                    // String : if (t.name() != null) g.write("name", t.name());
-                    Label skip = code.newLabel();
-                    code.aload(3);
-                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
-                    code.ifnull(skip);
-                    code.aload(1);
-                    code.ldc(name);
-                    code.aload(3);
-                    code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
-                    code.invokeinterface(CD_JSON_GENERATOR, "write",
-                            MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
-                    code.pop();
-                    code.labelBinding(skip);
+                    emitKeyValueString(code, CD_TARGET, name, preQuoted);
                 }
             }
             case ARRAY -> emitWriteArray(code, CD_TARGET, name, (ArrayType) tm);
             default -> throw new IllegalStateException("Unsupported component for bytecode emitter: " + tm);
         }
+    }
+
+    /**
+     * Émet l'écriture {@code g.write(name, value)} pour un composant primitif,
+     * en choisissant la voie rapide {@code RawJsonKeyWriter.writeKeyRaw} +
+     * {@code g.write(value)} si le generator l'implémente, sinon le fallback
+     * standard {@code g.write(name, value)}.
+     *
+     * <p>Le dispatch se fait via un {@code instanceof RawJsonKeyWriter} en début
+     * de chaque write : 1 instruction de plus par propriété, négligeable face au
+     * gain d'avoir évité l'escape RFC 8259 §7 sur le nom à chaque appel.</p>
+     */
+    private static void emitKeyValuePrimitive(CodeBuilder code, ClassDesc CD_TARGET, String name,
+                                              String preQuoted, TypeMirror accessorTm,
+                                              ClassDesc valueDesc, String valueDescStr, boolean f2d) {
+        ClassDesc accessorCD = toCD(accessorTm);
+        Label slow = code.newLabel();
+        Label end = code.newLabel();
+
+        // if (!(g instanceof RawJsonKeyWriter)) goto slow
+        code.aload(1);
+        code.instanceOf(CD_RAW_KEY_WRITER);
+        code.ifeq(slow);
+
+        // FAST : ((RawJsonKeyWriter) g).writeKeyRaw(preQuoted) ; g.write(t.name())
+        code.aload(1);
+        code.checkcast(CD_RAW_KEY_WRITER);
+        code.ldc(preQuoted);
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+
+        code.aload(1);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(accessorCD));
+        if (f2d) code.f2d();
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, valueDesc));
+        code.pop();
+        code.goto_(end);
+
+        // SLOW : g.write(name, t.name())
+        code.labelBinding(slow);
+        code.aload(1);
+        code.ldc(name);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(accessorCD));
+        if (f2d) code.f2d();
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, valueDesc));
+        code.pop();
+
+        code.labelBinding(end);
+    }
+
+    /** Voie rapide / lente pour les composants String avec gestion null. */
+    private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String preQuoted) {
+        Label skip = code.newLabel();
+        // if (t.name() == null) skip
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
+        code.ifnull(skip);
+
+        Label slow = code.newLabel();
+        Label end = code.newLabel();
+        code.aload(1);
+        code.instanceOf(CD_RAW_KEY_WRITER);
+        code.ifeq(slow);
+
+        // FAST
+        code.aload(1);
+        code.checkcast(CD_RAW_KEY_WRITER);
+        code.ldc(preQuoted);
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+        code.aload(1);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+        code.goto_(end);
+
+        // SLOW
+        code.labelBinding(slow);
+        code.aload(1);
+        code.ldc(name);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_STRING));
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
+        code.pop();
+        code.labelBinding(end);
+        code.labelBinding(skip);
+    }
+
+    /** Voie rapide / lente pour les composants enum avec gestion null. */
+    private static void emitKeyValueEnum(CodeBuilder code, ClassDesc CD_TARGET, String name, String preQuoted, DeclaredType enumDt) {
+        ClassDesc CD_ENUM = ClassDesc.of(enumDt.asElement().toString());
+        Label skip = code.newLabel();
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
+        code.ifnull(skip);
+
+        Label slow = code.newLabel();
+        Label end = code.newLabel();
+        code.aload(1);
+        code.instanceOf(CD_RAW_KEY_WRITER);
+        code.ifeq(slow);
+
+        // FAST
+        code.aload(1);
+        code.checkcast(CD_RAW_KEY_WRITER);
+        code.ldc(preQuoted);
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+        code.aload(1);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
+        code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name", MethodTypeDesc.of(CD_STRING));
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+        code.goto_(end);
+
+        // SLOW
+        code.labelBinding(slow);
+        code.aload(1);
+        code.ldc(name);
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_ENUM));
+        code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name", MethodTypeDesc.of(CD_STRING));
+        code.invokeinterface(CD_JSON_GENERATOR, "write",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING, CD_STRING));
+        code.pop();
+        code.labelBinding(end);
+        code.labelBinding(skip);
     }
 
     /** Émet le bytecode write pour un composant array primitif ou {@code String[]}. */

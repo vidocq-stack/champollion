@@ -1,5 +1,6 @@
 package io.vidocq.champollion.jsonp.internal;
 
+import io.vidocq.champollion.spi.RawJsonKeyWriter;
 import jakarta.json.JsonException;
 import jakarta.json.JsonValue;
 import jakarta.json.stream.JsonGenerationException;
@@ -21,7 +22,7 @@ import java.util.Deque;
  * <p>Pretty-printing : 4 espaces, LF unique. Pas configurable au niveau M1 — sera
  * exposé via {@link jakarta.json.stream.JsonGeneratorFactory} en M1.4.</p>
  */
-public final class ChampollionJsonGenerator implements JsonGenerator {
+public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKeyWriter {
 
     private enum Ctx {
         ROOT_BEFORE,    // racine pas encore écrite
@@ -231,6 +232,39 @@ public final class ChampollionJsonGenerator implements JsonGenerator {
     @Override public JsonGenerator writeKey(String name) {
         beforeKey(name);
         return this;
+    }
+
+    /**
+     * Voie rapide pour les codegens statiques : écrit la clé pré-encodée (quoted +
+     * escape RFC 8259 §7 déjà appliqué) sans repasser dans le scanner d'escape à
+     * chaque appel.
+     *
+     * <p>{@code preQuotedKey} doit déjà inclure les guillemets englobants, par
+     * exemple {@code "\"name\""}. Le {@code :} et la virgule éventuelle sont
+     * gérés par cette méthode.</p>
+     *
+     * <p>Usage : produit du même code que {@link #writeKey(String)} mais en
+     * O(1) au lieu de O(n) sur la longueur du nom (pas de scan caractère par
+     * caractère).</p>
+     */
+    @Override
+    public void writeKeyRaw(String preQuotedKey) {
+        Ctx top = stack.peek();
+        switch (top) {
+            case OBJECT_FIRST -> {
+                if (pretty) { write('\n'); indent(); }
+                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+            }
+            case OBJECT_AFTER_VALUE -> {
+                write(',');
+                if (pretty) { write('\n'); indent(); }
+                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+            }
+            default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
+        }
+        writeRaw(preQuotedKey);
+        write(':');
+        if (pretty) write(' ');
     }
 
     @Override public void close() {
