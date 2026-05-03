@@ -65,6 +65,11 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_ARRAYLIST = ClassDesc.of("java.util.ArrayList");
     private static final ClassDesc CD_BIGDECIMAL = ClassDesc.of("java.math.BigDecimal");
     private static final ClassDesc CD_OPTIONAL = ClassDesc.of("java.util.Optional");
+    private static final ClassDesc CD_LIST = ClassDesc.of("java.util.List");
+    private static final ClassDesc CD_ITERATOR = ClassDesc.of("java.util.Iterator");
+    private static final ClassDesc CD_MAP = ClassDesc.of("java.util.Map");
+    private static final ClassDesc CD_MAP_ENTRY = ClassDesc.of("java.util.Map$Entry");
+    private static final ClassDesc CD_LINKED_HASH_MAP = ClassDesc.of("java.util.LinkedHashMap");
 
     /**
      * Slots locaux fixes utilisés par les méthodes de container côté <em>write</em>.
@@ -88,16 +93,21 @@ final class BindingBytecodeEmitter {
                     String fqn = dt.asElement().toString();
                     if ("java.lang.String".equals(fqn)) continue;
                     if (dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM) continue;
-                    if ("java.util.Optional".equals(fqn)) {
+                    if ("java.util.Optional".equals(fqn) || "java.util.List".equals(fqn)) {
                         var args = dt.getTypeArguments();
                         if (args.size() != 1) return false;
-                        TypeMirror inner = args.get(0);
-                        boolean okInner = inner.getKind() == TypeKind.DECLARED
-                                && (("java.lang.String".equals(((DeclaredType) inner).asElement().toString()))
-                                    || ((DeclaredType) inner).asElement().getKind()
-                                            == javax.lang.model.element.ElementKind.ENUM
-                                    || isLeafBox(((DeclaredType) inner).asElement().toString()));
-                        if (!okInner) return false;
+                        if (!isInnerEligible(args.get(0))) return false;
+                        continue;
+                    }
+                    if ("java.util.Map".equals(fqn)) {
+                        var args = dt.getTypeArguments();
+                        if (args.size() != 2) return false;
+                        TypeMirror keyT = args.get(0);
+                        if (keyT.getKind() != TypeKind.DECLARED
+                                || !"java.lang.String".equals(((DeclaredType) keyT).asElement().toString())) {
+                            return false;
+                        }
+                        if (!isInnerEligible(args.get(1))) return false;
                         continue;
                     }
                     return false;
@@ -128,6 +138,16 @@ final class BindingBytecodeEmitter {
                  "java.lang.Short", "java.lang.Byte", "java.lang.Boolean" -> true;
             default -> false;
         };
+    }
+
+    /** Type interne accepté dans les containers (Optional, List, Map values). */
+    private static boolean isInnerEligible(TypeMirror inner) {
+        if (inner.getKind() != TypeKind.DECLARED) return false;
+        DeclaredType dt = (DeclaredType) inner;
+        String fqn = dt.asElement().toString();
+        return "java.lang.String".equals(fqn)
+                || dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM
+                || isLeafBox(fqn);
     }
 
     /** Émet le bytecode du binding pour {@code record}. */
@@ -277,6 +297,14 @@ final class BindingBytecodeEmitter {
             case DECLARED -> {
                 if (isOptional(tm)) {
                     emitWriteOptional(code, CD_TARGET, name, (DeclaredType) tm);
+                    return;
+                }
+                if (isList(tm)) {
+                    emitWriteList(code, CD_TARGET, name, (DeclaredType) tm);
+                    return;
+                }
+                if (isMap(tm)) {
+                    emitWriteMap(code, CD_TARGET, name, (DeclaredType) tm);
                     return;
                 }
                 if (isEnum(tm)) {
@@ -586,6 +614,396 @@ final class BindingBytecodeEmitter {
         code.astore(slot);
     }
 
+    // ============================================================
+    // Helpers leaf scalar (boxed Object on stack)
+    // ============================================================
+
+    /**
+     * État pré-condition : event courant en slot 2, parser en slot 1.
+     * Lit la valeur courante (selon innerFqn et l'event) et empile une référence
+     * boxed sur la stack.
+     */
+    private static void readLeafBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
+        if (isEnum(innerTm)) {
+            ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
+            code.aload(1);
+            code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+            code.invokestatic(CD_ENUM, "valueOf", MethodTypeDesc.of(CD_ENUM, CD_STRING));
+            return;
+        }
+        switch (innerFqn) {
+            case "java.lang.String" -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
+            }
+            case "java.lang.Integer", "java.lang.Short", "java.lang.Byte" -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getInt", MethodTypeDesc.of(ConstantDescs.CD_int));
+                code.invokestatic(ConstantDescs.CD_Integer, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Integer, ConstantDescs.CD_int));
+            }
+            case "java.lang.Long" -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getLong", MethodTypeDesc.of(ConstantDescs.CD_long));
+                code.invokestatic(ConstantDescs.CD_Long, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Long, ConstantDescs.CD_long));
+            }
+            case "java.lang.Double", "java.lang.Float" -> {
+                code.aload(1);
+                code.invokeinterface(CD_JSON_PARSER, "getBigDecimal", MethodTypeDesc.of(CD_BIGDECIMAL));
+                code.invokevirtual(CD_BIGDECIMAL, "doubleValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_double));
+                code.invokestatic(ConstantDescs.CD_Double, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Double, ConstantDescs.CD_double));
+            }
+            case "java.lang.Boolean" -> {
+                Label fal = code.newLabel();
+                Label j = code.newLabel();
+                code.aload(2);
+                code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_TRUE", CD_JSON_PARSER_EVENT);
+                code.if_acmpne(fal);
+                code.iconst_1();
+                code.goto_(j);
+                code.labelBinding(fal);
+                code.iconst_0();
+                code.labelBinding(j);
+                code.invokestatic(ConstantDescs.CD_Boolean, "valueOf",
+                        MethodTypeDesc.of(ConstantDescs.CD_Boolean, ConstantDescs.CD_boolean));
+            }
+            default -> throw new IllegalStateException("Unsupported inner: " + innerFqn);
+        }
+    }
+
+    /**
+     * Stack pré : [g, value(boxed)]. Émet l'appel approprié à g.write(...) selon innerFqn,
+     * en unboxant si nécessaire. Stack post : [g] (pop le retour de l'invokeinterface).
+     */
+    private static void writeLeafFromBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
+        if (isEnum(innerTm)) {
+            ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
+            code.checkcast(CD_ENUM);
+            code.invokevirtual(ClassDesc.of("java.lang.Enum"), "name", MethodTypeDesc.of(CD_STRING));
+            code.invokeinterface(CD_JSON_GENERATOR, "write",
+                    MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+            code.pop();
+            return;
+        }
+        switch (innerFqn) {
+            case "java.lang.String" -> {
+                code.checkcast(CD_STRING);
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+            }
+            case "java.lang.Integer", "java.lang.Short", "java.lang.Byte" -> {
+                code.checkcast(ConstantDescs.CD_Integer);
+                code.invokevirtual(ConstantDescs.CD_Integer, "intValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_int));
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_int));
+            }
+            case "java.lang.Long" -> {
+                code.checkcast(ConstantDescs.CD_Long);
+                code.invokevirtual(ConstantDescs.CD_Long, "longValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_long));
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_long));
+            }
+            case "java.lang.Double", "java.lang.Float" -> {
+                code.checkcast(ConstantDescs.CD_Double);
+                code.invokevirtual(ConstantDescs.CD_Double, "doubleValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_double));
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_double));
+            }
+            case "java.lang.Boolean" -> {
+                code.checkcast(ConstantDescs.CD_Boolean);
+                code.invokevirtual(ConstantDescs.CD_Boolean, "booleanValue",
+                        MethodTypeDesc.of(ConstantDescs.CD_boolean));
+                code.invokeinterface(CD_JSON_GENERATOR, "write",
+                        MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_boolean));
+            }
+            default -> throw new IllegalStateException();
+        }
+        code.pop();
+    }
+
+    // ============================================================
+    // List<X>
+    // ============================================================
+
+    /**
+     * write : if (t.field() != null) { writeKey ; writeStartArray ;
+     *   for (Iterator it = field.iterator(); it.hasNext(); ) { Object e = it.next();
+     *     if (e == null) writeNull; else writeLeafFromBoxed(e); }
+     *   writeEnd; }
+     */
+    private static void emitWriteList(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType listTm) {
+        TypeMirror inner = listTm.getTypeArguments().get(0);
+        String innerFqn = ((DeclaredType) inner).asElement().toString();
+
+        Label skip = code.newLabel();
+        // if (t.field() == null) skip
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_LIST));
+        code.ifnull(skip);
+
+        // g.writeKey(name); g.writeStartArray()
+        code.aload(1); code.ldc(name);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeStartArray",
+                MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+
+        // Iterator it = field.iterator() ; stockée en W_TMP
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_LIST));
+        code.invokeinterface(CD_LIST, "iterator", MethodTypeDesc.of(CD_ITERATOR));
+        code.astore(W_TMP);
+
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.aload(W_TMP);
+        code.invokeinterface(CD_ITERATOR, "hasNext", MethodTypeDesc.of(ConstantDescs.CD_boolean));
+        code.ifeq(loopEnd);
+
+        // body : Object e = it.next();
+        code.aload(W_TMP);
+        code.invokeinterface(CD_ITERATOR, "next", MethodTypeDesc.of(CD_OBJECT));
+
+        // if (e == null) g.writeNull else g.write(e)
+        Label writeIt = code.newLabel();
+        Label cont = code.newLabel();
+        code.dup();
+        code.ifnonnull(writeIt);
+        code.pop();   // pop le null restant
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeNull", MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+        code.goto_(cont);
+        code.labelBinding(writeIt);
+        // stack : [Object]
+        // empile g sous l'objet : on a [obj] on veut [g, obj]
+        code.aload(1);
+        code.swap();   // [g, obj]
+        writeLeafFromBoxed(code, inner, innerFqn);
+        code.labelBinding(cont);
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeEnd", MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+        code.labelBinding(skip);
+    }
+
+    /**
+     * read : ArrayList<>(); while ((aev = p.next()) != END_ARRAY) {
+     *   if VALUE_NULL list.add(null); else list.add(readLeafBoxed());
+     * } ; store
+     */
+    private static void emitReadList(CodeBuilder code, DeclaredType listTm, int slot, int tmpBase) {
+        TypeMirror inner = listTm.getTypeArguments().get(0);
+        String innerFqn = ((DeclaredType) inner).asElement().toString();
+        final int R_TMP = tmpBase;
+
+        // _ev (slot 2) doit être START_ARRAY
+        Label okStart = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "START_ARRAY", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(okStart);
+        code.new_(ClassDesc.of("java.lang.IllegalStateException"));
+        code.dup();
+        code.ldc("Expected START_ARRAY");
+        code.invokespecial(ClassDesc.of("java.lang.IllegalStateException"), "<init>",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+        code.athrow();
+        code.labelBinding(okStart);
+
+        // ArrayList<E> list
+        code.new_(CD_ARRAYLIST);
+        code.dup();
+        code.invokespecial(CD_ARRAYLIST, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+        code.astore(R_TMP);
+
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.aload(1);
+        code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
+        code.astore(2);
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "END_ARRAY", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(loopEnd);
+
+        // list.add(<value>)
+        code.aload(R_TMP);
+        Label nullPath = code.newLabel();
+        Label addPath = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_NULL", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(nullPath);
+        readLeafBoxed(code, inner, innerFqn);
+        code.goto_(addPath);
+        code.labelBinding(nullPath);
+        code.aconst_null();
+        code.labelBinding(addPath);
+        code.invokevirtual(CD_ARRAYLIST, "add",
+                MethodTypeDesc.of(ConstantDescs.CD_boolean, CD_OBJECT));
+        code.pop();
+
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        code.aload(R_TMP);
+        code.astore(slot);
+    }
+
+    // ============================================================
+    // Map<String, V>
+    // ============================================================
+
+    private static void emitWriteMap(CodeBuilder code, ClassDesc CD_TARGET, String name, DeclaredType mapTm) {
+        TypeMirror valT = mapTm.getTypeArguments().get(1);
+        String valFqn = ((DeclaredType) valT).asElement().toString();
+
+        Label skip = code.newLabel();
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_MAP));
+        code.ifnull(skip);
+
+        code.aload(1); code.ldc(name);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeStartObject",
+                MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+
+        // Iterator<Map.Entry> it = map.entrySet().iterator()
+        code.aload(3);
+        code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_MAP));
+        code.invokeinterface(CD_MAP, "entrySet", MethodTypeDesc.of(ClassDesc.of("java.util.Set")));
+        code.invokeinterface(ClassDesc.of("java.util.Set"), "iterator", MethodTypeDesc.of(CD_ITERATOR));
+        code.astore(W_TMP);
+
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.aload(W_TMP);
+        code.invokeinterface(CD_ITERATOR, "hasNext", MethodTypeDesc.of(ConstantDescs.CD_boolean));
+        code.ifeq(loopEnd);
+
+        // Map.Entry e = it.next()
+        code.aload(W_TMP);
+        code.invokeinterface(CD_ITERATOR, "next", MethodTypeDesc.of(CD_OBJECT));
+        code.checkcast(CD_MAP_ENTRY);
+        // duplique pour deux usages : key et value
+        code.dup();
+        // g.writeKey((String) entry.getKey())
+        code.aload(1);
+        code.swap();
+        code.invokeinterface(CD_MAP_ENTRY, "getKey", MethodTypeDesc.of(CD_OBJECT));
+        code.checkcast(CD_STRING);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeKey",
+                MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
+        code.pop();
+
+        // value: stack pré [entry]; on veut [g, value]
+        code.invokeinterface(CD_MAP_ENTRY, "getValue", MethodTypeDesc.of(CD_OBJECT));
+        // si null, writeNull ; sinon write
+        Label writeIt = code.newLabel();
+        Label cont = code.newLabel();
+        code.dup();
+        code.ifnonnull(writeIt);
+        code.pop();
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeNull", MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+        code.goto_(cont);
+        code.labelBinding(writeIt);
+        code.aload(1);
+        code.swap();   // [g, val]
+        writeLeafFromBoxed(code, valT, valFqn);
+        code.labelBinding(cont);
+
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        code.aload(1);
+        code.invokeinterface(CD_JSON_GENERATOR, "writeEnd", MethodTypeDesc.of(CD_JSON_GENERATOR));
+        code.pop();
+        code.labelBinding(skip);
+    }
+
+    private static void emitReadMap(CodeBuilder code, DeclaredType mapTm, int slot, int tmpBase) {
+        TypeMirror valT = mapTm.getTypeArguments().get(1);
+        String valFqn = ((DeclaredType) valT).asElement().toString();
+        final int R_TMP = tmpBase;
+
+        Label okStart = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "START_OBJECT", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(okStart);
+        code.new_(ClassDesc.of("java.lang.IllegalStateException"));
+        code.dup();
+        code.ldc("Expected START_OBJECT");
+        code.invokespecial(ClassDesc.of("java.lang.IllegalStateException"), "<init>",
+                MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
+        code.athrow();
+        code.labelBinding(okStart);
+
+        // LinkedHashMap<String, V> map
+        code.new_(CD_LINKED_HASH_MAP);
+        code.dup();
+        code.invokespecial(CD_LINKED_HASH_MAP, "<init>", MethodTypeDesc.of(ConstantDescs.CD_void));
+        code.astore(R_TMP);
+
+        Label loopStart = code.newLabel();
+        Label loopEnd = code.newLabel();
+        code.labelBinding(loopStart);
+        code.aload(1);
+        code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
+        code.astore(2);
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "END_OBJECT", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(loopEnd);
+
+        // String key = p.getString(); p.next() → _ev pour la valeur
+        code.aload(R_TMP);                                  // [map]
+        code.aload(1);
+        code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));   // [map, key]
+        code.aload(1);
+        code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
+        code.astore(2);
+
+        // valeur boxed
+        Label nullPath = code.newLabel();
+        Label putPath = code.newLabel();
+        code.aload(2);
+        code.getstatic(CD_JSON_PARSER_EVENT, "VALUE_NULL", CD_JSON_PARSER_EVENT);
+        code.if_acmpeq(nullPath);
+        readLeafBoxed(code, valT, valFqn);
+        code.goto_(putPath);
+        code.labelBinding(nullPath);
+        code.aconst_null();
+        code.labelBinding(putPath);
+        // stack [map, key, val]
+        code.invokeinterface(CD_MAP, "put",
+                MethodTypeDesc.of(CD_OBJECT, CD_OBJECT, CD_OBJECT));
+        code.pop();
+
+        code.goto_(loopStart);
+        code.labelBinding(loopEnd);
+
+        code.aload(R_TMP);
+        code.astore(slot);
+    }
+
     /** ClassDesc d'un array dont la composante est {@code compTm}. */
     private static ClassDesc arrayCDOf(TypeMirror compTm) {
         return switch (compTm.getKind()) {
@@ -740,6 +1158,16 @@ final class BindingBytecodeEmitter {
                 && "java.util.Optional".equals(((DeclaredType) tm).asElement().toString());
     }
 
+    private static boolean isList(TypeMirror tm) {
+        return tm.getKind() == TypeKind.DECLARED
+                && "java.util.List".equals(((DeclaredType) tm).asElement().toString());
+    }
+
+    private static boolean isMap(TypeMirror tm) {
+        return tm.getKind() == TypeKind.DECLARED
+                && "java.util.Map".equals(((DeclaredType) tm).asElement().toString());
+    }
+
     private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot, int tmpBase) {
         // Si _ev == VALUE_NULL on saute (le slot reste à sa valeur par défaut).
         Label nullSkip = code.newLabel();
@@ -804,6 +1232,10 @@ final class BindingBytecodeEmitter {
             case DECLARED -> {
                 if (isOptional(tm)) {
                     emitReadOptional(code, (DeclaredType) tm, slot);
+                } else if (isList(tm)) {
+                    emitReadList(code, (DeclaredType) tm, slot, tmpBase);
+                } else if (isMap(tm)) {
+                    emitReadMap(code, (DeclaredType) tm, slot, tmpBase);
                 } else if (isEnum(tm)) {
                     // <Enum>.valueOf(p.getString())
                     ClassDesc CD_ENUM = ClassDesc.of(((DeclaredType) tm).asElement().toString());
