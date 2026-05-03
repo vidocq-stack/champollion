@@ -52,6 +52,20 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return Boolean.TRUE.equals(v) || "true".equals(v);
     }
 
+    /**
+     * Filtre {@code config} pour ne garder que les properties supportées par le
+     * provider (Spec §3.x : {@code getConfigInUse()} ne doit lister que les
+     * properties effectivement reconnues).
+     */
+    private static Map<String, ?> filterSupported(Map<String, ?> config, java.util.Set<String> supported) {
+        if (config == null || config.isEmpty()) return Collections.emptyMap();
+        var out = new java.util.LinkedHashMap<String, Object>();
+        for (var e : config.entrySet()) {
+            if (supported.contains(e.getKey())) out.put(e.getKey(), e.getValue());
+        }
+        return Map.copyOf(out);
+    }
+
     private static Reader utf8Reader(InputStream in) {
         return new InputStreamReader(in, StandardCharsets.UTF_8);
     }
@@ -71,7 +85,8 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonParserFactory createParserFactory(Map<String, ?> config) {
-        Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
+        // Aucune property supportée par JsonParserFactory en JSON-P 2.1.
+        Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
         return new JsonParserFactory() {
             @Override public JsonParser createParser(Reader reader) { return new ChampollionJsonParser(reader); }
             @Override public JsonParser createParser(InputStream in) { return new ChampollionJsonParser(utf8Reader(in)); }
@@ -100,7 +115,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
 
     @Override public JsonGeneratorFactory createGeneratorFactory(Map<String, ?> config) {
         boolean pretty = prettyOf(config);
-        Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
+        Map<String, ?> snapshot = filterSupported(config, java.util.Set.of(JsonGenerator.PRETTY_PRINTING));
         return new JsonGeneratorFactory() {
             @Override public JsonGenerator createGenerator(Writer writer) {
                 return new ChampollionJsonGenerator(writer, pretty);
@@ -126,15 +141,29 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonReaderFactory createReaderFactory(Map<String, ?> config) {
-        Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
+        Map<String, ?> snapshot = filterSupported(config, java.util.Set.of(jakarta.json.JsonConfig.KEY_STRATEGY));
+        jakarta.json.JsonConfig.KeyStrategy ks = keyStrategyOf(config);
         return new JsonReaderFactory() {
-            @Override public JsonReader createReader(Reader reader) { return new ChampollionJsonReader(reader); }
-            @Override public JsonReader createReader(InputStream in) { return new ChampollionJsonReader(utf8Reader(in)); }
+            @Override public JsonReader createReader(Reader reader) {
+                return new ChampollionJsonReader(new ChampollionJsonParser(reader), ks);
+            }
+            @Override public JsonReader createReader(InputStream in) {
+                return new ChampollionJsonReader(new ChampollionJsonParser(utf8Reader(in)), ks);
+            }
             @Override public JsonReader createReader(InputStream in, Charset charset) {
-                return new ChampollionJsonReader(new InputStreamReader(in, charset));
+                return new ChampollionJsonReader(new ChampollionJsonParser(new InputStreamReader(in, charset)), ks);
             }
             @Override public Map<String, ?> getConfigInUse() { return snapshot; }
         };
+    }
+
+    /** Lit la property {@code JsonConfig.KEY_STRATEGY} (JSON-P 2.1 §4.6). */
+    private static jakarta.json.JsonConfig.KeyStrategy keyStrategyOf(Map<String, ?> config) {
+        if (config == null) return jakarta.json.JsonConfig.KeyStrategy.LAST;
+        Object v = config.get(jakarta.json.JsonConfig.KEY_STRATEGY);
+        if (v instanceof jakarta.json.JsonConfig.KeyStrategy ks) return ks;
+        if (v instanceof String s) return jakarta.json.JsonConfig.KeyStrategy.valueOf(s);
+        return jakarta.json.JsonConfig.KeyStrategy.LAST;
     }
 
     @Override public JsonWriter createWriter(Writer writer) {
@@ -147,7 +176,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
 
     @Override public JsonWriterFactory createWriterFactory(Map<String, ?> config) {
         boolean pretty = prettyOf(config);
-        Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
+        Map<String, ?> snapshot = filterSupported(config, java.util.Set.of(JsonGenerator.PRETTY_PRINTING));
         return new JsonWriterFactory() {
             @Override public JsonWriter createWriter(Writer writer) {
                 return new ChampollionJsonWriter(writer, pretty);
@@ -291,7 +320,8 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
-        Map<String, ?> snapshot = config == null ? Collections.emptyMap() : Map.copyOf(config);
+        // Aucune property supportée par JsonBuilderFactory en JSON-P 2.1.
+        Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
         return new JsonBuilderFactory() {
             @Override public JsonObjectBuilder createObjectBuilder() { return new ChampollionJsonObjectBuilder(); }
             @Override public JsonArrayBuilder createArrayBuilder() { return new ChampollionJsonArrayBuilder(); }

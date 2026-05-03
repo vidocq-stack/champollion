@@ -24,14 +24,21 @@ import java.util.Map;
 public final class ChampollionJsonReader implements JsonReader {
 
     private final JsonParser parser;
+    private final jakarta.json.JsonConfig.KeyStrategy keyStrategy;
     private boolean consumed;
 
     public ChampollionJsonReader(Reader reader) {
-        this.parser = new ChampollionJsonParser(reader);
+        this(new ChampollionJsonParser(reader), jakarta.json.JsonConfig.KeyStrategy.LAST);
     }
 
     public ChampollionJsonReader(JsonParser parser) {
+        this(parser, jakarta.json.JsonConfig.KeyStrategy.LAST);
+    }
+
+    /** Permet de configurer la stratégie de clés dupliquées (Spec 2.1 §4.6). */
+    public ChampollionJsonReader(JsonParser parser, jakarta.json.JsonConfig.KeyStrategy keyStrategy) {
         this.parser = parser;
+        this.keyStrategy = keyStrategy == null ? jakarta.json.JsonConfig.KeyStrategy.LAST : keyStrategy;
     }
 
     @Override public JsonStructure read() {
@@ -42,8 +49,20 @@ public final class ChampollionJsonReader implements JsonReader {
         return s;
     }
 
-    @Override public JsonObject readObject() { return (JsonObject) read(); }
-    @Override public JsonArray readArray() { return (JsonArray) read(); }
+    @Override public JsonObject readObject() {
+        JsonStructure s = read();
+        if (!(s instanceof JsonObject o)) {
+            throw new JsonException("readObject() called but root is not a JSON object");
+        }
+        return o;
+    }
+    @Override public JsonArray readArray() {
+        JsonStructure s = read();
+        if (!(s instanceof JsonArray a)) {
+            throw new JsonException("readArray() called but root is not a JSON array");
+        }
+        return a;
+    }
 
     @Override public JsonValue readValue() {
         if (consumed) throw new IllegalStateException("read* methods cannot be invoked twice");
@@ -92,7 +111,16 @@ public final class ChampollionJsonReader implements JsonReader {
                 if (stack.isEmpty()) return currentValue;
                 Frame parent = stack.peek();
                 if (parent instanceof ObjectFrame of) {
-                    of.members.put(of.pendingKey, currentValue);
+                    String key = of.pendingKey;
+                    switch (keyStrategy) {
+                        case LAST -> of.members.put(key, currentValue);
+                        case FIRST -> of.members.putIfAbsent(key, currentValue);
+                        case NONE -> {
+                            if (of.members.putIfAbsent(key, currentValue) != null) {
+                                throw new JsonException("Duplicate key '" + key + "' (KeyStrategy.NONE)");
+                            }
+                        }
+                    }
                     of.pendingKey = null;
                 } else {
                     ((ArrayFrame) parent).values.add(currentValue);
@@ -108,7 +136,12 @@ public final class ChampollionJsonReader implements JsonReader {
         }
     }
 
-    @Override public void close() { parser.close(); }
+    @Override public void close() {
+        // Marque le reader comme consommé pour que tout read*() ultérieur
+        // throw IllegalStateException (Spec §3.6).
+        consumed = true;
+        parser.close();
+    }
 
     private sealed interface Frame permits ObjectFrame, ArrayFrame {}
 

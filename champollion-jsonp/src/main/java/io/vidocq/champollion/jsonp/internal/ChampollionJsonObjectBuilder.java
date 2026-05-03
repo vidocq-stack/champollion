@@ -84,7 +84,10 @@ public final class ChampollionJsonObjectBuilder implements JsonObjectBuilder {
     }
 
     @Override public JsonObject build() {
-        // On passe un snapshot LinkedHashMap pour préserver l'ordre d'insertion (§4.1).
-        return ChampollionJsonObject.of(new LinkedHashMap<>(members));
+        // Spec 2.1 §4.7 : build() retourne le résultat ET réinitialise le builder
+        // pour les utilisations futures.
+        var snapshot = new LinkedHashMap<>(members);
+        members.clear();
+        return ChampollionJsonObject.of(snapshot);
     }
 }

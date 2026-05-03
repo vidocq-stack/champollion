@@ -179,7 +179,10 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArray build() {
-        return ChampollionJsonArray.of(List.copyOf(values));
+        // Spec 2.1 §4.8 : build() retourne le résultat ET réinitialise le builder.
+        var snapshot = List.copyOf(values);
+        values.clear();
+        return ChampollionJsonArray.of(snapshot);
     }
 
     /** Pratique interne pour les conversions de Collection<JsonValue>. */

@@ -247,8 +247,16 @@ public final class JsonTokenizer {
         }
     }
 
-    private JsonException error(String message) {
-        return new JsonException(message + " (at line " + line + ", column " + column + ", offset " + offset + ")");
+    private jakarta.json.stream.JsonParsingException error(String message) {
+        return new jakarta.json.stream.JsonParsingException(
+                message + " (at line " + line + ", column " + column + ", offset " + offset + ")",
+                new SimpleLocation(line, column, offset));
+    }
+
+    private record SimpleLocation(long line, long column, long offset) implements jakarta.json.stream.JsonLocation {
+        @Override public long getLineNumber() { return line; }
+        @Override public long getColumnNumber() { return column; }
+        @Override public long getStreamOffset() { return offset; }
     }
 
     private static String describe(int c) {
