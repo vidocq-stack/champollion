@@ -42,26 +42,28 @@ final class RuntimeReadRegistry {
     private final java.util.Locale configLocale;
     private final boolean failOnUnknownProperties;
     private final boolean creatorParametersRequired;
+    @SuppressWarnings("rawtypes")
+    private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters;
 
-    RuntimeReadRegistry() { this(null, null, null, null, null, false, false); }
+    RuntimeReadRegistry() { this(null, null, null, null, null, false, false, java.util.Map.of()); }
 
-    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false, false); }
+    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false, false, java.util.Map.of()); }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, null, null, null, false, false);
+        this(defaultDateFormat, binaryDataStrategy, null, null, null, false, false, java.util.Map.of());
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false, false);
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false, false, java.util.Map.of());
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false, false);
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false, false, java.util.Map.of());
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
@@ -69,7 +71,7 @@ final class RuntimeReadRegistry {
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale,
                         boolean failOnUnknownProperties) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, false);
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, false, java.util.Map.of());
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
@@ -78,6 +80,17 @@ final class RuntimeReadRegistry {
                         java.util.Locale configLocale,
                         boolean failOnUnknownProperties,
                         boolean creatorParametersRequired) {
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, creatorParametersRequired, java.util.Map.of());
+    }
+
+    @SuppressWarnings("rawtypes")
+    RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
+                        String propertyNamingStrategy,
+                        jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
+                        java.util.Locale configLocale,
+                        boolean failOnUnknownProperties,
+                        boolean creatorParametersRequired,
+                        java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters) {
         this.defaultDateFormat = defaultDateFormat;
         this.binaryDataStrategy = binaryDataStrategy;
         this.propertyNamingStrategy = propertyNamingStrategy;
@@ -85,6 +98,7 @@ final class RuntimeReadRegistry {
         this.configLocale = configLocale;
         this.failOnUnknownProperties = failOnUnknownProperties;
         this.creatorParametersRequired = creatorParametersRequired;
+        this.globalAdapters = globalAdapters == null ? java.util.Map.of() : globalAdapters;
     }
 
     private final ClassValue<BindingReader> classCache = new ClassValue<>() {
@@ -94,6 +108,12 @@ final class RuntimeReadRegistry {
     private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     BindingReader readerFor(Type t) {
+        // Adapter global enregistré pour ce type ?
+        Class<?> rawAd = t instanceof Class<?> cc ? cc
+                : t instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
+                : null;
+        var adapterReader = adapterReaderFor(rawAd);
+        if (adapterReader != null) return adapterReader;
         if (t instanceof Class<?> c) {
             if (c.isArray()) return arrayReader(c.getComponentType());
             return classCache.get(c);
@@ -112,6 +132,40 @@ final class RuntimeReadRegistry {
             return this::dynamicValue;
         }
         return classCache.get((Class<?>) t);
+    }
+
+    /**
+     * Cherche un adapter global enregistré via {@code JsonbConfig.withAdapters} dont
+     * le type {@code Original} est assignable depuis {@code raw}. Renvoie un reader
+     * qui lit le format adapté puis invoque {@code adaptFromJson}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private BindingReader adapterReaderFor(Class<?> raw) {
+        if (globalAdapters.isEmpty() || raw == null || raw == Object.class) return null;
+        var direct = globalAdapters.get(raw);
+        if (direct == null) {
+            for (var entry : globalAdapters.entrySet()) {
+                if (entry.getKey().isAssignableFrom(raw)) { direct = entry.getValue(); break; }
+            }
+        }
+        if (direct == null) return null;
+        final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
+        Class<?> adaptedType = RuntimeBindingRegistry.findAdaptedType(
+                (Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
+        BindingReader inner = readerForRaw(adaptedType);
+        return parser -> {
+            Object adaptedValue = inner.read(parser);
+            if (adaptedValue == null) return null;
+            try { return adapter.adaptFromJson(adaptedValue); }
+            catch (Exception ex) { throw new JsonbException("Adapter failure on fromJson: " + ex.getMessage(), ex); }
+        };
+    }
+
+    /** Variante de {@link #readerFor(Type)} sans court-circuit adapter, pour éviter une récursion infinie. */
+    private BindingReader readerForRaw(Class<?> c) {
+        if (c == null || c == Object.class) return this::dynamicValue;
+        if (c.isArray()) return arrayReader(c.getComponentType());
+        return classCache.get(c);
     }
 
     // ===== Resolution by raw class =====

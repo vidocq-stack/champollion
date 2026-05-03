@@ -36,29 +36,40 @@ final class RuntimeBindingRegistry {
     private final String propertyOrderStrategy;
     private final jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy;
     private final java.util.Locale configLocale;
+    @SuppressWarnings("rawtypes")
+    private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters;
 
     RuntimeBindingRegistry() {
-        this(null, false, null, null, null, null, null);
+        this(null, false, null, null, null, null, null, java.util.Map.of());
     }
 
     RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues) {
-        this(defaultDateFormat, writeNullValues, null, null, null, null, null);
+        this(defaultDateFormat, writeNullValues, null, null, null, null, null, java.util.Map.of());
     }
 
     RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy) {
-        this(defaultDateFormat, writeNullValues, binaryDataStrategy, null, null, null, null);
+        this(defaultDateFormat, writeNullValues, binaryDataStrategy, null, null, null, null, java.util.Map.of());
     }
 
     RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy,
                            String propertyNamingStrategy, String propertyOrderStrategy,
                            jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy) {
-        this(defaultDateFormat, writeNullValues, binaryDataStrategy, propertyNamingStrategy, propertyOrderStrategy, propertyVisibilityStrategy, null);
+        this(defaultDateFormat, writeNullValues, binaryDataStrategy, propertyNamingStrategy, propertyOrderStrategy, propertyVisibilityStrategy, null, java.util.Map.of());
     }
 
     RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy,
                            String propertyNamingStrategy, String propertyOrderStrategy,
                            jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                            java.util.Locale configLocale) {
+        this(defaultDateFormat, writeNullValues, binaryDataStrategy, propertyNamingStrategy, propertyOrderStrategy, propertyVisibilityStrategy, configLocale, java.util.Map.of());
+    }
+
+    @SuppressWarnings("rawtypes")
+    RuntimeBindingRegistry(String defaultDateFormat, boolean writeNullValues, String binaryDataStrategy,
+                           String propertyNamingStrategy, String propertyOrderStrategy,
+                           jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
+                           java.util.Locale configLocale,
+                           java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters) {
         this.defaultDateFormat = defaultDateFormat;
         this.writeNullValues = writeNullValues;
         this.binaryDataStrategy = binaryDataStrategy;
@@ -66,6 +77,7 @@ final class RuntimeBindingRegistry {
         this.propertyOrderStrategy = propertyOrderStrategy;
         this.propertyVisibilityStrategy = propertyVisibilityStrategy;
         this.configLocale = configLocale;
+        this.globalAdapters = globalAdapters == null ? java.util.Map.of() : globalAdapters;
     }
 
     private final ClassValue<BindingWriter> cache = new ClassValue<>() {
@@ -74,6 +86,10 @@ final class RuntimeBindingRegistry {
 
     BindingWriter writerFor(Type t) {
         if (t == null) return dynamicWriter();
+        // Adapter global enregistré pour ce type (JsonbConfig.withAdapters) : court-circuit.
+        Class<?> raw = rawOf(t);
+        var adapterWriter = adapterWriterFor(raw);
+        if (adapterWriter != null) return adapterWriter;
         if (t instanceof Class<?> c) {
             if (c.isArray()) return arrayWriter(c.getComponentType());
             if (c == Object.class) return dynamicWriter();
@@ -92,6 +108,42 @@ final class RuntimeBindingRegistry {
             return dynamicWriter();
         }
         return cache.get(rawOf(t));
+    }
+
+    /**
+     * Cherche un adapter global enregistré via {@code JsonbConfig.withAdapters} dont
+     * le type {@code Original} est assignable depuis {@code raw}. Renvoie un writer
+     * qui invoque {@code adaptToJson} puis délègue au writer du type {@code Adapted}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private BindingWriter adapterWriterFor(Class<?> raw) {
+        if (globalAdapters.isEmpty() || raw == null || raw == Object.class) return null;
+        // Match exact d'abord, puis assignable.
+        var direct = globalAdapters.get(raw);
+        if (direct == null) {
+            for (var entry : globalAdapters.entrySet()) {
+                if (entry.getKey().isAssignableFrom(raw)) { direct = entry.getValue(); break; }
+            }
+        }
+        if (direct == null) return null;
+        final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
+        Class<?> adaptedType = findAdaptedType((Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
+        BindingWriter inner = writerForRaw(adaptedType);
+        return (g, value) -> {
+            if (value == null) { g.writeNull(); return; }
+            Object adapted;
+            try { adapted = adapter.adaptToJson(value); }
+            catch (Exception ex) { throw new JsonbException("Adapter failure on toJson: " + ex.getMessage(), ex); }
+            if (adapted == null) g.writeNull();
+            else inner.write(g, adapted);
+        };
+    }
+
+    /** Variante de {@link #writerFor(Type)} sans court-circuit adapter, pour éviter une récursion infinie. */
+    private BindingWriter writerForRaw(Class<?> c) {
+        if (c == null || c == Object.class) return dynamicWriter();
+        if (c.isArray()) return arrayWriter(c.getComponentType());
+        return cache.get(c);
     }
 
     /** Writer qui résout au runtime par {@code value.getClass()} : nécessaire pour
