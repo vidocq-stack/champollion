@@ -760,6 +760,29 @@ final class RuntimeReadRegistry {
         return inst;
     }
 
+    /** Cherche un reader date pour un creator parameter via @JsonbDateFormat. */
+    private java.util.Optional<BindingReader> dateReaderForParam(java.lang.reflect.Parameter p, Class<?> paramType) {
+        if (!RuntimeBindingRegistry.isDateLikeType(paramType)) return java.util.Optional.empty();
+        var ann = p.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
+        if (ann == null) return java.util.Optional.empty();
+        var spec = new RuntimeBindingRegistry.DateFormatSpec(ann.value(),
+                ann.locale().equals("##default") ? java.util.Locale.getDefault()
+                        : java.util.Locale.forLanguageTag(ann.locale()));
+        return java.util.Optional.of(makeDateReader(paramType, spec));
+    }
+
+    /** Recherche silencieuse de @JsonbCreator pour usage polymorphique (sans validation stricte). */
+    private static java.lang.reflect.Executable findJsonbCreatorPolymorphic(Class<?> type) {
+        for (Constructor<?> c : type.getDeclaredConstructors()) {
+            if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return c;
+        }
+        for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                    && m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return m;
+        }
+        return null;
+    }
+
     /**
      * Cherche un constructor ou une static factory annotée {@code @JsonbCreator}.
      * Renvoie null si aucun n'est trouvé. La spec §4.6 autorise au plus un creator,
@@ -800,9 +823,19 @@ final class RuntimeReadRegistry {
         BindingReader[] readers = new BindingReader[params.length];
         Map<String, Integer> indexByName = new HashMap<>(params.length * 2);
         for (int i = 0; i < params.length; i++) {
-            readers[i] = readerFor(creator instanceof Constructor<?> c
+            final int idx = i;
+            final Type genericParamType = creator instanceof Constructor<?> c
                     ? c.getGenericParameterTypes()[i]
-                    : ((java.lang.reflect.Method) creator).getGenericParameterTypes()[i]);
+                    : ((java.lang.reflect.Method) creator).getGenericParameterTypes()[i];
+            final java.lang.reflect.Parameter param = params[i];
+            final Class<?> paramType = paramTypes[i];
+            // §4.7 / §4.4 — @JsonbDateFormat / @JsonbTypeAdapter / @JsonbTypeDeserializer
+            // sur le param du creator (ex. AnnotationTypeInfoTest.DateConstructor).
+            BindingReader paramReader = customAdapterReader(param, null)
+                    .or(() -> customDeserializerReader(param, null, genericParamType))
+                    .or(() -> dateReaderForParam(param, paramType))
+                    .orElseGet(() -> readerFor(genericParamType));
+            readers[idx] = paramReader;
             String name = paramJsonbName(params[i]);
             indexByName.put(name, i);
             var prop = params[i].getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
@@ -1425,7 +1458,17 @@ final class RuntimeReadRegistry {
                 throw new JsonbException("ctor failed for " + concrete, ex);
             }
         }
-        // POJO non-record : on construit via no-arg constructor + setters publics.
+        // POJO non-record : si @JsonbCreator présent, déléguer au creator-based reader
+        // (les membres déjà avancés au-delà du discriminator sont absorbés en relisant
+        // l'objet via un PrimedParser qui rejoue START_OBJECT). Sinon ctor sans arg.
+        var creator = findJsonbCreatorPolymorphic(concrete);
+        if (creator != null) {
+            // Construire un BindingReader creator-based puis appeler avec un parser primé
+            // qui ré-injecte START_OBJECT au début.
+            BindingReader r = resolveCreator(creator);
+            JsonParser primed = new PrimedParser(JsonParser.Event.START_OBJECT, parser);
+            return r.read(primed);
+        }
         Constructor<?> ctor;
         try { ctor = concrete.getDeclaredConstructor(); }
         catch (NoSuchMethodException nse) {
