@@ -176,7 +176,42 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonObjectBuilder createObjectBuilder(Map<String, ?> map) {
-        throw new UnsupportedOperationException("createObjectBuilder(Map<String,?>) — implemented in M2.3");
+        var b = new ChampollionJsonObjectBuilder();
+        if (map == null) return b;
+        for (var e : map.entrySet()) {
+            if (e.getKey() == null) throw new NullPointerException("null key not allowed in JSON object");
+            b.add(e.getKey(), toJsonValue(e.getValue()));
+        }
+        return b;
+    }
+
+    /** Convertit une valeur arbitraire (récupérée d'une Map) en JsonValue. */
+    private static JsonValue toJsonValue(Object v) {
+        if (v == null) return JsonValue.NULL;
+        if (v instanceof JsonValue jv) return jv;
+        if (v instanceof String s) return new ChampollionJsonString(s);
+        if (v instanceof Boolean b) return b ? JsonValue.TRUE : JsonValue.FALSE;
+        if (v instanceof Integer i) return ChampollionJsonNumber.of(i);
+        if (v instanceof Long l) return ChampollionJsonNumber.of(l);
+        if (v instanceof java.math.BigDecimal bd) return ChampollionJsonNumber.of(bd);
+        if (v instanceof java.math.BigInteger bi) return ChampollionJsonNumber.of(new java.math.BigDecimal(bi));
+        if (v instanceof Number n) return ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(n.doubleValue()));
+        if (v instanceof Map<?, ?> m) {
+            var ob = new ChampollionJsonObjectBuilder();
+            for (var e : m.entrySet()) {
+                if (!(e.getKey() instanceof String k)) {
+                    throw new IllegalArgumentException("nested Map keys must be String");
+                }
+                ob.add(k, toJsonValue(e.getValue()));
+            }
+            return ob.build();
+        }
+        if (v instanceof java.util.Collection<?> c) {
+            var ab = new ChampollionJsonArrayBuilder();
+            for (Object x : c) ab.add(toJsonValue(x));
+            return ab.build();
+        }
+        throw new IllegalArgumentException("Unsupported value type for JSON conversion: " + v.getClass());
     }
 
     @Override public JsonArrayBuilder createArrayBuilder() {
@@ -237,8 +272,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public jakarta.json.JsonPatch createDiff(JsonStructure source, JsonStructure target) {
-        // RFC 6902 diff : non-trivial. Reporté en M3.4 (le merge patch couvre déjà l'essentiel des cas).
-        throw new UnsupportedOperationException("createDiff (JsonPatch) — implemented in M3.4");
+        return ChampollionJsonPatchDiff.diff(source, target);
     }
 
     @Override public jakarta.json.JsonMergePatch createMergePatch(JsonValue patch) {

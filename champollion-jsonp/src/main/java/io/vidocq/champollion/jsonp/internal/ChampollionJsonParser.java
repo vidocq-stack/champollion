@@ -269,29 +269,97 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public JsonValue getValue() {
-        // Construction de valeur reportée à M2 (object model). Pour l'instant, utilisable
-        // uniquement pour les tokens scalaires lus juste avant.
-        throw new UnsupportedOperationException("getValue() requires the object model — implemented in M2");
+        // Spec §3.10 : retourne la valeur à la position courante. Pour START_OBJECT/
+        // START_ARRAY, équivaut à getObject()/getArray(). Pour KEY_NAME, retourne la
+        // string du nom. Pour VALUE_*, le JsonValue scalaire correspondant.
+        if (lastEvent == null) {
+            throw new IllegalStateException("getValue() called before any next()");
+        }
+        return switch (lastEvent) {
+            case START_OBJECT -> readObjectMembers();
+            case START_ARRAY -> readArrayElements();
+            case KEY_NAME, VALUE_STRING -> new ChampollionJsonString(lastString);
+            case VALUE_NUMBER -> ChampollionJsonNumber.of(lastNumber);
+            case VALUE_TRUE -> JsonValue.TRUE;
+            case VALUE_FALSE -> JsonValue.FALSE;
+            case VALUE_NULL -> JsonValue.NULL;
+            case END_OBJECT, END_ARRAY -> throw new IllegalStateException("getValue() not valid for " + lastEvent);
+        };
     }
 
     @Override public JsonObject getObject() {
-        throw new UnsupportedOperationException("getObject() requires the object model — implemented in M2");
+        if (lastEvent != Event.START_OBJECT) {
+            throw new IllegalStateException("getObject() requires last event = START_OBJECT, got " + lastEvent);
+        }
+        return readObjectMembers();
     }
 
     @Override public JsonArray getArray() {
-        throw new UnsupportedOperationException("getArray() requires the object model — implemented in M2");
+        if (lastEvent != Event.START_ARRAY) {
+            throw new IllegalStateException("getArray() requires last event = START_ARRAY, got " + lastEvent);
+        }
+        return readArrayElements();
+    }
+
+    /** Lit les members jusqu'à END_OBJECT (le START_OBJECT initial est déjà consommé). */
+    private JsonObject readObjectMembers() {
+        var map = new java.util.LinkedHashMap<String, JsonValue>();
+        while (true) {
+            Event e = next();
+            if (e == Event.END_OBJECT) return ChampollionJsonObject.of(map);
+            if (e != Event.KEY_NAME) {
+                throw new IllegalStateException("Expected KEY_NAME or END_OBJECT, got " + e);
+            }
+            String key = lastString;
+            Event ve = next();
+            map.put(key, readScalarOrStructure(ve));
+        }
+    }
+
+    /** Lit les éléments jusqu'à END_ARRAY (le START_ARRAY initial est déjà consommé). */
+    private JsonArray readArrayElements() {
+        var list = new java.util.ArrayList<JsonValue>();
+        while (true) {
+            Event e = next();
+            if (e == Event.END_ARRAY) return ChampollionJsonArray.of(list);
+            list.add(readScalarOrStructure(e));
+        }
+    }
+
+    /** Construit un JsonValue à partir de l'event courant (déjà lu). */
+    private JsonValue readScalarOrStructure(Event e) {
+        return switch (e) {
+            case START_OBJECT -> readObjectMembers();
+            case START_ARRAY -> readArrayElements();
+            case VALUE_STRING -> new ChampollionJsonString(lastString);
+            case VALUE_NUMBER -> ChampollionJsonNumber.of(lastNumber);
+            case VALUE_TRUE -> JsonValue.TRUE;
+            case VALUE_FALSE -> JsonValue.FALSE;
+            case VALUE_NULL -> JsonValue.NULL;
+            default -> throw new IllegalStateException("Unexpected event during value read: " + e);
+        };
     }
 
     @Override public Stream<JsonValue> getArrayStream() {
-        throw new UnsupportedOperationException("getArrayStream() requires the object model — implemented in M2");
+        if (lastEvent != Event.START_ARRAY) {
+            throw new IllegalStateException("getArrayStream() requires last event = START_ARRAY, got " + lastEvent);
+        }
+        // Implémentation simple : lit tout l'array en mémoire puis stream dessus.
+        return readArrayElements().stream().map(v -> v);
     }
 
     @Override public Stream<java.util.Map.Entry<String, JsonValue>> getObjectStream() {
-        throw new UnsupportedOperationException("getObjectStream() requires the object model — implemented in M2");
+        if (lastEvent != Event.START_OBJECT) {
+            throw new IllegalStateException("getObjectStream() requires last event = START_OBJECT, got " + lastEvent);
+        }
+        return readObjectMembers().entrySet().stream();
     }
 
     @Override public Stream<JsonValue> getValueStream() {
-        throw new UnsupportedOperationException("getValueStream() requires the object model — implemented in M2");
+        // Stream sur les valeurs au niveau racine (utilisé pour streamer plusieurs
+        // documents JSON consécutifs, cas marginal). On retourne juste la valeur
+        // courante puis termine.
+        return java.util.stream.Stream.of(getValue());
     }
 
     @Override public void skipArray() {
