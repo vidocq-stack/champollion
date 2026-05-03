@@ -75,7 +75,19 @@
             <dependencies>
                 <dependency>
                     <groupId>jakarta.json</groupId>
-                    <artifactId>jakarta-json-tck</artifactId>
+                    <artifactId>jakarta.json-tck-tests</artifactId>
+                    <version>${jakarta.json.tck.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>jakarta.json</groupId>
+                    <artifactId>jakarta.json-tck-tests-pluggability</artifactId>
+                    <version>${jakarta.json.tck.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>jakarta.json</groupId>
+                    <artifactId>jakarta.json-tck-common</artifactId>
                     <version>${jakarta.json.tck.version}</version>
                     <scope>test</scope>
                 </dependency>
@@ -94,7 +106,8 @@
                         <version>3.5.5</version>
                         <configuration>
                             <dependenciesToScan>
-                                <dependency>jakarta.json:jakarta-json-tck</dependency>
+                                <dependency>jakarta.json:jakarta.json-tck-tests</dependency>
+                                <dependency>jakarta.json:jakarta.json-tck-tests-pluggability</dependency>
                             </dependenciesToScan>
                             <reportsDirectory>${project.build.directory}/tck-reports/jsonp</reportsDirectory>
                         </configuration>
@@ -112,7 +125,7 @@
             <dependencies>
                 <dependency>
                     <groupId>jakarta.json.bind</groupId>
-                    <artifactId>jakarta-json-bind-tck</artifactId>
+                    <artifactId>jakarta.json.bind-tck</artifactId>
                     <version>${jakarta.json.bind.tck.version}</version>
                     <scope>test</scope>
                 </dependency>
@@ -131,7 +144,7 @@
                         <version>3.5.5</version>
                         <configuration>
                             <dependenciesToScan>
-                                <dependency>jakarta.json.bind:jakarta-json-bind-tck</dependency>
+                                <dependency>jakarta.json.bind:jakarta.json.bind-tck</dependency>
                             </dependenciesToScan>
                             <reportsDirectory>${project.build.directory}/tck-reports/jsonb</reportsDirectory>
                         </configuration>

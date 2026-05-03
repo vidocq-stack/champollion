@@ -17,46 +17,42 @@ Jakarta JSON-B 3.0 contre Champollion, et liste les éventuels challenges
 
 ## Installation des TCK officiels
 
-Les TCK Jakarta sont distribués par l'Eclipse Foundation et **ne sont pas
-disponibles sur Maven Central** public. Il faut les installer manuellement
-dans le M2 local.
+Les TCK Jakarta sont distribués par l'Eclipse Foundation sous forme de ZIP
+contenant les jars + POMs (non publiés sur Maven Central public).
 
-### TCK Jakarta JSON Processing 2.1
+### Méthode automatique (recommandée)
 
-1. Télécharger depuis https://download.eclipse.org/jakartaee/jsonp/2.1/
-   Le fichier `jakarta-json-tck-2.1.0.jar` (ou la version la plus récente compatible).
+Le script `install-tck.sh` à la racine télécharge les ZIP officiels depuis
+`download.eclipse.org`, extrait les artefacts et les installe via
+`mvn install:install-file` avec leurs vrais POMs.
 
-2. Installer dans le M2 local :
+```bash
+./install-tck.sh          # JSON-P + JSON-B
+./install-tck.sh jsonp    # JSON-P 2.1 uniquement
+./install-tck.sh jsonb    # JSON-B 3.0 uniquement
+```
 
+Idempotent : ne re-télécharge pas si les jars sont déjà présents dans `~/.m2/`.
+
+### Coordonnées Maven installées
+
+| Coordonnées | Source |
+|---|---|
+| `jakarta.json:jakarta.json-tck-common:2.1.0` | jsonp ZIP |
+| `jakarta.json:jakarta.json-tck-tests:2.1.0` | jsonp ZIP |
+| `jakarta.json:jakarta.json-tck-tests-pluggability:2.1.0` | jsonp ZIP |
+| `jakarta.json.bind:jakarta.json.bind-tck:3.0.0` | jsonb ZIP |
+
+### Méthode manuelle
+
+Si tu préfères :
+
+1. Télécharger https://download.eclipse.org/jakartaee/jsonp/2.1/jakarta-jsonp-tck-2.1.0.zip
+2. Décompresser, aller dans `jsonp-tck/artifacts/`, lancer pour chaque jar :
    ```bash
-   mvn install:install-file \
-       -Dfile=jakarta-json-tck-2.1.0.jar \
-       -DgroupId=jakarta.json \
-       -DartifactId=jakarta-json-tck \
-       -Dversion=2.1.0 \
-       -Dpackaging=jar
+   mvn install:install-file -Dfile=<jar> -DpomFile=<pom>
    ```
-
-3. Vérifier :
-
-   ```bash
-   ls ~/.m2/repository/jakarta/json/jakarta-json-tck/2.1.0/
-   ```
-
-### TCK Jakarta JSON Binding 3.0
-
-1. Télécharger depuis https://download.eclipse.org/jakartaee/jsonb/3.0/
-
-2. Installer :
-
-   ```bash
-   mvn install:install-file \
-       -Dfile=jakarta-json-bind-tck-3.0.0.jar \
-       -DgroupId=jakarta.json.bind \
-       -DartifactId=jakarta-json-bind-tck \
-       -Dversion=3.0.0 \
-       -Dpackaging=jar
-   ```
+3. Idem pour `jakarta-jsonb-tck-3.0.0.zip`.
 
 ---
 
@@ -133,22 +129,63 @@ le corpus TCK.
 
 ---
 
+## Premier run TCK — baseline 2026-05-03
+
+### JSON-P 2.1
+
+| Métrique | Valeur |
+|---|---|
+| Tests exécutés | 197 |
+| **PASS** | **65** (33 %) |
+| FAIL | 112 |
+| ERROR | 20 |
+
+Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationException` qu'on s'était auto-marqués comme TODO) :
+- `Json.createDiff()` → M3.4 reporté
+- `parser.getObject()` / `parser.getValue()` → M2 marker
+- `createObjectBuilder(Map<String,?>)` → M2.3 marker
+- `JsonPointer /~n` rejeté à tort
+
+### JSON-B 3.0
+
+| Métrique | Valeur |
+|---|---|
+| Tests exécutés | 295 |
+| **PASS** | **75** (25 %) |
+| FAIL | 182 |
+| ERROR | 33 |
+| SKIP | 5 |
+
+Score initial à investiguer : naming strategies, configuration, mapping types tiers
+non encore couverts.
+
+### Plan d'attaque pour 100 % PASS
+
+1. **M2.x stubs** : implémenter les méthodes `UnsupportedOperationException`
+   identifiées (`getObject`, `getValue`, `createObjectBuilder(Map)`,
+   `createDiff`).
+2. **JsonPointer escapes** : revoir le rejet de `~n` (probablement ce que le TCK
+   attend que ce soit accepté ou mieux signalé).
+3. **JSON-B advanced** : `@JsonbVisibility`, `@JsonbNumberFormat`, naming
+   strategies (camelCase, snake_case, etc.), property order strategy.
+4. **Differential investigation** : pour chaque test FAIL, trouver la divergence
+   spec/Champollion et la documenter dans la table _Challenges_ ci-dessous.
+
 ## Challenges connus
 
-> Liste des tests désactivés avec justification de spec ou bug TCK. Modèle aligné
-> sur `cassini/TCK.md`.
+> Liste des tests désactivés avec justification de spec ou bug TCK.
 
 ### JSON-P 2.1
 
 | Test | Catégorie | Statut | Justification |
 |---|---|---|---|
-| _aucun_ | — | — | Aucun challenge identifié à ce jour. |
+| _à investiguer_ | — | — | Premier run baseline ; analyse FAIL/ERROR à venir. |
 
 ### JSON-B 3.0
 
 | Test | Catégorie | Statut | Justification |
 |---|---|---|---|
-| _aucun_ | — | — | Aucun challenge identifié à ce jour (les annotations `@JsonbVisibility`, `@JsonbNumberFormat` et les naming strategies seront vérifiées au premier run TCK). |
+| _à investiguer_ | — | — | Premier run baseline ; analyse FAIL/ERROR à venir. |
 
 ---
 

@@ -21,15 +21,15 @@ LOG="$TCK_DIR/target/tck-jsonb-output.log"
 REPORT="$TCK_DIR/target/tck-report-jsonb.txt"
 
 # Vérification présence TCK dans M2 local
-TCK_JAR="$HOME/.m2/repository/jakarta/json/bind/jakarta-json-bind-tck/3.0.0/jakarta-json-bind-tck-3.0.0.jar"
+TCK_JAR="$HOME/.m2/repository/jakarta/json/bind/jakarta.json.bind-tck/3.0.0/jakarta.json.bind-tck-3.0.0.jar"
 if [ ! -f "$TCK_JAR" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════════"
     echo "  TCK Jakarta JSON-B 3.0 non trouvé dans le M2 local."
     echo "  Attendu : $TCK_JAR"
     echo ""
-    echo "  Voir TCK.md pour les instructions d'installation."
-    echo "  https://download.eclipse.org/jakartaee/jsonb/3.0/"
+    echo "  Lance ./install-tck.sh pour télécharger et installer."
+    echo "  Voir aussi TCK.md."
     echo "═══════════════════════════════════════════════════════════════════"
     echo ""
     exit 78  # EX_CONFIG (skip)

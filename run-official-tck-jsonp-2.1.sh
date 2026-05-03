@@ -18,15 +18,15 @@ LOG="$TCK_DIR/target/tck-jsonp-output.log"
 REPORT="$TCK_DIR/target/tck-report-jsonp.txt"
 
 # Vérification présence TCK dans M2 local
-TCK_JAR="$HOME/.m2/repository/jakarta/json/jakarta-json-tck/2.1.0/jakarta-json-tck-2.1.0.jar"
+TCK_JAR="$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.0/jakarta.json-tck-tests-2.1.0.jar"
 if [ ! -f "$TCK_JAR" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════════"
     echo "  TCK Jakarta JSON-P 2.1 non trouvé dans le M2 local."
     echo "  Attendu : $TCK_JAR"
     echo ""
-    echo "  Voir TCK.md pour les instructions d'installation."
-    echo "  https://download.eclipse.org/jakartaee/jsonp/2.1/"
+    echo "  Lance ./install-tck.sh pour télécharger et installer."
+    echo "  Voir aussi TCK.md."
     echo "═══════════════════════════════════════════════════════════════════"
     echo ""
     exit 78  # EX_CONFIG (skip)
