@@ -53,7 +53,7 @@
 | **M5.8** | Maven plugin `champollion-codegen-maven-plugin` | ❌ packaging=jar squelette |
 | **M5.9** | APT bytecode étendu : arrays primitifs + `String[]` + `Optional<X>` | ✅ |
 | **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ✅ — **fast path bytecode 100 %** |
-| **M5.11** | Optimisation : noms de propriétés en byte[] UTF-8 | ❌ pas commencé |
+| **M5.11** | Pre-encoded property names + `writeKeyRaw` fast path | ✅ |
 | **M5.12** | Validation AOT GraalVM `native-image` | ❌ pas commencé |
 | **M6** | TCK officiels JSON-P 2.1 + JSON-B 3.0 | ❌ pas commencé |
 | **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
@@ -91,8 +91,6 @@
 
 **À faire :**
 - **M5.8** Activation `champollion-codegen-maven-plugin` (packaging=maven-plugin) quand `maven-plugin-plugin` ≥ ASM lisant Java 25 sera publié. Aujourd'hui jar squelette.
-- **M5.10** Étendre le bytecode emitter à `List<X>`, `Map<String,V>`, nested records `@JsonbStatic` (aujourd'hui slow path source).
-- **M5.11** Optimisations : escape précompilé pour les noms de propriétés en `byte[]` UTF-8 émis comme `private static final byte[]` dans le binding.
 - **M5.12** Validation AOT : `native-image` sur `champollion-examples` pour prouver l'absence totale de réflexion sur les types annotés.
 
 ### Moyen terme — Tests d'envergure
