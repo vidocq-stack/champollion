@@ -1210,6 +1210,12 @@ final class RuntimeReadRegistry {
         for (var sub : info.value()) {
             aliasToType.put(sub.alias(), sub.type());
         }
+        // Validation : multi-inheritance / alias-not-subtype / key-collision via les
+        // sous-types déclarés (TypeInfoExceptionsTest.testDeserializeTypeInfoMultiInheritance,
+        // testInvalidAlias, testNameCollision).
+        for (var sub : info.value()) {
+            RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
+        }
         return parser -> {
             JsonParser.Event e = parser.next();
             if (e == JsonParser.Event.VALUE_NULL) return null;
@@ -1300,11 +1306,22 @@ final class RuntimeReadRegistry {
         for (Method sm : concrete.getMethods()) {
             if (Modifier.isStatic(sm.getModifiers()) || sm.isBridge() || sm.isSynthetic()) continue;
             if (sm.getReturnType() != void.class) continue;
+            if (sm.getParameterCount() != 1) continue;
             String prop = RuntimeBindingRegistry.beanSetterOf(sm);
             if (prop == null) continue;
             try { sm.setAccessible(true); } catch (Exception ignore) {}
             BindingReader reader = readerFor(sm.getGenericParameterTypes()[0]);
             writers.put(prop, new MethodSetter(sm, reader));
+        }
+        // Champs publics non couverts par un setter (cas Dog.isDog).
+        for (Field f : concrete.getFields()) {
+            int mods = f.getModifiers();
+            if (Modifier.isStatic(mods) || Modifier.isTransient(mods) || Modifier.isFinal(mods)) continue;
+            if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
+            if (writers.containsKey(f.getName())) continue;
+            try { f.setAccessible(true); } catch (Exception ignore) {}
+            BindingReader reader = readerFor(f.getGenericType());
+            writers.put(f.getName(), new FieldSetter(f, reader));
         }
         JsonParser.Event ev;
         while ((ev = parser.next()) != JsonParser.Event.END_OBJECT) {

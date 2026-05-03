@@ -948,16 +948,82 @@ final class RuntimeBindingRegistry {
     /**
      * Cherche {@code @JsonbTypeInfo} sur {@code type} ou ses supertypes (interfaces et
      * superclasses). Spec §4.8 : peut être déclarée sur l'interface sealed parente.
+     *
+     * <p>Lève {@link JsonbException} si plusieurs ancêtres distincts portent
+     * {@code @JsonbTypeInfo} (multi-inheritance non supportée — TCK
+     * {@code TypeInfoExceptionsTest.testSerializeTypeInfoMultiInheritance}).</p>
      */
     static jakarta.json.bind.annotation.JsonbTypeInfo findTypeInfo(Class<?> type) {
         if (type == null || type == Object.class) return null;
         var direct = type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
         if (direct != null) return direct;
+        // Collecter @JsonbTypeInfo via toutes les interfaces / la superclass.
+        java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> found = new java.util.ArrayList<>();
         for (Class<?> i : type.getInterfaces()) {
-            var found = findTypeInfo(i);
-            if (found != null) return found;
+            var f = findTypeInfo(i);
+            if (f != null) found.add(f);
         }
-        return findTypeInfo(type.getSuperclass());
+        var fromSuper = findTypeInfo(type.getSuperclass());
+        if (fromSuper != null) found.add(fromSuper);
+        if (found.isEmpty()) return null;
+        if (found.size() == 1) return found.get(0);
+        // Plusieurs : déduplication par identité d'annotation.
+        var first = found.get(0);
+        for (int i = 1; i < found.size(); i++) {
+            if (found.get(i) != first) {
+                throw new JsonbException("Multi-inheritance of @JsonbTypeInfo is not supported on " + type.getName());
+            }
+        }
+        return first;
+    }
+
+    /**
+     * Validations §4.8 sur {@code @JsonbTypeInfo} avant écriture/lecture :
+     * <ul>
+     *   <li>chaque alias doit pointer vers un sous-type assignable</li>
+     *   <li>le {@code key} ne doit pas collider avec le nom d'une propriété de la classe</li>
+     * </ul>
+     */
+    static void validateTypeInfo(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        if (info == null) return;
+        // Trouver la classe qui PORTE directement l'annotation.
+        Class<?> bearer = bearerOfTypeInfo(type, info);
+        if (bearer != null) {
+            for (var sub : info.value()) {
+                if (!bearer.isAssignableFrom(sub.type())) {
+                    throw new JsonbException("@JsonbSubtype alias '" + sub.alias() + "' references "
+                            + sub.type().getName() + " which is not a subtype of " + bearer.getName());
+                }
+            }
+        }
+        // Vérifier collision du discriminator key avec une propriété de la classe.
+        String key = info.key();
+        for (java.lang.reflect.Field f : type.getFields()) {
+            int mods = f.getModifiers();
+            if (java.lang.reflect.Modifier.isStatic(mods)) continue;
+            if (f.getName().equals(key)) {
+                throw new JsonbException("@JsonbTypeInfo key '" + key
+                        + "' collides with a property on " + type.getName());
+            }
+        }
+        for (Method m : type.getMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            String prop = beanPropertyOf(m);
+            if (prop != null && prop.equals(key)) {
+                throw new JsonbException("@JsonbTypeInfo key '" + key
+                        + "' collides with a property on " + type.getName());
+            }
+        }
+    }
+
+    private static Class<?> bearerOfTypeInfo(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        if (type == null || type == Object.class) return null;
+        if (type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class) == info) return type;
+        for (Class<?> i : type.getInterfaces()) {
+            var b = bearerOfTypeInfo(i, info);
+            if (b != null) return b;
+        }
+        return bearerOfTypeInfo(type.getSuperclass(), info);
     }
 
     /**
@@ -974,6 +1040,9 @@ final class RuntimeBindingRegistry {
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             Class<?> concrete = value.getClass();
+            // Validations §4.8 (TypeInfoExceptionsTest) : aliases pointent vers des subtypes
+            // assignables, et la clé ne collide pas avec une propriété.
+            validateTypeInfo(concrete, info);
             String alias = aliasByType.get(concrete);
             if (alias == null) {
                 throw new JsonbException("@JsonbTypeInfo : aucun @JsonbSubtype matchant pour " + concrete);
