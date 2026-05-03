@@ -472,6 +472,24 @@ final class RuntimeBindingRegistry {
         return java.util.Locale.forLanguageTag(tag);
     }
 
+    /**
+     * Détecte si un pattern utilise des caractères propres à {@link java.time.format.DateTimeFormatter}
+     * non supportés par {@link java.text.SimpleDateFormat} (notamment {@code x}, {@code X}, {@code Z}
+     * en certains nombres). On route alors la Date/Calendar via DateTimeFormatter après conversion
+     * en {@code ZonedDateTime}.
+     */
+    private static boolean patternUsesDateTimeFormatterChars(String pattern) {
+        if (pattern == null) return false;
+        boolean inLiteral = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\'') { inLiteral = !inLiteral; continue; }
+            if (inLiteral) continue;
+            if (c == 'x' || c == 'O' || c == 'V') return true;
+        }
+        return false;
+    }
+
     private BindingWriter makeDateWriter(Class<?> rawType, DateFormatSpec spec) {
         if (java.util.Date.class.isAssignableFrom(rawType)) {
             return (g, value) -> {
@@ -479,6 +497,10 @@ final class RuntimeBindingRegistry {
                 if (spec.isDefault()) {
                     g.write(((java.util.Date) value).toInstant().atZone(java.time.ZoneId.of("UTC"))
                             .format(java.time.format.DateTimeFormatter.ISO_ZONED_DATE_TIME));
+                } else if (patternUsesDateTimeFormatterChars(spec.pattern())) {
+                    var zdt = ((java.util.Date) value).toInstant().atZone(java.time.ZoneOffset.UTC);
+                    var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
+                    g.write(fmt.format(zdt));
                 } else {
                     var sdf = new java.text.SimpleDateFormat(spec.pattern(), spec.locale());
                     sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
@@ -494,21 +516,46 @@ final class RuntimeBindingRegistry {
                     var zdt = cal.toInstant().atZone(cal.getTimeZone().toZoneId());
                     g.write(zdt.format(java.time.format.DateTimeFormatter.ISO_ZONED_DATE_TIME));
                 } else {
-                    var sdf = new java.text.SimpleDateFormat(spec.pattern(), spec.locale());
-                    sdf.setTimeZone(cal.getTimeZone());
-                    g.write(sdf.format(cal.getTime()));
+                    // Convertir via ZonedDateTime pour aligner sur le format ZonedDateTime UTC
+                    // (IJSON strict §3.5.1 demande que Date/Calendar produisent le même
+                    // format qu'un ZonedDateTime).
+                    var zdt = cal.toInstant().atZone(cal.getTimeZone().toZoneId());
+                    var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
+                    g.write(fmt.format(zdt));
                 }
             };
         }
-        // java.time
+        // Duration / Period : format ISO 8601 fixe — les patterns DateTimeFormatter ne s'y appliquent pas.
+        if (rawType == java.time.Duration.class || rawType == java.time.Period.class) {
+            return (g, value) -> {
+                if (value == null) { g.writeNull(); return; }
+                g.write(value.toString());
+            };
+        }
+        // java.time : convertir vers ZonedDateTime UTC quand nécessaire pour absorber les patterns
+        // qui exigent des champs absolus (yyyy/MM/dd HH:mm:ss).
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             if (spec.isDefault()) {
                 g.write(value.toString());
-            } else {
-                var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
-                g.write(fmt.format((java.time.temporal.TemporalAccessor) value));
+                return;
             }
+            var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
+            java.time.temporal.TemporalAccessor t;
+            if (value instanceof java.time.LocalDate ld) {
+                t = ld.atStartOfDay(java.time.ZoneOffset.UTC);
+            } else if (value instanceof java.time.LocalDateTime ldt) {
+                t = ldt.atZone(java.time.ZoneOffset.UTC);
+            } else if (value instanceof java.time.LocalTime lt) {
+                t = lt.atDate(java.time.LocalDate.of(1970, 1, 1)).atZone(java.time.ZoneOffset.UTC);
+            } else if (value instanceof java.time.Instant inst) {
+                t = inst.atZone(java.time.ZoneOffset.UTC);
+            } else if (value instanceof java.time.temporal.TemporalAccessor ta) {
+                t = ta;
+            } else {
+                throw new JsonbException("Cannot format type with date pattern: " + value.getClass());
+            }
+            g.write(fmt.format(t));
         };
     }
 

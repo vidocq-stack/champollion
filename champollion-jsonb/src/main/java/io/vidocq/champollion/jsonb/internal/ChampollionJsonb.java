@@ -36,14 +36,19 @@ public final class ChampollionJsonb implements Jsonb {
     private final StaticBindings staticBindings;
     private final boolean prettyPrinting;
     private final boolean writeNullValues;
+    private final boolean strictIJson;
 
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.config = config;
         this.jsonProvider = jsonProvider;
         this.prettyPrinting = booleanProp(config, JsonbConfig.FORMATTING);
         this.writeNullValues = booleanProp(config, JsonbConfig.NULL_VALUES);
+        this.strictIJson = booleanProp(config, JsonbConfig.STRICT_IJSON);
         String defaultDateFormat = stringProp(config, JsonbConfig.DATE_FORMAT);
-        String binaryStrategy = stringProp(config, JsonbConfig.BINARY_DATA_STRATEGY);
+        // En mode IJSON strict, on force BASE_64 (avec padding) — §3.5.5.
+        String binaryStrategy = this.strictIJson
+                ? jakarta.json.bind.config.BinaryDataStrategy.BASE_64
+                : stringProp(config, JsonbConfig.BINARY_DATA_STRATEGY);
         String namingStrategy = stringProp(config, JsonbConfig.PROPERTY_NAMING_STRATEGY);
         String orderStrategy = stringProp(config, JsonbConfig.PROPERTY_ORDER_STRATEGY);
         var visibilityStrategy = (jakarta.json.bind.config.PropertyVisibilityStrategy)
@@ -51,7 +56,13 @@ public final class ChampollionJsonb implements Jsonb {
         var configLocale = (java.util.Locale) config.getProperty(JsonbConfig.LOCALE).orElse(null);
         boolean failOnUnknown = booleanProp(config, "jsonb.fail-on-unknown-properties");
         boolean creatorParametersRequired = booleanProp(config, JsonbConfig.CREATOR_PARAMETERS_REQUIRED);
-        this.writeRegistry = new RuntimeBindingRegistry(defaultDateFormat, this.writeNullValues, binaryStrategy,
+        // En mode IJSON strict, le format date/time est figé sur le format ZonedDateTime — §3.5.1.
+        // Pattern attendu par TCK : Z littéral + offset numérique XXX (xxx = offset always
+        // numerique ±HH:MM, jamais "Z").
+        String effectiveDateFormat = (this.strictIJson && defaultDateFormat == null)
+                ? "yyyy-MM-dd'T'HH:mm:ss'Z'xxx"
+                : defaultDateFormat;
+        this.writeRegistry = new RuntimeBindingRegistry(effectiveDateFormat, this.writeNullValues, binaryStrategy,
                 namingStrategy, orderStrategy, visibilityStrategy, configLocale);
         this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired);
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
@@ -114,6 +125,25 @@ public final class ChampollionJsonb implements Jsonb {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private void writeValue(JsonGenerator g, Object object, Type runtimeType) {
         if (object == null) { g.writeNull(); return; }
+        // §3.5 IJSON strict — top-level doit être objet ou tableau, sinon JsonbException.
+        if (strictIJson) {
+            Class<?> raw = rawClassOf(runtimeType, object);
+            boolean okTop = java.util.Map.class.isAssignableFrom(raw)
+                    || java.util.Collection.class.isAssignableFrom(raw)
+                    || raw.isArray()
+                    || jakarta.json.JsonObject.class.isAssignableFrom(raw)
+                    || jakarta.json.JsonArray.class.isAssignableFrom(raw)
+                    || (!raw.isPrimitive()
+                        && !CharSequence.class.isAssignableFrom(raw)
+                        && !Number.class.isAssignableFrom(raw)
+                        && !Boolean.class.isAssignableFrom(raw)
+                        && !Character.class.isAssignableFrom(raw)
+                        && !raw.isEnum()
+                        && !RuntimeBindingRegistry.isDateLikeType(raw));
+            if (!okTop) {
+                throw new JsonbException("IJSON strict mode: top-level JSON text must be an object or array (got " + raw.getName() + ")");
+            }
+        }
         // Lookup-first : binding statique disponible pour ce type ?
         JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, object));
         if (staticBinding != null) {
