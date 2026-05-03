@@ -51,9 +51,10 @@
 | **M5.6** | APT — enums comme leaf type | ✅ 3 tests |
 | **M5.7** | APT bytecode direct (Class File API JDK 25) | ✅ records primitives + String + enums |
 | **M5.8** | Maven plugin `champollion-codegen-maven-plugin` | ❌ packaging=jar squelette |
-| **M5.9** | APT bytecode étendu aux containers | ❌ pas commencé |
-| **M5.10** | Optimisation : noms de propriétés en byte[] UTF-8 | ❌ pas commencé |
-| **M5.11** | Validation AOT GraalVM `native-image` | ❌ pas commencé |
+| **M5.9** | APT bytecode étendu : arrays primitifs + `String[]` + `Optional<X>` | ✅ |
+| **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ❌ slow path source pour l'instant |
+| **M5.11** | Optimisation : noms de propriétés en byte[] UTF-8 | ❌ pas commencé |
+| **M5.12** | Validation AOT GraalVM `native-image` | ❌ pas commencé |
 | **M6** | TCK officiels JSON-P 2.1 + JSON-B 3.0 | ❌ pas commencé |
 | **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
 
@@ -79,17 +80,17 @@
 - ✅ SPI `JsonbBinding<T>` exposée (`champollion-jsonb.spi`) + `PrimedJsonParser` utility
 - ✅ Annotation `@JsonbStatic` (`champollion-jsonb.spi`, `RetentionPolicy.CLASS`)
 - ✅ **APT `JsonbStaticProcessor` à double voie** :
-  - **Fast path bytecode** (Class File API JDK 25, `Filer.createClassFile`) : records dont composants ∈ primitives + String + enums. Émission directe de `.class` sans étape de compilation Java.
-  - **Slow path source** (filer.createSourceFile) : containers (List/Map/Optional/Arrays) et nested records `@JsonbStatic`.
+  - **Fast path bytecode** (Class File API JDK 25, `Filer.createClassFile`) : records dont composants ∈ primitives + String + enums + arrays primitifs + `String[]` + `Optional<X>`. Émission directe de `.class` sans étape de compilation Java.
+  - **Slow path source** (filer.createSourceFile) : `List<E>`, `Map<String,V>`, nested records `@JsonbStatic`.
 - ✅ `ChampollionJsonb` lookup-first sur les bindings statiques, fallback runtime introspectif
 - ✅ Differential testing automatisé runtime vs static
 - ✅ Couverture types : primitives, String, enums, List<E>, Optional<E>, Map<String,V>, arrays primitifs, String[], nested records `@JsonbStatic` (référence directe par `new <X>$$Binding()`)
 
 **À faire :**
 - **M5.8** Activation `champollion-codegen-maven-plugin` (packaging=maven-plugin) quand `maven-plugin-plugin` ≥ ASM lisant Java 25 sera publié. Aujourd'hui jar squelette.
-- **M5.9** Étendre le bytecode emitter aux containers et nested records (aujourd'hui en slow path source) pour 100 % bytecode.
-- **M5.10** Optimisations : escape précompilé pour les noms de propriétés en `byte[]` UTF-8 émis comme `private static final byte[]` dans le binding.
-- **M5.11** Validation AOT : `native-image` sur `champollion-examples` pour prouver l'absence totale de réflexion sur les types annotés.
+- **M5.10** Étendre le bytecode emitter à `List<X>`, `Map<String,V>`, nested records `@JsonbStatic` (aujourd'hui slow path source).
+- **M5.11** Optimisations : escape précompilé pour les noms de propriétés en `byte[]` UTF-8 émis comme `private static final byte[]` dans le binding.
+- **M5.12** Validation AOT : `native-image` sur `champollion-examples` pour prouver l'absence totale de réflexion sur les types annotés.
 
 ### Moyen terme — Tests d'envergure
 
