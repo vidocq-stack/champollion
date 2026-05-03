@@ -298,16 +298,47 @@ final class RuntimeReadRegistry {
             if (isJsonbTransient(comp)) continue;
             indexByName.put(jsonbName(comp), i);
         }
-        Constructor<?> ctor;
+        // §R-1/R-5 — canonical constructor d'un record est TOUJOURS public.
+        // MethodHandles.publicLookup() le résout SANS setAccessible ni opens
+        // côté consommateur — c'est ce qui permet à Cassini examples de retirer
+        // "opens model".
+        java.lang.invoke.MethodHandle ctorMh;
         try {
-            ctor = type.getDeclaredConstructor(paramTypes);
+            ctorMh = java.lang.invoke.MethodHandles.publicLookup().findConstructor(type,
+                    java.lang.invoke.MethodType.methodType(void.class, paramTypes));
         } catch (NoSuchMethodException e) {
             throw new JsonbException("Canonical record constructor not found for " + type, e);
+        } catch (IllegalAccessException e) {
+            throw new JsonbException("Cannot access canonical record constructor for " + type
+                    + " — record must be in an exported package.", e);
         }
-        try { ctor.setAccessible(true); } catch (Exception ignore) {}
-        final Constructor<?> finalCtor = ctor;
+        final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
 
-        return parser -> readObjectAndConstruct(parser, finalCtor, paramTypes, readers, indexByName);
+        return parser -> readObjectAndInvokeMh(parser, finalCtorMh, type, paramTypes, readers, indexByName);
+    }
+
+    private Object readObjectAndInvokeMh(JsonParser p, java.lang.invoke.MethodHandle ctorMh,
+                                         Class<?> type, Class<?>[] paramTypes,
+                                         BindingReader[] readers, Map<String, Integer> indexByName) {
+        JsonParser.Event e = p.next();
+        if (e == JsonParser.Event.VALUE_NULL) return null;
+        if (e != JsonParser.Event.START_OBJECT) {
+            throw new JsonbException("Expected object, got " + e);
+        }
+        Object[] args = new Object[paramTypes.length];
+        for (int i = 0; i < paramTypes.length; i++) args[i] = defaultFor(paramTypes[i]);
+        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
+            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
+            String key = p.getString();
+            Integer idx = indexByName.get(key);
+            if (idx == null) skipValue(p);
+            else args[idx] = readers[idx].read(p);
+        }
+        try {
+            return ctorMh.invokeWithArguments(args);
+        } catch (Throwable t) {
+            throw new JsonbException("Failed to instantiate record " + type + ": " + t.getMessage(), t);
+        }
     }
 
     private BindingReader resolvePojo(Class<?> type) {

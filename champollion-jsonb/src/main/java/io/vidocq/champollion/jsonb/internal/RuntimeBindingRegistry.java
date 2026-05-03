@@ -1347,14 +1347,26 @@ final class RuntimeBindingRegistry {
         for (RecordComponent c : comps) {
             if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
-            try { accessor.setAccessible(true); } catch (Exception ignore) {}
+            // §R-6 — record accessors sont TOUJOURS publics. publicLookup() les
+            // résout sans setAccessible ni opens côté consommateur.
+            Accessor acc;
+            try {
+                java.lang.invoke.MethodHandle mh = java.lang.invoke.MethodHandles.publicLookup()
+                        .findVirtual(type, accessor.getName(),
+                                java.lang.invoke.MethodType.methodType(c.getType()));
+                acc = new MhAccessor(mh);
+            } catch (NoSuchMethodException | IllegalAccessException ex) {
+                // Fallback Reflection si publicLookup échoue (record non-exporté).
+                try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                acc = new MethodAccessor(accessor);
+            }
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c) || writeNullValues;
             BindingWriter w = customAdapterWriter(c)
                     .or(() -> customDateWriter(c))
                     .or(() -> globalDateWriter(c.getType()))
                     .orElseGet(() -> writerFor(c.getGenericType()));
-            props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
+            props.add(new Property(name, acc, w, nillable));
         }
         return props;
     }
@@ -1537,6 +1549,16 @@ final class RuntimeBindingRegistry {
 
     private record MethodAccessor(Method m) implements Accessor {
         public Object read(Object target) throws Throwable { return m.invoke(target); }
+    }
+
+    /**
+     * Accesseur via {@link java.lang.invoke.MethodHandle} — utilisé pour les
+     * records (canonical accessors publics) afin d'éviter {@code setAccessible}
+     * et {@code opens}. {@code invoke} sur un MethodHandle pré-bindé est plus
+     * rapide que {@code Method.invoke} et compatible JPMS strict.
+     */
+    private record MhAccessor(java.lang.invoke.MethodHandle mh) implements Accessor {
+        public Object read(Object target) throws Throwable { return mh.invoke(target); }
     }
 
     private record FieldAccessor(Field f) implements Accessor {
