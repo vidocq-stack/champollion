@@ -21,7 +21,7 @@
 | `champollion-codegen-maven-plugin` | ✅ **actif** (`packaging=maven-plugin`) | 3 tests. Mojo `generate` qui écrit des triggers `<FQN>$$Trigger.java` annotés `@JsonbStatic` puis lance `javac` avec le `JsonbStaticProcessor` sur le classpath compile du projet hôte. `maven-plugin-plugin 4.0.0-beta-2` supporte Java 25. |
 | `champollion-bench` | 🟡 vide | POM JMH prêt, aucun benchmark écrit. |
 | `champollion-examples` | 🟡 vide | POM prêt, aucun exemple écrit. |
-| `champollion-tck` | ❌ pas créé | Module hors reactor à créer en M6 (POM Model 4.0.0, scripts shell). |
+| `champollion-tck` | ✅ **créé** (hors reactor) | Module hors reactor (POM Model 4.0.0). Profils `-Pjsonp-tck` (JUnit 5) et `-Pjsonb-tck` (TestNG). Scripts shell `run-official-tck-{jsonp-2.1,jsonb-3.0}.sh` à la racine. Skip propre (exit 78) si TCK officiel absent. |
 
 ## Avancement par phase (cf. ROADMAP.md)
 
@@ -63,7 +63,13 @@
 | **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ✅ — **fast path bytecode 100 %** |
 | **M5.11** | Pre-encoded property names + `writeKeyRaw` fast path | ✅ |
 | **M5.12** | Validation AOT par inspection bytecode (zero reflection) | ✅ — 5 tests |
-| **M6** | TCK officiels JSON-P 2.1 + JSON-B 3.0 | ❌ pas commencé |
+| **M6.1** | Module `champollion-tck` hors reactor | ✅ |
+| **M6.2** | Script `run-official-tck-jsonp-2.1.sh` | ✅ |
+| **M6.3** | Script `run-official-tck-jsonb-3.0.sh` | ✅ |
+| **M6.4** | Mode `--static` du TCK | ❌ reporté (non critique) |
+| **M6.5** | `TCK.md` instructions + challenges | ✅ |
+| **M6.6** | TCK officiel JSON-P 2.1 — first run + analysis | ❌ nécessite installation TCK |
+| **M6.7** | TCK officiel JSON-B 3.0 — first run + analysis | ❌ nécessite installation TCK |
 | **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
 
 ## Reste à faire
