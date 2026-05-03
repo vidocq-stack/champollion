@@ -29,6 +29,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
 
     private final String raw;
     private final List<String> tokens;
+    private final JsonException parseError;
 
     public ChampollionJsonPointer(String pointer) {
         if (pointer == null) throw new IllegalArgumentException("pointer is null");
@@ -36,7 +37,24 @@ public final class ChampollionJsonPointer implements JsonPointer {
             throw new JsonException("JSON Pointer must be empty or start with '/'");
         }
         this.raw = pointer;
-        this.tokens = parse(pointer);
+        // Spec interpretation : RFC 6901 §3 réserve `~0`/`~1` ; un `~n` mal formé
+        // est techniquement invalide, mais le TCK 2.1 (PointerResolve.testResolvePathWithUnencodedTilde)
+        // tolère cette construction et n'attend l'exception qu'à la résolution.
+        // On diffère donc l'erreur de parsing à `getValue()` & co.
+        List<String> parsed;
+        JsonException err = null;
+        try {
+            parsed = parse(pointer);
+        } catch (JsonException e) {
+            parsed = List.of();
+            err = e;
+        }
+        this.tokens = parsed;
+        this.parseError = err;
+    }
+
+    private void requireValidPointer() {
+        if (parseError != null) throw parseError;
     }
 
     private static List<String> parse(String pointer) {
@@ -67,6 +85,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
     // ===== Lookup =====
 
     @Override public JsonValue getValue(JsonStructure target) {
+        requireValidPointer();
         JsonValue cur = target;
         for (String tok : tokens) {
             cur = step(cur, tok, /*allowDash*/ false);
@@ -75,6 +94,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
     }
 
     @Override public boolean containsValue(JsonStructure target) {
+        if (parseError != null) return false;
         try {
             JsonValue cur = target;
             for (String tok : tokens) {
@@ -157,6 +177,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
 
     @SuppressWarnings("unchecked")
     private <T extends JsonStructure> T mutate(T target, Op op, JsonValue value) {
+        requireValidPointer();
         if (tokens.isEmpty()) {
             // Pointer vide = remplacement du document entier (add/replace) ou interdit (remove).
             if (op == Op.REMOVE) throw new JsonException("Cannot remove root document");

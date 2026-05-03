@@ -23,12 +23,12 @@ public final class ChampollionJsonNumber implements JsonNumber {
     }
 
     public static ChampollionJsonNumber of(String literal) {
-        if (literal == null) throw new IllegalArgumentException("literal is null");
+        if (literal == null) throw new NullPointerException("literal is null");
         return new ChampollionJsonNumber(literal);
     }
 
     public static ChampollionJsonNumber of(BigDecimal value) {
-        if (value == null) throw new IllegalArgumentException("value is null");
+        if (value == null) throw new NullPointerException("value is null");
         return new ChampollionJsonNumber(value.toString());
     }
 

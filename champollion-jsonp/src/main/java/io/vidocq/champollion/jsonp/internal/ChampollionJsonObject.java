@@ -47,18 +47,27 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
     @Override public JsonNumber getJsonNumber(String name) { return (JsonNumber) members.get(name); }
     @Override public JsonString getJsonString(String name) { return (JsonString) members.get(name); }
 
-    @Override public String getString(String name) { return getJsonString(name).getString(); }
+    @Override public String getString(String name) {
+        JsonString v = getJsonString(name);
+        if (v == null) throw new NullPointerException("No mapping for member: " + name);
+        return v.getString();
+    }
     @Override public String getString(String name, String defaultValue) {
         try { return getString(name); } catch (Exception e) { return defaultValue; }
     }
 
-    @Override public int getInt(String name) { return getJsonNumber(name).intValue(); }
+    @Override public int getInt(String name) {
+        JsonNumber v = getJsonNumber(name);
+        if (v == null) throw new NullPointerException("No mapping for member: " + name);
+        return v.intValue();
+    }
     @Override public int getInt(String name, int defaultValue) {
         try { return getInt(name); } catch (Exception e) { return defaultValue; }
     }
 
     @Override public boolean getBoolean(String name) {
         JsonValue v = members.get(name);
+        if (v == null) throw new NullPointerException("No mapping for member: " + name);
         if (v == JsonValue.TRUE) return true;
         if (v == JsonValue.FALSE) return false;
         throw new ClassCastException("Member " + name + " is not a boolean");
@@ -69,7 +78,9 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
     }
 
     @Override public boolean isNull(String name) {
-        return members.get(name) == JsonValue.NULL;
+        JsonValue v = members.get(name);
+        if (v == null) throw new NullPointerException("No mapping for member: " + name);
+        return v == JsonValue.NULL;
     }
 
     @Override public String toString() {

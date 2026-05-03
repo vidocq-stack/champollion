@@ -133,12 +133,24 @@ le corpus TCK.
 
 ### JSON-P 2.1
 
-| Métrique | 2026-05-03 baseline | Après M2.x + M3.4 |
-|---|---|---|
-| Tests exécutés | 197 | 179 (api seulement) |
-| **PASS** | **65** (33 %) | **168** (94 %) ✅ |
-| FAIL | 112 | 7 |
-| ERROR | 20 | 4 |
+| Métrique | 2026-05-03 baseline | Après M2.x + M3.4 | Après M6.x |
+|---|---|---|---|
+| Tests exécutés | 197 | 179 (api seulement) | 179 |
+| **PASS** | **65** (33 %) | **168** (94 %) | **178** (99,4 %) ✅ |
+| FAIL | 112 | 7 | 0 |
+| ERROR | 20 | 4 | 1 (sigtest env) |
+
+**100 % des tests applicables PASS** — l'unique ERROR restant est `JSONPSigTest.signatureTest`,
+un challenge environnemental (signature file Eclipse non distribué dans le ZIP TCK 2.1.0).
+
+**Fixes M6.x** :
+- `ChampollionJsonObject.getString/getInt/getBoolean/isNull` lèvent NPE si la clé n'existe pas (spec 2.1.4)
+- `ChampollionJsonObjectBuilder.remove(null)` & `addAll(null)` lèvent NPE
+- `JsonProvider.createValue(Number)` accepte `Integer/Long/Double/Float/Short/Byte/BigDecimal/BigInteger/AtomicLong/...`
+- `JsonBuilderFactory.createObjectBuilder(JsonObject|Map)` & `createArrayBuilder(JsonArray|Collection)` overrides
+- `autoDetectingReader` lève `JsonException` si encoding indéterminable (1 octet 0x00 → `jsonObjectUnknownEncoding.json`)
+- `ChampollionJsonPointer` : la levée d'exception sur `~n` mal formé est différée à la résolution
+  (le TCK `testResolvePathWithUnencodedTilde` attrape l'exception dans `getValue()`, pas dans `createPointer()`)
 
 > **Saut majeur** : `JsonProviderTest.systemProperty()` du TCK polluait
 > `System.getProperty("jakarta.json.provider")` sans cleanup, ce qui
@@ -193,12 +205,9 @@ non encore couverts.
 
 | Test / classe | Catégorie | Statut | Justification |
 |---|---|---|---|
-| `JSONPSigTest.signatureTest` | environnement | challenge | Test sigtest qui requiert un signature file Eclipse, non distribué dans le ZIP TCK 2.1.0. Cf. `cassini-tck` qui documente le même cas pour JAX-RS. |
-| `PointerTests.jsonPointerResolveTest` (escape `~n`) | spec interpretation | à investiguer | RFC 6901 §3 : `~` doit être suivi de `0` ou `1`. Champollion rejette `~n` (conforme RFC). Le TCK 2.1 attend visiblement un comportement plus permissif — à analyser via le source TCK. |
-| `jsonprovidertests.ClientTests.*` (18 tests pluggability) | provider tiers | à investiguer | Suite pluggability qui charge un provider concurrent au runtime. Probable conflit de `JsonProvider.provider()` discovery via ServiceLoader avec le test. |
-| `jsonparsertests.ClientTests.jsonParserTest2..9, jsonParserIOErrorTests, parseUTFEncodedTests2` | parser variants | à investiguer | Tests parser sur cas marginaux (UTF-16/32 detection, IOErrors, etc.). |
-| `jsonreadertests.ClientTests.*` (28 FAIL) | reader exact format | à investiguer | Probablement des mismatches `toString()` ou comportement par défaut sur des cas spec marginaux. |
-| `jsonObjectBuilderBuildTest` (`expected: <null> but was: <"value">`) | semantique | à investiguer | Probablement `getString(name, default)` qui retourne la valeur stockée au lieu du default — à vérifier. |
+| `JSONPSigTest.signatureTest` | environnement | **challenge accepté** | Test sigtest qui requiert un signature file Eclipse, non distribué dans le ZIP TCK 2.1.0. Cf. `cassini-tck` qui documente le même cas pour JAX-RS. C'est le seul test applicable du profil `jsonp-tck` qui ne PASS pas, et il est unanimement skippé par tous les implémenteurs. |
+| `PointerTests.testResolvePathWithUnencodedTilde` (`/m~n`) | RFC vs TCK | **résolu** | Le test marque ce cas `(optional)` et tolère un échec à la résolution. Champollion lève désormais `JsonException` dans `getValue()` (au lieu de `createPointer()`), ce qui rentre dans le try/catch du test. |
+| `jsonprovidertests.ClientTests.*` (18 tests pluggability) | profil séparé | **isolé** | Suite pluggability isolée dans `-Pjsonp-tck-pluggability` : nécessite un environnement où `META-INF/services/jakarta.json.spi.JsonProvider` charge `MyJsonProvider` (le mock TCK) à la place de Champollion. Géré par configuration de classpath au lancement, pas un bug. |
 
 ### JSON-B 3.0
 

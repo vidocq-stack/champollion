@@ -128,6 +128,12 @@ public final class ChampollionJsonProvider extends JsonProvider {
             if (read >= 2 && head[1] == 0) {
                 return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
             }
+            // RFC 8259 §8.1 : un JSON valide ne peut pas commencer par 0x00 en UTF-8 ;
+            // si head[0] == 0 et qu'on n'a pas pu déterminer l'encoding (< 2 octets de
+            // contexte ou pattern ambigu), on lève JsonException.
+            if (read >= 1 && head[0] == 0) {
+                throw new jakarta.json.JsonException("Cannot determine JSON encoding");
+            }
             return new InputStreamReader(pb, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new jakarta.json.JsonException("I/O error during encoding detection", e);
@@ -353,6 +359,24 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return ChampollionJsonNumber.of(new java.math.BigDecimal(value));
     }
 
+    @Override public jakarta.json.JsonNumber createValue(Number value) {
+        if (value == null) throw new NullPointerException("value is null");
+        if (value instanceof java.math.BigDecimal bd) return ChampollionJsonNumber.of(bd);
+        if (value instanceof java.math.BigInteger bi) return ChampollionJsonNumber.of(new java.math.BigDecimal(bi));
+        if (value instanceof Integer i) return ChampollionJsonNumber.of(i);
+        if (value instanceof Long l) return ChampollionJsonNumber.of(l);
+        if (value instanceof Short || value instanceof Byte) return ChampollionJsonNumber.of(value.intValue());
+        if (value instanceof Double || value instanceof Float) {
+            double d = value.doubleValue();
+            if (Double.isNaN(d) || Double.isInfinite(d)) {
+                throw new NumberFormatException("JSON does not allow NaN or Infinity");
+            }
+            return ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(d));
+        }
+        // Fallback : utilise toString() qui doit produire un littéral numérique.
+        return ChampollionJsonNumber.of(new java.math.BigDecimal(value.toString()));
+    }
+
     // ===== JsonPointer / JsonPatch =====
 
     @Override public jakarta.json.JsonPointer createPointer(String jsonPointer) {
@@ -386,9 +410,22 @@ public final class ChampollionJsonProvider extends JsonProvider {
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
         // Aucune property supportée par JsonBuilderFactory en JSON-P 2.1.
         Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
+        ChampollionJsonProvider self = this;
         return new JsonBuilderFactory() {
             @Override public JsonObjectBuilder createObjectBuilder() { return new ChampollionJsonObjectBuilder(); }
+            @Override public JsonObjectBuilder createObjectBuilder(JsonObject obj) {
+                return self.createObjectBuilder(obj);
+            }
+            @Override public JsonObjectBuilder createObjectBuilder(Map<String, Object> map) {
+                return self.createObjectBuilder(map);
+            }
             @Override public JsonArrayBuilder createArrayBuilder() { return new ChampollionJsonArrayBuilder(); }
+            @Override public JsonArrayBuilder createArrayBuilder(JsonArray arr) {
+                return self.createArrayBuilder(arr);
+            }
+            @Override public JsonArrayBuilder createArrayBuilder(java.util.Collection<?> coll) {
+                return self.createArrayBuilder(coll);
+            }
             @Override public Map<String, ?> getConfigInUse() { return snapshot; }
         };
     }

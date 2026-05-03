@@ -67,11 +67,13 @@ public final class ChampollionJsonObjectBuilder implements JsonObjectBuilder {
     }
 
     @Override public JsonObjectBuilder addAll(JsonObjectBuilder builder) {
+        Objects.requireNonNull(builder, "builder is null");
         builder.build().forEach((k, v) -> members.put(k, v));
         return this;
     }
 
     @Override public JsonObjectBuilder remove(String name) {
+        Objects.requireNonNull(name, "name is null");
         members.remove(name);
         return this;
     }

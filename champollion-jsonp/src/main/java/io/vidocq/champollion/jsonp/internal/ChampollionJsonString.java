@@ -10,7 +10,7 @@ import jakarta.json.JsonString;
 public record ChampollionJsonString(String value) implements JsonString {
 
     public ChampollionJsonString {
-        if (value == null) throw new IllegalArgumentException("value is null");
+        if (value == null) throw new NullPointerException("value is null");
     }
 
     @Override public ValueType getValueType() { return ValueType.STRING; }
