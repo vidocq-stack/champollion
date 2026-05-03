@@ -1,10 +1,12 @@
 package io.vidocq.champollion.jsonb.internal;
 
 import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.adapter.JsonbAdapter;
 import jakarta.json.bind.annotation.JsonbCreator;
 import jakarta.json.bind.annotation.JsonbDateFormat;
 import jakarta.json.bind.annotation.JsonbNillable;
 import jakarta.json.bind.annotation.JsonbProperty;
+import jakarta.json.bind.annotation.JsonbTypeAdapter;
 import jakarta.json.bind.annotation.JsonbTransient;
 
 import java.time.LocalDate;
@@ -188,6 +190,51 @@ class JsonbCustomizationTest {
             try (var j = JsonbBuilder.create()) {
                 Tag t = j.fromJson("{\"value\":\"prod\"}", Tag.class);
                 assertEquals("prod", t.value);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbTypeAdapter — custom transformation")
+    class TypeAdapter {
+
+        public record Money(java.math.BigDecimal amount, String currency) {}
+
+        public static final class MoneyAdapter implements JsonbAdapter<Money, String> {
+            @Override public String adaptToJson(Money m) { return m.amount + " " + m.currency; }
+            @Override public Money adaptFromJson(String s) {
+                int sp = s.indexOf(' ');
+                return new Money(new java.math.BigDecimal(s.substring(0, sp)), s.substring(sp + 1));
+            }
+        }
+
+        record Order(String id, @JsonbTypeAdapter(MoneyAdapter.class) Money price) {}
+
+        @Test
+        void writes_via_adapter() {
+            try (var j = JsonbBuilder.create()) {
+                String json = j.toJson(new Order("o1", new Money(new java.math.BigDecimal("19.99"), "EUR")));
+                assertEquals("{\"id\":\"o1\",\"price\":\"19.99 EUR\"}", json);
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        void reads_via_adapter() {
+            try (var j = JsonbBuilder.create()) {
+                Order o = j.fromJson("{\"id\":\"o1\",\"price\":\"100.50 USD\"}", Order.class);
+                assertEquals("o1", o.id());
+                assertEquals(new java.math.BigDecimal("100.50"), o.price().amount());
+                assertEquals("USD", o.price().currency());
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+
+        @Test
+        void roundtrip_via_adapter() {
+            try (var j = JsonbBuilder.create()) {
+                Order original = new Order("o42", new Money(new java.math.BigDecimal("0.01"), "JPY"));
+                String json = j.toJson(original);
+                Order back = j.fromJson(json, Order.class);
+                assertEquals(original, back);
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }

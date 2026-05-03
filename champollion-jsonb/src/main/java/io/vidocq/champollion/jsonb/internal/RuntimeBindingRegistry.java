@@ -195,11 +195,60 @@ final class RuntimeBindingRegistry {
             try { accessor.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c);
+            // M4.4f : @JsonbTypeAdapter → applique l'adapter avant écriture.
             // M4.4d : @JsonbDateFormat → writer custom pour les types java.time.
-            BindingWriter w = customDateWriter(c).orElseGet(() -> writerFor(c.getGenericType()));
+            BindingWriter w = customAdapterWriter(c)
+                    .or(() -> customDateWriter(c))
+                    .orElseGet(() -> writerFor(c.getGenericType()));
             props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
         }
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    /**
+     * Si le composant a {@code @JsonbTypeAdapter(class)}, retourne un writer qui :
+     * 1. instancie l'adapter via son no-arg ctor,
+     * 2. invoque {@code adaptToJson(value)} sur la valeur,
+     * 3. délègue l'écriture du résultat au writer du type {@code Adapted} (déduit du
+     *    super interface paramétré {@code JsonbAdapter<Original, Adapted>}).
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private java.util.Optional<BindingWriter> customAdapterWriter(RecordComponent c) {
+        var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        if (ann == null) {
+            ann = c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        }
+        if (ann == null) return java.util.Optional.empty();
+        Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
+        jakarta.json.bind.adapter.JsonbAdapter adapter;
+        try {
+            adapter = adapterClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
+        }
+        Class<?> adaptedType = findAdaptedType(adapterClass);
+        BindingWriter inner = writerFor(adaptedType);
+        return java.util.Optional.of((g, value) -> {
+            Object adapted;
+            try { adapted = adapter.adaptToJson(value); }
+            catch (Exception ex) { throw new JsonbException("Adapter failure on toJson: " + ex.getMessage(), ex); }
+            if (adapted == null) g.writeNull();
+            else inner.write(g, adapted);
+        });
+    }
+
+    /** Examine les génériques de l'interface {@code JsonbAdapter<Original, Adapted>}. */
+    @SuppressWarnings("rawtypes")
+    static Class<?> findAdaptedType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
+        for (java.lang.reflect.Type t : adapterClass.getGenericInterfaces()) {
+            if (t instanceof java.lang.reflect.ParameterizedType pt
+                    && pt.getRawType() == jakarta.json.bind.adapter.JsonbAdapter.class) {
+                java.lang.reflect.Type adapted = pt.getActualTypeArguments()[1];
+                if (adapted instanceof Class<?> c) return c;
+                if (adapted instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
+            }
+        }
+        return Object.class;
     }
 
     /**

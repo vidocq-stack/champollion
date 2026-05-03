@@ -87,8 +87,10 @@ final class RuntimeReadRegistry {
         for (int i = 0; i < comps.length; i++) {
             final RecordComponent comp = comps[i];
             paramTypes[i] = comp.getType();
-            // M4.4d : @JsonbDateFormat → reader custom pour les types java.time.
-            readers[i] = customDateReader(comp).orElseGet(() -> readerFor(comp.getGenericType()));
+            // M4.4f : @JsonbTypeAdapter > M4.4d : @JsonbDateFormat > runtime standard.
+            readers[i] = customAdapterReader(comp)
+                    .or(() -> customDateReader(comp))
+                    .orElseGet(() -> readerFor(comp.getGenericType()));
             if (isJsonbTransient(comp)) continue;
             indexByName.put(jsonbName(comp), i);
         }
@@ -492,6 +494,37 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
+    }
+
+    /**
+     * Si le composant a {@code @JsonbTypeAdapter(class)}, retourne un reader qui :
+     * 1. instancie l'adapter (no-arg ctor),
+     * 2. délègue la lecture au reader du type {@code Adapted},
+     * 3. invoque {@code adaptFromJson(adapted)} pour reconstruire l'Original.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private java.util.Optional<BindingReader> customAdapterReader(RecordComponent c) {
+        var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
+        var fromAccessor = direct == null
+                ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class)
+                : null;
+        var ann = direct != null ? direct : fromAccessor;
+        if (ann == null) return java.util.Optional.empty();
+        Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
+        jakarta.json.bind.adapter.JsonbAdapter adapter;
+        try {
+            adapter = adapterClass.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
+        }
+        Class<?> adaptedType = RuntimeBindingRegistry.findAdaptedType(adapterClass);
+        BindingReader inner = readerFor(adaptedType);
+        return java.util.Optional.of(parser -> {
+            Object adapted = inner.read(parser);
+            if (adapted == null) return null;
+            try { return adapter.adaptFromJson(adapted); }
+            catch (Exception ex) { throw new JsonbException("Adapter failure on fromJson: " + ex.getMessage(), ex); }
+        });
     }
 
     /**
