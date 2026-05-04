@@ -383,11 +383,14 @@ Mesures stables (2f×3wi×4i×2s, profil `-prof gc`) :
 
 C'est la **première fois** que Champollion alloue moins que jacksonJr en read
 (SMALL : 584 vs 872, **-33 %**) sans régression sur le throughput SMALL.
-La régression MEDIUM persiste — vraisemblablement le dispatch virtuel
-`read()`/`peekRead()` (sealed bimorphic) ajoute un coût constant par
-caractère, plus visible sur les payloads longs. Investigation différée
-(dupliquer `next()`+helpers dans chaque sous-classe pour spécialiser les
-2 versions, gros refactor).
+La régression MEDIUM persiste — l'hypothèse initiale (dispatch virtuel
+sealed bimorphic) a été testée par P10.2 (duplication complète de
+`next()`+helpers dans chaque sous-classe finale, élimine tout dispatch
+virtuel sur `read()`/`peekRead()`) : thrpt MEDIUM **inchangé**
+(0,458 ±0,001 ops/µs vs 0,453 ±0,003 — match dans le bruit). La cause
+profonde n'est donc pas le dispatch virtuel mais une autre subtilité
+JIT/cache ou un coût intrinsèque `String.charAt` vs `char[]` access
+sur ASCII non-latin1. Investigation profilée différée (P10.3).
 
 #### Au-delà
 
@@ -411,8 +414,9 @@ caractère, plus visible sur les payloads longs. Investigation différée
 | **P9** — Pool `ChampollionJsonParser` thread-local (narrowed) | -104 B/op SMALL, thrpt neutre | 2j | ✅ |
 | **P9.1** — Partage char[]+StringBuilder via 2ème ctor pool-friendly | -1144 B/op SMALL, **-12 % thrpt MEDIUM** | 4h | ❌ revert |
 | **P10** — Fast-path `fromJson(String)` via branche `if (src != null)` | -1088 B/op SMALL, **-17 % thrpt MEDIUM** | 4h | ❌ revert |
-| **P10.1** — `JsonTokenizer` abstract sealed + `JsonReaderTokenizer`/`JsonStringTokenizer` | **-66 % alloc SMALL (sous jacksonJr)**, -15 % thrpt MEDIUM | 1j | ✅ |
-| **P10.2** — Spécialiser `next()`+helpers dans chaque sous-classe (récupère thrpt MEDIUM) | +15 % thrpt MEDIUM | ~2j | ⏳ |
+| **P10.1** — `JsonTokenizer` abstract + `JsonReaderTokenizer`/`JsonStringTokenizer` | **-66 % alloc SMALL (sous jacksonJr)**, -15 % thrpt MEDIUM | 1j | ✅ |
+| **P10.2** — Spécialiser `next()`+helpers dans chaque sous-classe (test hypothèse dispatch virtuel) | thrpt MEDIUM inchangé (hypothèse infirmée) | 1j | ✅ |
+| **P10.3** — Investigation profilée régression thrpt MEDIUM (cause à isoler) | TBD | ~1 sem | ⏳ |
 | **P11** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
