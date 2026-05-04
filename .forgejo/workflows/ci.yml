@@ -63,6 +63,18 @@ jobs:
       - name: Install reactor (skip tests)
         run: mvn -B -ntp install -DskipTests
 
+      - name: Cache Jakarta TCK artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository/jakarta/json/jakarta.json-tck-common
+            ~/.m2/repository/jakarta/json/jakarta.json-tck-tests
+            ~/.m2/repository/jakarta/json/jakarta.json-tck-tests-pluggability
+          key: tck-jsonp-2.1.0-v1
+
+      - name: Install Jakarta JSON-P 2.1 TCK (Eclipse Foundation)
+        run: ./install-tck.sh jsonp
+
       - name: Jakarta JSON-P 2.1 TCK
         run: |
           if [ -x ./run-official-tck-jsonp-2.1.sh ]; then
@@ -101,6 +113,16 @@ jobs:
 
       - name: Install reactor (skip tests)
         run: mvn -B -ntp install -DskipTests
+
+      - name: Cache Jakarta TCK artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository/jakarta/json/bind/jakarta.json.bind-tck
+          key: tck-jsonb-3.0.0-v1
+
+      - name: Install Jakarta JSON-B 3.0 TCK (Eclipse Foundation)
+        run: ./install-tck.sh jsonb
 
       - name: Jakarta JSON-B 3.0 TCK — runtime mode
         run: |
