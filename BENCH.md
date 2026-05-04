@@ -366,27 +366,32 @@ Tentative : tokenizer en mode `String` direct via `String.charAt(srcPos++)` dans
 Même obstacle que P9.1 : la branche supplémentaire dans `read()` casse
 l'inlining HotSpot. Trade-off non rentable, **revert**.
 
-#### Pour aller plus loin
+#### P10.1 — refactor abstract sealed (mergé)
 
-Le vrai déblocage demande un refactor du tokenizer en :
+Refactor `JsonTokenizer` en `abstract sealed` + 2 sous-classes finales :
+- `JsonReaderTokenizer` : lecture par bloc `char[BUF_SIZE]` sur un `Reader` ;
+- `JsonStringTokenizer` : lecture directe via `String.charAt`.
 
-```
-abstract class JsonTokenizer {
-    public JsonToken next() { ... }
-    protected abstract int read();
-    protected abstract int peekRead();
-}
-final class JsonReaderTokenizer extends JsonTokenizer { /* logique actuelle */ }
-final class JsonStringTokenizer extends JsonTokenizer { /* charAt direct */ }
-```
+Mesures stables (2f×3wi×4i×2s, profil `-prof gc`) :
 
-Avec 2 sites d'appel distincts, HotSpot peut faire un inline-cache bimorphique
-stable et préserver le throughput sur les deux voies. Estimation : ~1 jour
-dédié. C'est la voie ouverte pour atteindre simultanément :
-- `alloc(fromJson(String))` ≈ 600 B/op (sous jacksonJr 872) ;
-- throughput Reader-mode neutre.
+| Workload | avant P10.1 | **après P10.1** | jacksonJr |
+|---|---:|---:|---:|
+| Read SMALL alloc | 1 696 B/op | **584 B/op** | 872 B/op |
+| Read MEDIUM alloc | 5 448 B/op | 4 336 B/op | 2 712 B/op |
+| Read SMALL thrpt | 3,98 | **4,02 ±0,018** (+1 %) | 7,50 |
+| Read MEDIUM thrpt | 0,53 | 0,453 ±0,003 (-15 %) | 1,02 |
 
-Au-delà : **P11** Foreign API SIMD pour le scan ASCII whitespace/strings.
+C'est la **première fois** que Champollion alloue moins que jacksonJr en read
+(SMALL : 584 vs 872, **-33 %**) sans régression sur le throughput SMALL.
+La régression MEDIUM persiste — vraisemblablement le dispatch virtuel
+`read()`/`peekRead()` (sealed bimorphic) ajoute un coût constant par
+caractère, plus visible sur les payloads longs. Investigation différée
+(dupliquer `next()`+helpers dans chaque sous-classe pour spécialiser les
+2 versions, gros refactor).
+
+#### Au-delà
+
+**P11** — Foreign API SIMD pour le scan ASCII whitespace/strings (parser ×2-3).
 
 ## 8. Roadmap perf
 
@@ -406,7 +411,8 @@ Au-delà : **P11** Foreign API SIMD pour le scan ASCII whitespace/strings.
 | **P9** — Pool `ChampollionJsonParser` thread-local (narrowed) | -104 B/op SMALL, thrpt neutre | 2j | ✅ |
 | **P9.1** — Partage char[]+StringBuilder via 2ème ctor pool-friendly | -1144 B/op SMALL, **-12 % thrpt MEDIUM** | 4h | ❌ revert |
 | **P10** — Fast-path `fromJson(String)` via branche `if (src != null)` | -1088 B/op SMALL, **-17 % thrpt MEDIUM** | 4h | ❌ revert |
-| **P10.1** — Refactor `JsonTokenizer` abstract + 2 sous-classes finales | -1 KB/op (≈ jacksonJr) sans régression | ~1j | ⏳ |
+| **P10.1** — `JsonTokenizer` abstract sealed + `JsonReaderTokenizer`/`JsonStringTokenizer` | **-66 % alloc SMALL (sous jacksonJr)**, -15 % thrpt MEDIUM | 1j | ✅ |
+| **P10.2** — Spécialiser `next()`+helpers dans chaque sous-classe (récupère thrpt MEDIUM) | +15 % thrpt MEDIUM | ~2j | ⏳ |
 | **P11** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
