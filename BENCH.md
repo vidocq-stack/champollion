@@ -240,40 +240,59 @@ top-level annotés (`SmallStaticRecord`, `OrderStaticRecord`, `ItemStaticRecord`
 `withStaticBindings(List.of())` pour court-circuiter le ServiceLoader et mesurer
 la baseline introspective (MethodHandles + cache).
 
-### 7.1 Smoke run — 2026-05-04
+### 7.1 Run stable — 2026-05-04 (post-`writeString` fast-path)
 
-> Smoke run JMH : `-f 1 -wi 1 -w 1s -i 2 -r 1s`. Ordres de grandeur uniquement,
-> à reproduire en `-f 5 -wi 5 -i 5` avant publication finale. Yasson sur write
-> SMALL/MEDIUM produit des scores anormalement élevés (DCE Blackhole `compiler`
-> mode soupçonné sur un `Jsonb.toJson(record)` à valeur de retour ignorée) — non
-> publié dans la table tant que non reproduit en mode `full`.
+> JMH : `-f 2 -wi 2 -w 2s -i 3 -r 2s`. Yasson sur write SMALL/MEDIUM produit
+> des scores anormalement élevés (28 / 19 ops/µs) — DCE Blackhole `compiler`
+> mode soupçonné sur un `Jsonb.toJson(record)` à valeur de retour potentiellement
+> hoistée par HotSpot. Non publié dans la comparaison principale (signalé en
+> note de bas de table).
 
 #### Write — Throughput (ops/µs, plus haut = mieux)
 
-| Workload | champollion_runtime | champollion_static | gain APT | jackson | jacksonJr |
-|---|---:|---:|---:|---:|---:|
-| **SMALL** | 4,49 | **7,35** | **+64 %** | 11,36 | 9,89 |
-| **MEDIUM** | 0,50 | **0,93** | **+87 %** | 1,76 | 1,58 |
+| Workload | champollion_runtime | **champollion_static** | gain APT | jacksonJr | jackson | yasson† |
+|---|---:|---:|---:|---:|---:|---:|
+| **SMALL**  | 5,75 ±0,27 | **9,59 ±0,98** | **+67 %** | 10,28 ±0,15 | 11,56 ±0,41 | (28,08†) |
+| **MEDIUM** | 0,69 ±0,02 | **1,14 ±0,06** | **+66 %** |  1,62 ±0,02 |  1,76 ±0,04 | (18,78†) |
+
+`champollion_static / jacksonJr` ≈ **0,93× sur SMALL** (quasi parité), 0,70× sur MEDIUM.
+`champollion_static / jackson`   ≈ **0,83× sur SMALL**, 0,65× sur MEDIUM.
 
 #### Read — Throughput (ops/µs, plus haut = mieux)
 
-| Workload | champollion_runtime | champollion_static | gain APT | jackson | jacksonJr |
+| Workload | champollion_runtime | **champollion_static** | gain APT | jackson | jacksonJr |
 |---|---:|---:|---:|---:|---:|
-| **SMALL** | 2,61 | **3,84** | **+47 %** | 6,00 | 7,42 |
-| **MEDIUM** | 0,37 | **0,52** | **+40 %** | 0,93 | 1,00 |
+| **SMALL**  | 2,59 ±0,04 | **3,98 ±0,20** | **+53 %** | 6,23 ±0,54 | 7,49 ±0,28 |
+| **MEDIUM** | 0,36 ±0,02 | **0,53 ±0,02** | **+47 %** | 0,94 ±0,02 | 1,00 ±0,02 |
+
+`champollion_static / jacksonJr` ≈ 0,53× SMALL, 0,53× MEDIUM (parser dominant).
+
+† Yasson SMALL/MEDIUM write : score anormal probablement dû à un cache `toJson`
+interne ou DCE Blackhole. Reproduit stable mais à valider en `-prof gc` /
+async-profiler avant publication.
 
 ### 7.2 Lecture des chiffres
 
-- **L'APT amène +40 à +87 %** par rapport au mode runtime (MethodHandles + cache).
-  C'est exactement le tax de la résolution dynamique des accesseurs/setters par
-  `MethodHandle.invoke` même après warmup HotSpot.
-- **Champollion static ≈ 0,55× Jackson, ≈ 0,5× jackson-jr** sur SMALL/MEDIUM.
-  Réduit l'écart d'environ moitié vs le runtime (qui était ~0,30× Jackson).
-- **Le gap résiduel** vient principalement de la voie générator/parser :
-  Jackson génère son JSON en bytes UTF-8 directement, Champollion passe par
-  `Writer` + `BufferedWriter`. Les optimisations P4 (SIMD ASCII via
-  `java.lang.foreign`) et un mode bytes-direct dans le generator (P6) restent
-  ouverts.
+- **L'APT amène +47 à +67 %** vs runtime (MethodHandles + cache). C'est le tax
+  de la résolution dynamique d'accesseurs même après warmup HotSpot.
+- **Sur write SMALL, Champollion static ≈ 0,93× jackson-jr**. Quasi-parité —
+  obtenu en combinant codegen APT + `writeString` fast-path ASCII.
+- **Le gap résiduel sur write MEDIUM** (0,70× jacksonJr) vient d'opérations
+  numériques (`Long.toString`, `Double.toString`) et de l'overhead state machine
+  du generator (1 méthode + 3 `out.write` par key/value).
+- **Sur read** Champollion est à 0,53× jacksonJr — le parser n'a pas encore
+  bénéficié d'optim équivalente. Voie `JsonTokenizer` à instrumenter.
+
+### 7.3 Décomposition du gap write SMALL vs jackson
+
+Pour un record SMALL (3 champs), Champollion static émet ~12 `out.write(...)` sur
+le `BufferedWriter`. Jackson émet typiquement ~5 (un par token cohérent).
+Sources du gap :
+
+1. **State machine `Ctx` push/pop** sur chaque key/value (3 `Deque.push` / `pop`).
+2. **`writeKeyRaw` = 3 calls** (`,`, `"key"`, `:`) au lieu d'un seul fragment
+   `,"key":`. Optim P7-bis ouverte (cf. roadmap §8).
+3. **Allocation `Long.toString` / `Double.toString`** non éludable en JSON-P API.
 
 ## 8. Roadmap perf
 
@@ -281,11 +300,14 @@ la baseline introspective (MethodHandles + cache).
 |---|---|---|---|
 | **P1** — Tokenizer `char[]` bufferisé | Parser pull ×2 | ~1 sem | ✅ |
 | **P2** — Generator `BufferedWriter` interne | Generator ×2 | ~1 sem | ✅ |
-| **P3** — Codegen statique APT (`@JsonbStatic`) | +40-87 % vs runtime | M5 | ✅ |
-| **P4** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
+| **P3** — Codegen statique APT (`@JsonbStatic`) | +47-67 % vs runtime | M5 | ✅ |
+| **P3.1** — `writeString` fast-path ASCII (single block) | Generator +20-30 % | 1j | ✅ |
+| **P3.2** — `writeKeyRaw` keys pré-encodées (`RawJsonKeyWriter`) | Generator +X % | M5 | ✅ |
+| **P4** — `writeKeyRawAndColon` fragment fusionné `,"k":` | Generator +15-25 % | ~3j | ⏳ |
 | **P5** — `MethodHandle.invokeExact` typé pour les accesseurs runtime | Runtime ×1,3 | ~1 sem | ⏳ |
-| **P6** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
-| **P7** — Keys pré-encodées en `byte[]` dans les bindings APT | Static +30-50 % | ~2 sem | ⏳ |
+| **P6** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
+| **P7** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
+| **P8** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
 **≈ 0,9× Parsson** sur le streaming.
