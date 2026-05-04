@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload TCK JSON-P report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: tck-jsonp-report
           path: champollion-tck/target/tck-report*.txt
@@ -145,7 +145,7 @@ jobs:
 
       - name: Upload TCK JSON-B report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: tck-jsonb-report
           path: champollion-tck/target/tck-report*.txt
