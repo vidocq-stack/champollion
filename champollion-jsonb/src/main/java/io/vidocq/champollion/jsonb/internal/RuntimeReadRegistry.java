@@ -299,26 +299,33 @@ final class RuntimeReadRegistry {
             indexByName.put(jsonbName(comp), i);
         }
         // §R-1/R-5 — canonical constructor d'un record est TOUJOURS public.
-        // MethodHandles.publicLookup() le résout SANS setAccessible ni opens
-        // côté consommateur — c'est ce qui permet à Cassini examples de retirer
-        // "opens model".
-        java.lang.invoke.MethodHandle ctorMh;
+        // publicLookup() le résout SANS setAccessible ni opens côté consommateur
+        // pour les records DANS UN PACKAGE EXPORTÉ. Pour les records internes
+        // de test ou non-exportés, fallback Reflection avec setAccessible.
+        java.lang.invoke.MethodHandle ctorMh = null;
         try {
             ctorMh = java.lang.invoke.MethodHandles.publicLookup().findConstructor(type,
                     java.lang.invoke.MethodType.methodType(void.class, paramTypes));
-        } catch (NoSuchMethodException e) {
-            throw new JsonbException("Canonical record constructor not found for " + type, e);
-        } catch (IllegalAccessException e) {
-            throw new JsonbException("Cannot access canonical record constructor for " + type
-                    + " — record must be in an exported package.", e);
+        } catch (NoSuchMethodException | IllegalAccessException ignored) {
+            ctorMh = null;
+        }
+        Constructor<?> reflCtor = null;
+        if (ctorMh == null) {
+            try {
+                reflCtor = type.getDeclaredConstructor(paramTypes);
+                try { reflCtor.setAccessible(true); } catch (Exception ignore) {}
+            } catch (NoSuchMethodException e) {
+                throw new JsonbException("Canonical record constructor not found for " + type, e);
+            }
         }
         final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
+        final Constructor<?> finalReflCtor = reflCtor;
 
-        return parser -> readObjectAndInvokeMh(parser, finalCtorMh, type, paramTypes, readers, indexByName);
+        return parser -> readObjectAndInvokeMh(parser, finalCtorMh, finalReflCtor, type, paramTypes, readers, indexByName);
     }
 
     private Object readObjectAndInvokeMh(JsonParser p, java.lang.invoke.MethodHandle ctorMh,
-                                         Class<?> type, Class<?>[] paramTypes,
+                                         Constructor<?> reflCtor, Class<?> type, Class<?>[] paramTypes,
                                          BindingReader[] readers, Map<String, Integer> indexByName) {
         JsonParser.Event e = p.next();
         if (e == JsonParser.Event.VALUE_NULL) return null;
@@ -335,7 +342,8 @@ final class RuntimeReadRegistry {
             else args[idx] = readers[idx].read(p);
         }
         try {
-            return ctorMh.invokeWithArguments(args);
+            if (ctorMh != null) return ctorMh.invokeWithArguments(args);
+            return reflCtor.newInstance(args);
         } catch (Throwable t) {
             throw new JsonbException("Failed to instantiate record " + type + ": " + t.getMessage(), t);
         }
