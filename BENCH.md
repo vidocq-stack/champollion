@@ -409,7 +409,8 @@ sur ASCII non-latin1. Investigation profilée différée (P10.3).
 | **P4.1** — `ArrayDeque(4)` pour pile de scopes parser | -48 B/op | 30min | ✅ |
 | **P5** — Tokens mutables `StringToken`/`NumberToken` | -20 % thrpt (cassure EA JIT) | 1j | ❌ revert |
 | **P6** — `MethodHandle.invokeExact` + `asType` accesseurs runtime | Neutre, -8 % read MEDIUM (wrapper asType) | 2h | ❌ revert |
-| **P6.1** — `LambdaMetafactory` → `Function<Object,Object>` direct | Runtime +20-30 % (pattern Jackson) | ~2j | ⏳ |
+| **P6.1** — `LambdaMetafactory` → `Function<Object,Object>` direct | Write runtime +1 %, read SMALL +4 %, read MEDIUM -9 % | 1j | ✅ |
+| **P6.2** — Accesseurs typés par primitive (`LongFunction`, `ToIntFunction`…) | Runtime +10-20 % (évite boxing primitifs) | ~3j | ⏳ |
 | **P7** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
 | **P8** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
 | **P9** — Pool `ChampollionJsonParser` thread-local (narrowed) | -104 B/op SMALL, thrpt neutre | 2j | ✅ |
