@@ -216,7 +216,13 @@ final class RuntimeReadRegistry {
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
         }
-        return java.util.Optional.of(parser -> deser.deserialize(parser, deserContext, targetType));
+        // §10.3 spec: parser must be advanced to the first token of the value before
+        // calling deserialize(). Champollion passes the parser at KEY_NAME position;
+        // one parser.next() advances it to the actual value token (START_OBJECT, START_ARRAY…).
+        return java.util.Optional.of(parser -> {
+            parser.next();
+            return (Object) deser.deserialize(parser, deserContext, targetType);
+        });
     }
 
     /** Variante de {@link #readerFor(Type)} sans adapter mais préservant les ParameterizedType. */
