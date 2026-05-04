@@ -290,9 +290,46 @@ le `BufferedWriter`. Jackson émet typiquement ~5 (un par token cohérent).
 Sources du gap :
 
 1. **State machine `Ctx` push/pop** sur chaque key/value (3 `Deque.push` / `pop`).
-2. **`writeKeyRaw` = 3 calls** (`,`, `"key"`, `:`) au lieu d'un seul fragment
-   `,"key":`. Optim P7-bis ouverte (cf. roadmap §8).
+2. **`writeKeyRawWithColon`** émet `,"key":` en bloc (P4 fait, gain neutre
+   statistiquement — la majorité du gain venait du fast-path `writeString`).
 3. **Allocation `Long.toString` / `Double.toString`** non éludable en JSON-P API.
+
+### 7.4 Diagnostic READ — `gc.alloc.rate.norm`
+
+| Lib | SMALL B/op | MEDIUM B/op |
+|---|---:|---:|
+| **Champollion static** | 1 800 | 5 552 |
+| jacksonJr               |   872 | 2 712 |
+| Ratio                   | **2,07×** | 2,05× |
+
+Champollion alloue **2× plus** que jacksonJr pour le même résultat — c'est la
+cause directe du gap read 0,53×. La majorité du surcoût vient du **setup
+parser** :
+
+- `new ChampollionJsonParser(reader)` : instance + `Deque<Scope>` (8 slots
+  après `ArrayDeque(4)` — était 16) ;
+- `new JsonTokenizer(reader)` : instance + `StringBuilder(64)` + `char[512]`
+  buffer de lecture ≈ 1 200 B fixe ;
+- chaque `KEY_NAME` consommé alloue 1 String (3-4 keys = ~150 B) ;
+- chaque `VALUE_STRING` alloue 1 String.
+
+Pour un JSON SMALL de 50 B, le setup parser consomme déjà ~1 500 B avant
+même de lire un caractère utile.
+
+#### Pistes explorées et rejetées
+
+- **Tokens mutables** (`StringToken`/`NumberToken` réutilisés) : revert. Bien
+  que -40 B/op sur SMALL, throughput régresse de **-20 %** — probable cassure
+  de l'escape analysis JIT (les records étaient stack-alloués via EA, les
+  classes mutables ne le sont plus, donc allocs réelles).
+- **`ArrayDeque(4)`** : appliqué (-48 B/op SMALL et MEDIUM, throughput neutre).
+  Gain marginal mais cumulable.
+
+#### Vraie cible : pool de parsers (P9)
+
+Diviser par 2 le `gc.alloc.rate.norm` demande de pooler les instances de
+`ChampollionJsonParser`/`JsonTokenizer` (avec leurs buffers) par-thread ou via
+`ScopedValue`. Compat virtual threads obligatoire — chantier dédié, ouvert.
 
 ## 8. Roadmap perf
 
@@ -303,11 +340,14 @@ Sources du gap :
 | **P3** — Codegen statique APT (`@JsonbStatic`) | +47-67 % vs runtime | M5 | ✅ |
 | **P3.1** — `writeString` fast-path ASCII (single block) | Generator +20-30 % | 1j | ✅ |
 | **P3.2** — `writeKeyRaw` keys pré-encodées (`RawJsonKeyWriter`) | Generator +X % | M5 | ✅ |
-| **P4** — `writeKeyRawAndColon` fragment fusionné `,"k":` | Generator +15-25 % | ~3j | ⏳ |
-| **P5** — `MethodHandle.invokeExact` typé pour les accesseurs runtime | Runtime ×1,3 | ~1 sem | ⏳ |
-| **P6** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
-| **P7** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
-| **P8** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
+| **P4** — `writeKeyRawWithColon` fragment fusionné `,"k":` | Stat. neutre | 1j | ✅ |
+| **P4.1** — `ArrayDeque(4)` pour pile de scopes parser | -48 B/op | 30min | ✅ |
+| **P5** — Tokens mutables `StringToken`/`NumberToken` | -20 % thrpt (cassure EA JIT) | 1j | ❌ revert |
+| **P6** — `MethodHandle.invokeExact` typé pour accesseurs runtime | Runtime ×1,3 | ~1 sem | ⏳ |
+| **P7** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
+| **P8** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
+| **P9** — Pool `ChampollionJsonParser` thread-safe (virtual-thread compat) | Reader ×2 (alloc /2) | ~1 sem | ⏳ |
+| **P10** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
 **≈ 0,9× Parsson** sur le streaming.
