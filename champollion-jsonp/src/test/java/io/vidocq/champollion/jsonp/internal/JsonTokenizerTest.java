@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class JsonTokenizerTest {
 
     private static List<JsonToken> tokenize(String input) {
-        var t = new JsonTokenizer(new StringReader(input));
+        var t = new JsonReaderTokenizer(new StringReader(input));
         var out = new ArrayList<JsonToken>();
         while (true) {
             var tok = t.next();

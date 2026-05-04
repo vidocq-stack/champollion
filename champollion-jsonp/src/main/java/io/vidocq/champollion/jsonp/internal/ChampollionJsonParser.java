@@ -42,20 +42,34 @@ public final class ChampollionJsonParser implements JsonParser {
     private Event lastEvent;
 
     public ChampollionJsonParser(Reader reader) {
-        this.tokenizer = new JsonTokenizer(reader);
+        this.tokenizer = new JsonReaderTokenizer(reader);
+        this.scopes.push(Scope.ROOT);
+    }
+
+    /** P10.1 — fast-path String : aucun Reader, aucun char[] intermédiaire. */
+    public ChampollionJsonParser(String src) {
+        this.tokenizer = new JsonStringTokenizer(src);
         this.scopes.push(Scope.ROOT);
     }
 
     /**
-     * Recycle ce parser pour un nouveau {@link Reader}, en conservant le
-     * {@link Deque} de scopes (alloué 1×) et le pool de strings internes
-     * (P9 — pool de parsers). Le tokenizer est <em>ré-alloué</em> pour
-     * conserver le {@code final Reader} qui permet à HotSpot d'inliner
-     * {@code read()} dans la boucle scan ASCII. Ne ferme <em>pas</em>
-     * l'ancien reader — responsabilité de l'appelant.
+     * Recycle ce parser pour un nouveau {@link Reader}. Le tokenizer est
+     * ré-alloué (instance light : ~32 B + char[BUF_SIZE]) pour conserver le
+     * {@code final Reader} qui permet à HotSpot d'inliner {@code read()}
+     * dans la boucle scan ASCII. Ne ferme <em>pas</em> l'ancien reader.
      */
     public void reset(Reader newReader) {
-        this.tokenizer = new JsonTokenizer(newReader);
+        this.tokenizer = new JsonReaderTokenizer(newReader);
+        clearState();
+    }
+
+    /** P10.1 — variante {@code reset(String)} : tokenizer en mode String direct. */
+    public void reset(String src) {
+        this.tokenizer = new JsonStringTokenizer(src);
+        clearState();
+    }
+
+    private void clearState() {
         this.scopes.clear();
         this.scopes.push(Scope.ROOT);
         this.next = null;

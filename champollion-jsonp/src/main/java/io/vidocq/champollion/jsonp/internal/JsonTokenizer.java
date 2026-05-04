@@ -1,61 +1,55 @@
 package io.vidocq.champollion.jsonp.internal;
 
-import jakarta.json.JsonException;
-
-import java.io.IOException;
-import java.io.Reader;
-
 /**
- * Tokenizer JSON pull-based, RFC 8259 strict.
+ * Tokenizer JSON pull-based abstrait, RFC 8259 strict.
  *
- * <p>Pas de buffer interne autre qu'un {@link StringBuilder} amorti pour les chaînes/nombres.
- * Pas de {@code synchronized}, pas de {@code ThreadLocal} — virtual-thread-friendly.</p>
+ * <p>P10.1 — split en 2 sous-classes finales :</p>
+ * <ul>
+ *   <li>{@link JsonReaderTokenizer} : lecture par bloc {@code char[BUF_SIZE]}
+ *       sur un {@link java.io.Reader} (cas {@code fromJson(Reader)}).</li>
+ *   <li>{@link JsonStringTokenizer} : lecture directe via {@link String#charAt}
+ *       (cas {@code fromJson(String)} — économise ~1 KB d'alloc + une copie
+ *       {@code String.getChars}).</li>
+ * </ul>
  *
- * <p>Le tokenizer ne maintient aucun état structurel (équilibre des accolades, etc.).
- * Cette responsabilité revient au {@code JsonParser} de niveau supérieur.</p>
+ * <p>Avec 2 call sites concrets distincts ({@code instanceof}-stable), HotSpot
+ * peut faire un <em>inline-cache bimorphique</em> stable sur {@link #read()} /
+ * {@link #peekRead()} et préserver le throughput Reader-mode.</p>
+ *
+ * <p>Pas de {@code synchronized}, pas de {@code ThreadLocal} — virtual-thread-friendly.
+ * Le tokenizer ne maintient aucun état structurel ; le {@link ChampollionJsonParser}
+ * de niveau supérieur gère la machine d'état.</p>
  */
-public final class JsonTokenizer {
+public abstract sealed class JsonTokenizer
+        permits JsonReaderTokenizer, JsonStringTokenizer {
 
-    private static final int BUF_SIZE = 512;
+    static final int NO_PEEK = -2;
 
-    private final Reader reader;
-    private final StringBuilder buffer = new StringBuilder(64);
-
-    /** Buffer char[] pré-alloué — lecture par bloc au lieu de char-par-char. */
-    private final char[] buf = new char[BUF_SIZE];
-    private int bufPos = 0;
-    private int bufEnd = 0;
-    private boolean eof = false;
+    protected final StringBuilder buffer = new StringBuilder(64);
 
     /** Caractère pré-lu (pour {@link #peekRead()}), ou {@code -2} si aucun. */
-    private int peek = NO_PEEK;
-    private long line = 1;
-    private long column = 0;
-    private long offset = 0;
+    protected int peek = NO_PEEK;
+    protected long line = 1;
+    protected long column = 0;
+    protected long offset = 0;
 
-    private static final int NO_PEEK = -2;
+    JsonTokenizer() {}
 
-    public JsonTokenizer(Reader reader) {
-        if (reader == null) {
-            throw new IllegalArgumentException("reader is null");
-        }
-        this.reader = reader;
-    }
+    /** Ferme la source sous-jacente (Reader). No-op en mode String. */
+    abstract void close();
 
+    /** Lit le prochain caractère, ou -1 à la fin. */
+    protected abstract int read();
 
-    /** Ferme le {@link Reader} sous-jacent. Spec : propage IOException en JsonException. */
-    void close() {
-        try {
-            reader.close();
-        } catch (IOException e) {
-            throw new JsonException("I/O error closing reader", e);
-        }
-    }
+    /** Pré-lit le prochain caractère sans le consommer (1-char lookahead). */
+    protected abstract int peekRead();
 
-    /**
-     * Lit le prochain token. Whitespace RFC 8259 §2 sauté.
-     */
-    public JsonToken next() {
+    public final long line() { return line; }
+    public final long column() { return column; }
+    public final long offset() { return offset; }
+
+    /** Lit le prochain token. Whitespace RFC 8259 §2 sauté. */
+    public final JsonToken next() {
         int c = skipWhitespace();
         return switch (c) {
             case -1 -> JsonToken.Eof.INSTANCE;
@@ -77,11 +71,6 @@ public final class JsonTokenizer {
             }
         };
     }
-
-    /** Position courante (utile pour les diagnostics). */
-    public long line() { return line; }
-    public long column() { return column; }
-    public long offset() { return offset; }
 
     private int skipWhitespace() {
         while (true) {
@@ -221,52 +210,14 @@ public final class JsonTokenizer {
         return new JsonToken.NumberToken(buffer.toString());
     }
 
-    private int read() {
-        if (peek != NO_PEEK) {
-            int c = peek;
-            peek = NO_PEEK;
-            track(c);
-            return c;
-        }
-        if (bufPos >= bufEnd) {
-            if (eof) return -1;
-            refill();
-            if (bufEnd == 0) return -1;
-        }
-        int c = buf[bufPos++];
-        track(c);
-        return c;
-    }
-
-    private int peekRead() {
-        if (peek != NO_PEEK) return peek;
-        if (bufPos >= bufEnd) {
-            if (eof) return -1;
-            refill();
-            if (bufEnd == 0) { peek = -1; return -1; }
-        }
-        peek = buf[bufPos++];
-        return peek;
-    }
-
-    private void refill() {
-        try {
-            int n = reader.read(buf, 0, buf.length);
-            if (n <= 0) { eof = true; bufEnd = 0; bufPos = 0; }
-            else { bufEnd = n; bufPos = 0; }
-        } catch (IOException e) {
-            throw new JsonException("I/O error reading JSON", e);
-        }
-    }
-
-    private int consumePeek() {
+    protected final int consumePeek() {
         int c = peek;
         peek = NO_PEEK;
         track(c);
         return c;
     }
 
-    private void track(int c) {
+    protected final void track(int c) {
         if (c == -1) return;
         offset++;
         if (c == '\n') {
@@ -277,7 +228,7 @@ public final class JsonTokenizer {
         }
     }
 
-    private jakarta.json.stream.JsonParsingException error(String message) {
+    protected final jakarta.json.stream.JsonParsingException error(String message) {
         return new jakarta.json.stream.JsonParsingException(
                 message + " (at line " + line + ", column " + column + ", offset " + offset + ")",
                 new SimpleLocation(line, column, offset));
@@ -289,7 +240,7 @@ public final class JsonTokenizer {
         @Override public long getStreamOffset() { return offset; }
     }
 
-    private static String describe(int c) {
+    protected static String describe(int c) {
         if (c == -1) return "<EOF>";
         if (c >= 0x20 && c < 0x7F) return "'" + (char) c + "'";
         return String.format("U+%04X", c);

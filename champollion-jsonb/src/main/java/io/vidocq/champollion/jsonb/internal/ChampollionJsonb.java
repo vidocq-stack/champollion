@@ -259,12 +259,36 @@ public final class ChampollionJsonb implements Jsonb {
 
     // ===== fromJson =====
 
+    @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(String str, Class<T> type) {
+        if (jsonProvider instanceof io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider) {
+            return (T) readValuePooledFromString(str, type);
+        }
         return fromJson(new StringReader(str), (Type) type);
     }
 
+    @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(String str, Type runtimeType) {
+        if (jsonProvider instanceof io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider) {
+            return (T) readValuePooledFromString(str, runtimeType);
+        }
         return fromJson(new StringReader(str), runtimeType);
+    }
+
+    /**
+     * P10.1 fast-path : parse une {@link String} directement sans
+     * {@link StringReader} ni {@code char[]} intermédiaire (via
+     * {@link io.vidocq.champollion.jsonp.internal.JsonStringTokenizer}).
+     */
+    private Object readValuePooledFromString(String src, Type runtimeType) {
+        var parser = parserPool.get();
+        if (parser == null) {
+            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(src);
+            parserPool.set(parser);
+        } else {
+            parser.reset(src);
+        }
+        return readValue(parser, runtimeType);
     }
 
     @Override public <T> T fromJson(Reader reader, Class<T> type) {
