@@ -325,11 +325,25 @@ même de lire un caractère utile.
 - **`ArrayDeque(4)`** : appliqué (-48 B/op SMALL et MEDIUM, throughput neutre).
   Gain marginal mais cumulable.
 
-#### Vraie cible : pool de parsers (P9)
+#### P9 — pool de parsers (partiellement appliqué)
 
-Diviser par 2 le `gc.alloc.rate.norm` demande de pooler les instances de
-`ChampollionJsonParser`/`JsonTokenizer` (avec leurs buffers) par-thread ou via
-`ScopedValue`. Compat virtual threads obligatoire — chantier dédié, ouvert.
+Implémentation : `ThreadLocal<ChampollionJsonParser>` dans `ChampollionJsonb`,
+`reset(Reader)` côté parser (clear scopes + ré-allocation du tokenizer), export
+qualifié `exports ... internal to io.vidocq.champollion.jsonb` dans le
+`module-info`.
+
+Tentative complète (poolage parser + tokenizer + buffers) : alloc divisée par
+4 (1 800 → 488 B/op SMALL — **mieux que jacksonJr 872**) mais throughput MEDIUM
+régresse de -12 % à cause du `Reader` non-final qui empêche HotSpot d'inliner
+`tokenizer.read()` dans la boucle scan ASCII.
+
+Décision : version *narrowed* — pool seulement le parser et l'`ArrayDeque`
+(~104 B fixes), tokenizer ré-alloué à chaque `reset()` pour préserver le
+`final Reader`. Pas de régression, gain alloc modeste (-6 % SMALL).
+
+Pour aller plus loin : wrapper `Reader` réassignable avec inline cache HotSpot
+(chantier dédié), ou pooler le tokenizer via `Cleaner` — tradeoff de
+complexité non rentré pour cette release.
 
 ## 8. Roadmap perf
 
@@ -346,7 +360,8 @@ Diviser par 2 le `gc.alloc.rate.norm` demande de pooler les instances de
 | **P6** — `MethodHandle.invokeExact` typé pour accesseurs runtime | Runtime ×1,3 | ~1 sem | ⏳ |
 | **P7** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
 | **P8** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
-| **P9** — Pool `ChampollionJsonParser` thread-safe (virtual-thread compat) | Reader ×2 (alloc /2) | ~1 sem | ⏳ |
+| **P9** — Pool `ChampollionJsonParser` thread-local (narrowed) | -104 B/op SMALL, thrpt neutre | 2j | ✅ |
+| **P9.1** — Pool tokenizer + wrapper `Reader` réassignable | -1300 B/op (≈ jacksonJr) | ~1 sem | ⏳ |
 | **P10** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
