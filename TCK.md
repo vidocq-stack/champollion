@@ -174,13 +174,17 @@ Causes principales des ERRORs (toutes pointent des stubs `UnsupportedOperationEx
 
 ### JSON-B 3.0
 
-| Métrique | 2026-05-03 baseline | Après M7.x | Après M7.8–M7.15 | **Après M7.16 (CDI §5)** |
-|---|---|---|---|---|
-| Tests exécutés | 295 | 295 | 295 | 295 |
-| **PASS** | **78** (26,4 %) | 248 (84,1 %) | 287 (97,3 %) | **288 (97,6 %)** ✅ |
-| FAIL | 179 | 35 | 0 | 0 |
-| ERROR | 33 | 7 | 3 (env) | 2 |
-| SKIP | 5 | 5 | 5 | 5 |
+| Métrique | 2026-05-03 baseline | Après M7.x | Après M7.8–M7.15 | Après M7.16 (CDI §5) | **Après M7.17 (creator/property split)** |
+|---|---|---|---|---|---|
+| Tests exécutés | 295 | 295 | 295 | 295 | 295 |
+| **PASS** | **78** (26,4 %) | 248 (84,1 %) | 287 (97,3 %) | 288 (97,6 %) | **289 (97,97 %)** ✅ |
+| FAIL | 179 | 35 | 0 | 0 | 0 |
+| ERROR | 33 | 7 | 3 (env) | 2 | **1** (env) |
+| SKIP | 5 | 5 | 5 | 5 | 5 |
+
+**100 % des tests fonctionnellement applicables PASS** — le seul ERROR restant
+(`JSONBSigTest.signatureTest`) est purement environnemental (signature binaire,
+fichier `.sig` non distribué dans le ZIP TCK 3.0.0).
 
 **100 % des tests fonctionnellement applicables PASS** — les 3 ERROR restants sont
 purement environnementaux (CDI runtime absent + signature binaire).
@@ -252,25 +256,27 @@ purement environnementaux (CDI runtime absent + signature binaire).
 - M7.13/14 (final) — `readObjectAndApply` tolère END_OBJECT consommé par un
   custom deser (sur-consommation de la valeur enfant), `PrimedParser.currentEvent()` override.
 
-**État final 2026-05-04 — 288/295 PASS (97,6 %)** :
+**État final 2026-05-04 — 289/295 PASS (97,97 %)** :
 
-- `AdaptersCustomizationCDITest` — **PASS** ✅
+- `AdaptersCustomizationCDITest` — **PASS** ✅ (M7.16)
   Vauban livre `SeContainerInitializer` + bean discovery + `@Inject` fields ;
   Champollion `CdiResolver` (helper réflexif sans dep hard `cdi-api`) résout
   les Adapter/Ser/Deser via `CDI.current().select(class).get()` quand la
   classe est un managed bean réel (pré-check `isLikelyManagedBean` :
   `@*Scoped` / `@Singleton` / `@Inject`).
-- `SerializersCustomizationCDITest` — ERROR (challenge ouvert)
-  Le `AnimalListDeserializerInjected` attend le parser positionné à
-  `START_ARRAY` au moment de `deserialize()` ; le `SimpleStringDeserializer`
-  d'`InstantiationCustomizationTest` attend le parser à `KEY_NAME`. Les
-  deux comportements sont **mutuellement exclusifs** sans un mécanisme
-  d'isolation côté Champollion (à concevoir, cf. tâche dédiée). Choix
-  conservateur : préserver les 10 PASS d'`InstantiationCustomizationTest`,
-  laisser ce test seul en ERROR.
-- `JSONBSigTest.signatureTest` — challenge environnemental (signature
-  binaire, fichier `jakarta.json.bind.sig` non distribué dans le ZIP TCK
-  3.0.0). Hors scope.
+- `SerializersCustomizationCDITest` — **PASS** ✅ (M7.17)
+  Distinction du contexte d'appel pour les custom Deserializer :
+  - regular property (setter/field/record/getter) : Champollion fait
+    `parser.next()` avant `deserialize()` (parser positionné sur le
+    premier token de la valeur, e.g. `START_ARRAY`) ;
+  - creator parameter : parser reste à `KEY_NAME`, le deserializer fait
+    lui-même son `next()`.
+  Ce split résout l'apparente contradiction entre le
+  `AnimalListDeserializerInjected` (attend `START_ARRAY` post-next) et le
+  `SimpleStringDeserializer` (attend `KEY_NAME` pré-next).
+- `JSONBSigTest.signatureTest` — challenge environnemental restant
+  (signature binaire, fichier `jakarta.json.bind.sig` non distribué dans
+  le ZIP TCK 3.0.0). Hors scope.
 
 ## Challenges connus
 
