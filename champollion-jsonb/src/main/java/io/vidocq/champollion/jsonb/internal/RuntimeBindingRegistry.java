@@ -401,7 +401,6 @@ final class RuntimeBindingRegistry {
         for (RecordComponent c : comps) {
             if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
-            try { accessor.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c) || writeNullValues;
             // M4.4f : @JsonbTypeAdapter → applique l'adapter avant écriture.
@@ -410,7 +409,13 @@ final class RuntimeBindingRegistry {
                     .or(() -> customDateWriter(c))
                     .or(() -> globalDateWriter(c.getType()))
                     .orElseGet(() -> writerFor(c.getGenericType()));
-            props.add(new Property(name, new MethodAccessor(accessor), w, nillable));
+            // P6.1 — privilégier LambdaMetafactory ; fallback Reflection setAccessible.
+            Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
+            if (acc == null) {
+                try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                acc = new MethodAccessor(accessor);
+            }
+            props.add(new Property(name, acc, w, nillable));
         }
         return (g, value) -> writeObject(g, value, props);
     }
@@ -826,7 +831,14 @@ final class RuntimeBindingRegistry {
                     .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
                     .orElseGet(() -> writerFor(m.getGenericReturnType()));
             seen.add(propName);
-            props.add(new Property(name, new MethodAccessor(m), w, nillable));
+            // P6.1 — privilégier LambdaMetafactory pour les getters publics
+            // dans des classes publiques (POJO standard).
+            Accessor pojoAcc = (Modifier.isPublic(m.getModifiers())
+                    && Modifier.isPublic(m.getDeclaringClass().getModifiers()))
+                    ? tryLambdaAccessor(m.getDeclaringClass(), m.getName(), m.getReturnType())
+                    : null;
+            if (pojoAcc == null) pojoAcc = new MethodAccessor(m);
+            props.add(new Property(name, pojoAcc, w, nillable));
         }
 
         // 2) Champs publics non couverts par un getter et non masqués.
@@ -1349,16 +1361,21 @@ final class RuntimeBindingRegistry {
             Method accessor = c.getAccessor();
             // §R-6 — record accessors sont TOUJOURS publics. publicLookup() les
             // résout sans setAccessible ni opens côté consommateur.
-            Accessor acc;
-            try {
-                java.lang.invoke.MethodHandle mh = java.lang.invoke.MethodHandles.publicLookup()
-                        .findVirtual(type, accessor.getName(),
-                                java.lang.invoke.MethodType.methodType(c.getType()));
-                acc = new MhAccessor(mh);
-            } catch (NoSuchMethodException | IllegalAccessException ex) {
-                // Fallback Reflection si publicLookup échoue (record non-exporté).
-                try { accessor.setAccessible(true); } catch (Exception ignore) {}
-                acc = new MethodAccessor(accessor);
+            // P6.1 — privilégier LambdaMetafactory (Function<Object,Object>) qui
+            // produit du code inline-friendly équivalent à un getter direct
+            // après warmup ; fallback MethodHandle puis Reflection.
+            Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
+            if (acc == null) {
+                try {
+                    java.lang.invoke.MethodHandle mh = java.lang.invoke.MethodHandles.publicLookup()
+                            .findVirtual(type, accessor.getName(),
+                                    java.lang.invoke.MethodType.methodType(c.getType()));
+                    acc = new MhAccessor(mh);
+                } catch (NoSuchMethodException | IllegalAccessException ex) {
+                    // Fallback Reflection si publicLookup échoue (record non-exporté).
+                    try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                    acc = new MethodAccessor(accessor);
+                }
             }
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c) || writeNullValues;
@@ -1387,7 +1404,12 @@ final class RuntimeBindingRegistry {
             boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
             seen.add(propName);
-            props.add(new Property(name, new MethodAccessor(m), w, nillable));
+            Accessor pojoAcc = (Modifier.isPublic(m.getModifiers())
+                    && Modifier.isPublic(m.getDeclaringClass().getModifiers()))
+                    ? tryLambdaAccessor(m.getDeclaringClass(), m.getName(), m.getReturnType())
+                    : null;
+            if (pojoAcc == null) pojoAcc = new MethodAccessor(m);
+            props.add(new Property(name, pojoAcc, w, nillable));
         }
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
@@ -1559,6 +1581,45 @@ final class RuntimeBindingRegistry {
      */
     private record MhAccessor(java.lang.invoke.MethodHandle mh) implements Accessor {
         public Object read(Object target) throws Throwable { return mh.invoke(target); }
+    }
+
+    /**
+     * P6.1 — Accesseur via {@link java.util.function.Function} produit par
+     * {@link java.lang.invoke.LambdaMetafactory}. HotSpot inline ce site comme
+     * un appel direct au getter après warmup ; pas de cast varargs ni de
+     * boxing intermédiaire (sauf valueOf automatique sur retour primitif).
+     * Fallback {@link MhAccessor} ou {@link MethodAccessor} si le lookup public
+     * ne peut pas générer la lambda (classe/package non accessible).
+     */
+    private record LambdaAccessor(java.util.function.Function<Object, Object> f) implements Accessor {
+        public Object read(Object target) { return f.apply(target); }
+    }
+
+    /**
+     * Tente de produire un {@link LambdaAccessor} via {@link java.lang.invoke.LambdaMetafactory}.
+     * Retourne {@code null} si la classe n'est pas accessible publiquement ou
+     * si la metafactory échoue (classe non exportée, etc.).
+     */
+    @SuppressWarnings("unchecked")
+    private static Accessor tryLambdaAccessor(Class<?> declaring, String methodName, Class<?> returnType) {
+        try {
+            var lookup = java.lang.invoke.MethodHandles.publicLookup();
+            var implMethod = lookup.findVirtual(declaring, methodName,
+                    java.lang.invoke.MethodType.methodType(returnType));
+            var samMethodType = java.lang.invoke.MethodType.methodType(Object.class, Object.class);
+            var instMethodType = java.lang.invoke.MethodType.methodType(returnType, declaring);
+            var callsite = java.lang.invoke.LambdaMetafactory.metafactory(
+                    lookup,
+                    "apply",
+                    java.lang.invoke.MethodType.methodType(java.util.function.Function.class),
+                    samMethodType,
+                    implMethod,
+                    instMethodType);
+            var fn = (java.util.function.Function<Object, Object>) callsite.getTarget().invokeExact();
+            return new LambdaAccessor(fn);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private record FieldAccessor(Field f) implements Accessor {
