@@ -332,18 +332,31 @@ Implémentation : `ThreadLocal<ChampollionJsonParser>` dans `ChampollionJsonb`,
 qualifié `exports ... internal to io.vidocq.champollion.jsonb` dans le
 `module-info`.
 
-Tentative complète (poolage parser + tokenizer + buffers) : alloc divisée par
-4 (1 800 → 488 B/op SMALL — **mieux que jacksonJr 872**) mais throughput MEDIUM
-régresse de -12 % à cause du `Reader` non-final qui empêche HotSpot d'inliner
-`tokenizer.read()` dans la boucle scan ASCII.
+#### P9.1 — partage char[]+StringBuilder (exploré, revert)
 
-Décision : version *narrowed* — pool seulement le parser et l'`ArrayDeque`
-(~104 B fixes), tokenizer ré-alloué à chaque `reset()` pour préserver le
-`final Reader`. Pas de régression, gain alloc modeste (-6 % SMALL).
+Tentative : 2ème constructor `JsonTokenizer(Reader, char[] sharedBuf, StringBuilder sharedSB)`
+appelé par `ChampollionJsonParser.reset()` avec des buffers détenus
+côté parser (alloués 1× à la construction). Gain alloc spectaculaire :
 
-Pour aller plus loin : wrapper `Reader` réassignable avec inline cache HotSpot
-(chantier dédié), ou pooler le tokenizer via `Cleaner` — tradeoff de
-complexité non rentré pour cette release.
+| Workload | avant | **avec P9.1** | vs jacksonJr |
+|---|---:|---:|---:|
+| SMALL alloc | 1 696 B/op | **552 B/op** | **-37 %** (mieux !) |
+| MEDIUM alloc | 5 448 B/op | 4 304 B/op | +59 % (encore en retard) |
+
+Mais throughput MEDIUM régresse de **-12 %** (0,53 → 0,46 ops/µs) — non récupéré
+même en remplaçant `buf.length` par la constante `BUF_SIZE` pour aider
+l'élimination de bounds-check. Hypothèse : aliasing bimorphic du JIT entre les
+call sites tokenizer non-pool / pool, qui empêche un inline cache stable.
+Trade-off jugé non rentable (gain alloc compense pas la perte throughput),
+**revert**.
+
+#### Pour aller plus loin
+
+- **P10** — Fast-path `fromJson(String)` sans `Reader`/`char[]` intermédiaire :
+  scanne directement la `String` source. Économie estimée 1 KB/op. C'est
+  probablement la voie la plus prometteuse pour atteindre l'alloc rate de
+  jacksonJr sans toucher au JIT inline.
+- **P11** — Foreign API SIMD pour le scan ASCII whitespace/strings.
 
 ## 8. Roadmap perf
 
@@ -361,8 +374,9 @@ complexité non rentré pour cette release.
 | **P7** — Parser fast-path keys (intern + match table) | Reader ×1,5 | ~1 sem | ⏳ |
 | **P8** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
 | **P9** — Pool `ChampollionJsonParser` thread-local (narrowed) | -104 B/op SMALL, thrpt neutre | 2j | ✅ |
-| **P9.1** — Pool tokenizer + wrapper `Reader` réassignable | -1300 B/op (≈ jacksonJr) | ~1 sem | ⏳ |
-| **P10** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
+| **P9.1** — Partage char[]+StringBuilder via 2ème ctor pool-friendly | -1144 B/op SMALL, **-12 % thrpt MEDIUM** | 4h | ❌ revert |
+| **P10** — Fast-path `fromJson(String)` sans Reader/char[] copy | -1 KB/op (≈ jacksonJr alloc) | ~1 sem | ⏳ |
+| **P11** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
 
 Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
 **≈ 0,9× Parsson** sur le streaming.
