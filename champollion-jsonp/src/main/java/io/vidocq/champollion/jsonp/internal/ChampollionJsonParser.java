@@ -30,7 +30,10 @@ public final class ChampollionJsonParser implements JsonParser {
                          ARRAY_START, ARRAY_VALUE, ARRAY_COMMA, DONE }
 
     private final JsonTokenizer tokenizer;
-    private final Deque<Scope> scopes = new ArrayDeque<>();
+    // Capacité initiale 4 — la profondeur de nesting moyenne d'un JSON de
+    // production reste largement sous 8 ; le défaut ArrayDeque (16) alloue un
+    // backing array inutilement grand sur le hot path read.
+    private final Deque<Scope> scopes = new ArrayDeque<>(4);
 
     private Event next;
     private boolean nextReady;
