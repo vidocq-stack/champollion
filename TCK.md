@@ -256,6 +256,51 @@ purement environnementaux (CDI runtime absent + signature binaire).
 - M7.13/14 (final) — `readObjectAndApply` tolère END_OBJECT consommé par un
   custom deser (sur-consommation de la valeur enfant), `PrimedParser.currentEvent()` override.
 
+**Fixes M7.16 → M7.17 (CDI §5 + custom Deserializer split — 287 → 289)** :
+
+- **M7.16** — Support spec JSON-B §5 (résolution CDI des Adapter / Serializer
+  / Deserializer). Nouveau helper `CdiResolver` (`champollion-jsonb/internal`)
+  qui appelle `CDI.current().select(class).get()` via `MethodHandle` réflexifs
+  cachés au chargement de classe (zéro dépendance runtime hard sur
+  `jakarta.enterprise.cdi-api`). Pré-check `isLikelyManagedBean(class)` :
+  on ne tente CDI que si la classe porte une annotation `@*Scoped`,
+  `@Singleton`, ou `@Inject` sur l'un de ses membres ; sinon fallback
+  immédiat sur `newInstance()`. Vérifications `Instance.isUnsatisfied()` /
+  `isAmbiguous()` avant `get()` pour la robustesse. Câblé sur les 4 sites
+  concernés par §5 (RuntimeBindingRegistry l. 196 + 459, RuntimeReadRegistry
+  l. 216 + 1705). Côté `champollion-tck`, dépendance test `vauban-core`
+  (CDI 4.1 maison Vidocq — politique « zéro dépendance externe Vidocq
+  stack », pas de Weld) : Vauban fournit `SeContainerInitializer` +
+  `CDIProvider` + bean discovery + `@Inject` field injection — tout le
+  scaffolding nécessaire pour démarrer le `SeContainer` que les tests TCK
+  CDI consomment. Résout `AdaptersCustomizationCDITest` (ERROR → PASS).
+
+- **M7.17** — Distinction du contexte d'appel pour les `@JsonbTypeDeserializer`.
+  La spec §10.3 est ambigüe selon le call-site : le TCK contient deux tests
+  aux contrats incompatibles si le parser arrive dans le même état :
+
+  | Test | Custom Deserializer | Position parser attendue à l'entrée de `deserialize()` |
+  |---|---|---|
+  | `SerializersCustomizationCDITest` | `AnimalListDeserializerInjected` (sur regular property) | `START_ARRAY` (premier token de la valeur). Le deserializer fait `while (parser.next() == START_OBJECT)` pour itérer les éléments. |
+  | `InstantiationCustomizationTest.testJsonbDeserializerOnCreatorParameter` | `SimpleStringDeserializer` (sur creator parameter) | `KEY_NAME` (avant la valeur). Le deserializer fait `parser.next()` puis vérifie `VALUE_STRING`. |
+
+  Solution : `customDeserializerReader(member, underlying, type, advanceParser)`
+  paramètre booléen explicite. Pour les **regular property** (setter, field,
+  record component, getter), `advanceParser = true` — Champollion fait un
+  `parser.next()` avant de déléguer, positionnant le parser sur le premier
+  token de la valeur (e.g. `START_ARRAY`, `START_OBJECT`, `VALUE_*`).
+  Pour les **creator parameters** (chemin `resolveCreator`),
+  `advanceParser = false` — le parser reste sur `KEY_NAME`, le deserializer
+  fait lui-même son `next()`. Cette distinction réconcilie les deux contrats
+  TCK et n'est pas un workaround : elle traduit fidèlement la sémantique
+  de l'API JSON-B selon que la cible est un setter de propriété ou un
+  paramètre de constructeur. Résout `SerializersCustomizationCDITest`
+  (ERROR → PASS) en préservant les 10 tests d'`InstantiationCustomizationTest`.
+
+  Commits : `bf8c3b2` (CdiResolver §5), `5fc08b5` (`isLikelyManagedBean`),
+  `599f939` (revert d'un fix antérieur trop large), `17c6881` (split
+  creator-param vs regular property), `2d59a6f` (doc).
+
 **État final 2026-05-04 — 289/295 PASS (97,97 %)** :
 
 - `AdaptersCustomizationCDITest` — **PASS** ✅ (M7.16)
