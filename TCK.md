@@ -252,11 +252,18 @@ purement environnementaux (CDI runtime absent + signature binaire).
 - M7.13/14 (final) — `readObjectAndApply` tolère END_OBJECT consommé par un
   custom deser (sur-consommation de la valeur enfant), `PrimedParser.currentEvent()` override.
 
-**Restant (3 ERROR purement environnementaux)** :
-- `AdaptersCustomizationCDITest` — `NoClassDefFoundError jakarta.enterprise.inject.se.SeContainer`
-  (CDI runtime non fourni par le TCK ; non lié à Champollion)
-- `SerializersCustomizationCDITest` — idem
-- `JSONBSigTest.signatureTest` — challenge environnemental (signature binaire)
+**Restant (3 ERROR — chantiers identifiés)** :
+- `AdaptersCustomizationCDITest` — démarre via `SeContainer`, exige
+  l'injection CDI de l'`InjectedAdapter`. Diagnostic : nécessite (1) un
+  `SeContainerInitializer` côté **Vauban** (CDI 4.1 maison Vidocq, fournit
+  actuellement seulement `CDIProvider`) ; (2) côté **Champollion** support
+  spec JSON-B §5 — résoudre les Adapter/Serializer/Deserializer via
+  `CDI.current().select(class).get()` avant le fallback `newInstance()`.
+  Refusé : ajouter Weld SE en dépendance test (politique "zéro dépendance
+  externe Vidocq stack" — c'est Vauban ou rien).
+- `SerializersCustomizationCDITest` — idem (même cause).
+- `JSONBSigTest.signatureTest` — challenge environnemental (signature binaire,
+  fichier `jakarta.json.bind.sig` non distribué dans le ZIP TCK 3.0.0).
 
 ## Challenges connus
 
