@@ -211,9 +211,8 @@ final class RuntimeReadRegistry {
         Class<? extends jakarta.json.bind.serializer.JsonbDeserializer> dClass = ann.value();
         jakarta.json.bind.serializer.JsonbDeserializer deser;
         try {
-            var ctor = dClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            deser = ctor.newInstance();
+            // §5 — résolution CDI si container disponible, sinon newInstance.
+            deser = CdiResolver.resolve(dClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
         }
@@ -1700,9 +1699,8 @@ final class RuntimeReadRegistry {
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
         jakarta.json.bind.adapter.JsonbAdapter adapter;
         try {
-            var ctor = adapterClass.getDeclaredConstructor();
-            ctor.setAccessible(true);
-            adapter = ctor.newInstance();
+            // §5 — résolution CDI si container disponible, sinon newInstance.
+            adapter = CdiResolver.resolve(adapterClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
         }

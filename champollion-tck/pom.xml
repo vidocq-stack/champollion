@@ -189,14 +189,19 @@
                     <scope>test</scope>
                 </dependency>
                 <!--
-                    Note : les 2 tests Adapters/SerializersCustomizationCDITest
-                    requièrent un SeContainer (CDI runtime SE). Vauban
-                    (io.vidocq.vauban — CDI 4.1 maison) sera la dépendance
-                    cible mais doit d'abord exposer SeContainerInitializer.
-                    Tant que ce n'est pas livré côté Vauban, ces 2 tests
-                    restent en ERROR documenté. Refusé : Weld SE (politique
-                    "zéro dépendance externe Vidocq stack").
+                    Vauban — CDI 4.1 maison Vidocq (politique "zéro dépendance
+                    externe Vidocq stack" : pas de Weld). Fournit
+                    SeContainerInitializer + CDIProvider. Démarre le container
+                    pour les 2 tests Adapters/SerializersCustomizationCDITest
+                    qui résolvent leurs adapters/serializers comme CDI beans
+                    (cf. spec JSON-B §5).
                 -->
+                <dependency>
+                    <groupId>io.vidocq.vauban</groupId>
+                    <artifactId>vauban-core</artifactId>
+                    <version>0.1.0-SNAPSHOT</version>
+                    <scope>test</scope>
+                </dependency>
             </dependencies>
             <build>
                 <plugins>
