@@ -24,11 +24,14 @@ final class CdiResolver {
     private static final MethodHandle CDI_CURRENT;
     private static final MethodHandle CDI_SELECT;
     private static final MethodHandle INSTANCE_GET;
+    private static final MethodHandle INSTANCE_IS_UNSATISFIED;
+    private static final MethodHandle INSTANCE_IS_AMBIGUOUS;
     private static final boolean CDI_AVAILABLE;
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
 
     static {
-        MethodHandle current = null, select = null, get = null;
+        MethodHandle current = null, select = null, get = null,
+                isUnsatisfied = null, isAmbiguous = null;
         boolean available = false;
         try {
             Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI");
@@ -38,6 +41,8 @@ final class CdiResolver {
             select = lookup.findVirtual(cdiCls, "select",
                     MethodType.methodType(instCls, Class.class, java.lang.annotation.Annotation[].class));
             get = lookup.findVirtual(instCls, "get", MethodType.methodType(Object.class));
+            isUnsatisfied = lookup.findVirtual(instCls, "isUnsatisfied", MethodType.methodType(boolean.class));
+            isAmbiguous = lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class));
             available = true;
         } catch (Throwable ignore) {
             // CDI absent du classpath — fallback newInstance sera systématique.
@@ -45,6 +50,8 @@ final class CdiResolver {
         CDI_CURRENT = current;
         CDI_SELECT = select;
         INSTANCE_GET = get;
+        INSTANCE_IS_UNSATISFIED = isUnsatisfied;
+        INSTANCE_IS_AMBIGUOUS = isAmbiguous;
         CDI_AVAILABLE = available;
     }
 
@@ -56,16 +63,60 @@ final class CdiResolver {
      */
     @SuppressWarnings("unchecked")
     static <T> T resolve(Class<T> beanClass) throws ReflectiveOperationException {
-        if (CDI_AVAILABLE) {
+        // Pré-check static : ne tenter CDI que si la classe est explicitement
+        // un managed bean (annotée @*Scoped, @Singleton, ou ayant @Inject).
+        // Sans ce filtre, un container CDI avec bean-discovery-mode=all peut
+        // produire des instances "synthétiques" pour des classes ordinaires
+        // (Deserializer/Adapter state-free du TCK) et altérer l'état du parser
+        // dans les chemins critiques.
+        if (CDI_AVAILABLE && isLikelyManagedBean(beanClass)) {
             try {
                 Object cdi = CDI_CURRENT.invoke();
                 Object inst = CDI_SELECT.invoke(cdi, beanClass, EMPTY_QUALIFIERS);
-                Object bean = INSTANCE_GET.invoke(inst);
-                if (bean != null) return (T) bean;
+                boolean unsatisfied = (boolean) INSTANCE_IS_UNSATISFIED.invoke(inst);
+                boolean ambiguous = (boolean) INSTANCE_IS_AMBIGUOUS.invoke(inst);
+                if (!unsatisfied && !ambiguous) {
+                    Object bean = INSTANCE_GET.invoke(inst);
+                    if (bean != null) return (T) bean;
+                }
             } catch (Throwable t) {
-                // Container non démarré, bean non résolu, ou ambiguïté → fallback.
+                // Container non démarré → fallback newInstance.
             }
         }
+        return newInstanceFallback(beanClass);
+    }
+
+    /**
+     * Heuristique conservatrice : la classe est un managed bean si elle porte
+     * une annotation {@code jakarta.enterprise.context.*Scoped},
+     * {@code jakarta.inject.Singleton}, ou si l'un de ses membres porte
+     * {@code jakarta.inject.Inject} (field, constructor, ou setter).
+     */
+    private static boolean isLikelyManagedBean(Class<?> cls) {
+        for (var ann : cls.getAnnotations()) {
+            String n = ann.annotationType().getName();
+            if (n.startsWith("jakarta.enterprise.context.") && n.endsWith("Scoped")) return true;
+            if ("jakarta.inject.Singleton".equals(n)) return true;
+        }
+        for (var f : cls.getDeclaredFields()) {
+            for (var ann : f.getAnnotations()) {
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+            }
+        }
+        for (var ctor : cls.getDeclaredConstructors()) {
+            for (var ann : ctor.getAnnotations()) {
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+            }
+        }
+        for (var m : cls.getDeclaredMethods()) {
+            for (var ann : m.getAnnotations()) {
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+            }
+        }
+        return false;
+    }
+
+    private static <T> T newInstanceFallback(Class<T> beanClass) throws ReflectiveOperationException {
         var ctor = beanClass.getDeclaredConstructor();
         try { ctor.setAccessible(true); } catch (Exception ignore) {}
         return ctor.newInstance();
