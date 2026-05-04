@@ -198,11 +198,38 @@ final class RuntimeReadRegistry {
         return parser -> deser.deserialize(parser, deserContext, fullType);
     }
 
-    /** Reader pour {@code @JsonbTypeDeserializer} sur record component / Method / Field. */
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    /**
+     * Reader pour {@code @JsonbTypeDeserializer} sur record component / Method / Field.
+     * Variante par défaut : <em>regular property</em> — Champollion avance le
+     * parser au premier token de la valeur avant de déléguer (cf. spec §10.3
+     * "JsonParser positioned on the first token of the value").
+     */
     java.util.Optional<BindingReader> customDeserializerReader(java.lang.reflect.AnnotatedElement member,
                                                                java.lang.reflect.Field underlying,
                                                                Type targetType) {
+        return customDeserializerReader(member, underlying, targetType, /*advanceParser*/ true);
+    }
+
+    /**
+     * Variante explicite avec contrôle de l'avancement du parser.
+     *
+     * <p>Pour un <strong>regular property</strong> (setter, field), le parser
+     * est positionné juste après la {@code KEY_NAME} ; Champollion appelle
+     * {@code parser.next()} pour avancer au premier token de la valeur (e.g.
+     * {@code START_ARRAY}, {@code START_OBJECT}, {@code VALUE_STRING}) avant
+     * d'invoquer {@code deserialize()} — ce que le {@code AnimalListDeserializerInjected}
+     * du TCK attend pour faire {@code while (parser.next() == START_OBJECT)}.</p>
+     *
+     * <p>Pour un <strong>creator parameter</strong>, le parser reste à
+     * {@code KEY_NAME} ; le deserializer fait lui-même le {@code next()}, ce
+     * que le {@code SimpleStringDeserializer} du TCK
+     * {@code InstantiationCustomizationTest} attend.</p>
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    java.util.Optional<BindingReader> customDeserializerReader(java.lang.reflect.AnnotatedElement member,
+                                                               java.lang.reflect.Field underlying,
+                                                               Type targetType,
+                                                               boolean advanceParser) {
         var ann = member == null ? null : member.getAnnotation(jakarta.json.bind.annotation.JsonbTypeDeserializer.class);
         if (ann == null && underlying != null) {
             ann = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbTypeDeserializer.class);
@@ -215,6 +242,12 @@ final class RuntimeReadRegistry {
             deser = CdiResolver.resolve(dClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
+        }
+        if (advanceParser) {
+            return java.util.Optional.of(parser -> {
+                parser.next();
+                return deser.deserialize(parser, deserContext, targetType);
+            });
         }
         return java.util.Optional.of(parser -> deser.deserialize(parser, deserContext, targetType));
     }
@@ -951,7 +984,10 @@ final class RuntimeReadRegistry {
             // §4.7 / §4.4 — @JsonbDateFormat / @JsonbTypeAdapter / @JsonbTypeDeserializer
             // sur le param du creator (ex. AnnotationTypeInfoTest.DateConstructor).
             BindingReader paramReader = customAdapterReader(param, null)
-                    .or(() -> customDeserializerReader(param, null, genericParamType))
+                    // Creator parameter : ne PAS avancer le parser — le
+                    // deserializer fait lui-même son next() (cf. TCK
+                    // InstantiationCustomizationTest.testJsonbDeserializerOnCreatorParameter).
+                    .or(() -> customDeserializerReader(param, null, genericParamType, /*advanceParser*/ false))
                     .or(() -> dateReaderForParam(param, paramType))
                     .orElseGet(() -> readerFor(genericParamType));
             readers[idx] = paramReader;
