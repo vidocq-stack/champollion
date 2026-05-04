@@ -313,6 +313,29 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         if (pretty) write(' ');
     }
 
+    /**
+     * Voie rapide P4 : fragment {@code "name":} en bloc unique. Réduit le hot
+     * path d'un objet à {@code N+1} writes au lieu de {@code 3N+1}.
+     */
+    @Override
+    public void writeKeyRawWithColon(String preQuotedKeyWithColon) {
+        Ctx top = stack.peek();
+        switch (top) {
+            case OBJECT_FIRST -> {
+                if (pretty) { write('\n'); indent(); }
+                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+            }
+            case OBJECT_AFTER_VALUE -> {
+                write(',');
+                if (pretty) { write('\n'); indent(); }
+                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+            }
+            default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
+        }
+        writeRaw(preQuotedKeyWithColon);
+        if (pretty) write(' ');
+    }
+
     @Override public void close() {
         if (stack.peek() != Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("close() called with open containers or empty document");

@@ -220,11 +220,14 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Pré-encode un nom de propriété en JSON quoted (RFC 8259 §7).
-     * Exemple : {@code name} → {@code "name"} ; {@code "a\""} → {@code "\"a\\\"\""}.
+     * Pré-encode un nom de propriété en JSON quoted + colon (RFC 8259 §7).
+     * Le colon final est inclus pour permettre {@link
+     * io.vidocq.champollion.spi.RawJsonKeyWriter#writeKeyRawWithColon} (P4 :
+     * fragment {@code "name":} émis en un unique {@code Writer.write(String)}).
+     * Exemple : {@code name} → {@code "name":} ; {@code "a\""} → {@code "\"a\\\"\":"}.
      */
     private static String preQuoteJson(String name) {
-        var sb = new StringBuilder(name.length() + 2);
+        var sb = new StringBuilder(name.length() + 3);
         sb.append('"');
         for (int i = 0; i < name.length(); i++) {
             char c = name.charAt(i);
@@ -242,7 +245,7 @@ final class BindingBytecodeEmitter {
                 }
             }
         }
-        sb.append('"');
+        sb.append("\":");
         return sb.toString();
     }
 
@@ -392,7 +395,7 @@ final class BindingBytecodeEmitter {
         code.aload(1);
         code.checkcast(CD_RAW_KEY_WRITER);
         code.ldc(preQuoted);
-        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRawWithColon",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
 
         code.aload(1);
@@ -437,7 +440,7 @@ final class BindingBytecodeEmitter {
         code.aload(1);
         code.checkcast(CD_RAW_KEY_WRITER);
         code.ldc(preQuoted);
-        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRawWithColon",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
         code.aload(1);
         code.aload(3);
@@ -494,7 +497,7 @@ final class BindingBytecodeEmitter {
         code.aload(1);
         code.checkcast(CD_RAW_KEY_WRITER);
         code.ldc(preQuoted);
-        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRaw",
+        code.invokeinterface(CD_RAW_KEY_WRITER, "writeKeyRawWithColon",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_STRING));
         code.aload(1);
         code.aload(3);

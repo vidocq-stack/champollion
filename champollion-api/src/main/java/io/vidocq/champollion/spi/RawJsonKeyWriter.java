@@ -35,4 +35,25 @@ public interface RawJsonKeyWriter {
      *                     RFC 8259 §7 déjà appliqué
      */
     void writeKeyRaw(String preQuotedKey);
+
+    /**
+     * Variante fusionnée : le fragment fourni inclut <em>déjà</em> le {@code :}
+     * final ({@code "name":}). Permet au generator d'émettre key + colon en un
+     * unique {@code Writer.write(String)} au lieu de deux appels séparés —
+     * payant sur les hot loops avec petites clés ASCII.
+     *
+     * <p>Implémentation par défaut : délègue à {@link #writeKeyRaw(String)} en
+     * extrayant le fragment sans le colon, puis émet le colon séparément. Les
+     * implémentations Champollion override pour la voie rapide.</p>
+     *
+     * @param preQuotedKeyWithColon la chaîne {@code "<name>":} (guillemets +
+     *                              escape + colon final)
+     */
+    default void writeKeyRawWithColon(String preQuotedKeyWithColon) {
+        int n = preQuotedKeyWithColon.length();
+        if (n == 0 || preQuotedKeyWithColon.charAt(n - 1) != ':') {
+            throw new IllegalArgumentException("fragment must end with ':'");
+        }
+        writeKeyRaw(preQuotedKeyWithColon.substring(0, n - 1));
+    }
 }
