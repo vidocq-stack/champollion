@@ -405,10 +405,26 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     private void writeString(String s) {
+        // Fast-path ASCII pur sans escape — couvre l'écrasante majorité des keys
+        // de records et des chaînes ordinaires. Évite N appels char-par-char à
+        // out.write(c) au profit d'un unique out.write(s, off, len).
+        int n = s.length();
+        int i = 0;
+        while (i < n) {
+            char c = s.charAt(i);
+            if (c < 0x20 || c == '"' || c == '\\') break;
+            i++;
+        }
         try {
             out.write('"');
-            int n = s.length();
-            for (int i = 0; i < n; i++) {
+            if (i == n) {
+                out.write(s);
+                out.write('"');
+                return;
+            }
+            // Préfixe propre, puis slow path à partir de i.
+            if (i > 0) out.write(s, 0, i);
+            for (; i < n; i++) {
                 char c = s.charAt(i);
                 switch (c) {
                     case '"' -> out.write("\\\"");
