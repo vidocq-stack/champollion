@@ -91,6 +91,11 @@
                             <artifactId>jmh-generator-annprocess</artifactId>
                             <version>${jmh.version}</version>
                         </path>
+                        <path>
+                            <groupId>io.vidocq.champollion</groupId>
+                            <artifactId>champollion-codegen-apt</artifactId>
+                            <version>${project.version}</version>
+                        </path>
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>

@@ -226,19 +226,69 @@ read    └───────────────────────
 
 ---
 
-## 7. Roadmap perf
+## 7. Codegen statique (M5) — `@JsonbStatic`
 
-Si Champollion doit s'aligner sur Parsson/Jackson :
+L'APT `champollion-codegen-apt` génère pour chaque record annoté `@JsonbStatic`
+un `<Type>$$Binding` (bytecode direct, classe finale, zéro réflexion). À l'exécution,
+`ChampollionJsonb` consulte ces bindings via `ServiceLoader` **avant** la voie
+runtime introspective : si un binding existe, branche directe sur
+`JsonbBinding.write/read`.
 
-| Phase | Cible | Effort |
-|---|---|---|
-| **P1** — Tokenizer `char[]` bufferisé | Parser pull ×2 | ~1 semaine |
-| **P2** — Generator buffer direct `OutputStream` | Generator ×2 | ~1 semaine |
-| **P3** — Codegen statique APT (`@JsonbStatic`) déjà ébauché | Eliminer la réflexion runtime | M5 (ROADMAP) |
-| **P4** — Foreign API SIMD scan ASCII whitespace | Parser ×2-3 supplémentaire | ~3 semaines |
-| **P5** — `LambdaMetafactory` pour les accesseurs records | Binding ×1,5 | ~2 semaines |
+Bench dédié : `JsonbWriteBenchStatic` / `JsonbReadBenchStatic` sur des records
+top-level annotés (`SmallStaticRecord`, `OrderStaticRecord`, `ItemStaticRecord`,
+`AddressStaticRecord`). Le mode `champollion_runtime` du même bench force
+`withStaticBindings(List.of())` pour court-circuiter le ServiceLoader et mesurer
+la baseline introspective (MethodHandles + cache).
 
-Cible réaliste à v1.0 : **Champollion ≈ 0,6× Jackson** sur le binding (vs 0,3× actuellement), **≈ 0,9× Parsson** sur le streaming (vs 0,33× actuellement).
+### 7.1 Smoke run — 2026-05-04
+
+> Smoke run JMH : `-f 1 -wi 1 -w 1s -i 2 -r 1s`. Ordres de grandeur uniquement,
+> à reproduire en `-f 5 -wi 5 -i 5` avant publication finale. Yasson sur write
+> SMALL/MEDIUM produit des scores anormalement élevés (DCE Blackhole `compiler`
+> mode soupçonné sur un `Jsonb.toJson(record)` à valeur de retour ignorée) — non
+> publié dans la table tant que non reproduit en mode `full`.
+
+#### Write — Throughput (ops/µs, plus haut = mieux)
+
+| Workload | champollion_runtime | champollion_static | gain APT | jackson | jacksonJr |
+|---|---:|---:|---:|---:|---:|
+| **SMALL** | 4,49 | **7,35** | **+64 %** | 11,36 | 9,89 |
+| **MEDIUM** | 0,50 | **0,93** | **+87 %** | 1,76 | 1,58 |
+
+#### Read — Throughput (ops/µs, plus haut = mieux)
+
+| Workload | champollion_runtime | champollion_static | gain APT | jackson | jacksonJr |
+|---|---:|---:|---:|---:|---:|
+| **SMALL** | 2,61 | **3,84** | **+47 %** | 6,00 | 7,42 |
+| **MEDIUM** | 0,37 | **0,52** | **+40 %** | 0,93 | 1,00 |
+
+### 7.2 Lecture des chiffres
+
+- **L'APT amène +40 à +87 %** par rapport au mode runtime (MethodHandles + cache).
+  C'est exactement le tax de la résolution dynamique des accesseurs/setters par
+  `MethodHandle.invoke` même après warmup HotSpot.
+- **Champollion static ≈ 0,55× Jackson, ≈ 0,5× jackson-jr** sur SMALL/MEDIUM.
+  Réduit l'écart d'environ moitié vs le runtime (qui était ~0,30× Jackson).
+- **Le gap résiduel** vient principalement de la voie générator/parser :
+  Jackson génère son JSON en bytes UTF-8 directement, Champollion passe par
+  `Writer` + `BufferedWriter`. Les optimisations P4 (SIMD ASCII via
+  `java.lang.foreign`) et un mode bytes-direct dans le generator (P6) restent
+  ouverts.
+
+## 8. Roadmap perf
+
+| Phase | Cible | Effort | État |
+|---|---|---|---|
+| **P1** — Tokenizer `char[]` bufferisé | Parser pull ×2 | ~1 sem | ✅ |
+| **P2** — Generator `BufferedWriter` interne | Generator ×2 | ~1 sem | ✅ |
+| **P3** — Codegen statique APT (`@JsonbStatic`) | +40-87 % vs runtime | M5 | ✅ |
+| **P4** — Generator bytes-direct (`OutputStream` UTF-8 sans `Writer`) | Generator ×1,5 | ~2 sem | ⏳ |
+| **P5** — `MethodHandle.invokeExact` typé pour les accesseurs runtime | Runtime ×1,3 | ~1 sem | ⏳ |
+| **P6** — Foreign API SIMD scan ASCII whitespace/strings | Parser ×2-3 | ~3 sem | ⏳ |
+| **P7** — Keys pré-encodées en `byte[]` dans les bindings APT | Static +30-50 % | ~2 sem | ⏳ |
+
+Cible réaliste à v1.0 : **Champollion static ≈ 0,9× Jackson** sur le binding,
+**≈ 0,9× Parsson** sur le streaming.
 
 ---
 
