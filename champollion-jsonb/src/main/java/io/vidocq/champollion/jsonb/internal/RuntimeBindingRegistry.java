@@ -1521,6 +1521,25 @@ final class RuntimeBindingRegistry {
         if (value == null) { g.writeNull(); return; }
         g.writeStartObject();
         for (Property p : props) {
+            // P6.2 — fast-path primitif (sans boxing).
+            // Les primitifs ne peuvent pas être null → on émet directement.
+            // L'ordre instanceof respecte la fréquence d'occurrence des types.
+            if (p.accessor instanceof LongAccessor la) {
+                g.write(p.name, la.fn.applyAsLong(value));
+                continue;
+            }
+            if (p.accessor instanceof IntAccessor ia) {
+                g.write(p.name, ia.fn.applyAsInt(value));
+                continue;
+            }
+            if (p.accessor instanceof DoubleAccessor da) {
+                g.write(p.name, da.fn.applyAsDouble(value));
+                continue;
+            }
+            if (p.accessor instanceof BooleanAccessor ba) {
+                g.write(p.name, ba.fn.test(value));
+                continue;
+            }
             Object v;
             try {
                 v = p.accessor.read(value);
@@ -1594,7 +1613,34 @@ final class RuntimeBindingRegistry {
     }
 
     /**
+     * P6.2 — Accesseurs typés primitive via {@link java.lang.invoke.LambdaMetafactory}
+     * sur les SAM standard de {@code java.util.function} ({@code ToLongFunction},
+     * {@code ToIntFunction}, {@code ToDoubleFunction}, {@code Predicate}).
+     * Le hot path {@link #writeObject} fait un {@code instanceof} et appelle
+     * {@code applyAsLong/Int/Double} ou {@code test} directement, ce qui émet
+     * la valeur primitive sans boxing.
+     * {@link #read(Object)} reste compatible (boxe via {@code Long.valueOf}
+     * etc.) pour les chemins polymorphiques (visibility, ordering, etc.).
+     */
+    private record LongAccessor(java.util.function.ToLongFunction<Object> fn) implements Accessor {
+        public Object read(Object target) { return Long.valueOf(fn.applyAsLong(target)); }
+    }
+    private record IntAccessor(java.util.function.ToIntFunction<Object> fn) implements Accessor {
+        public Object read(Object target) { return Integer.valueOf(fn.applyAsInt(target)); }
+    }
+    private record DoubleAccessor(java.util.function.ToDoubleFunction<Object> fn) implements Accessor {
+        public Object read(Object target) { return Double.valueOf(fn.applyAsDouble(target)); }
+    }
+    private record BooleanAccessor(java.util.function.Predicate<Object> fn) implements Accessor {
+        public Object read(Object target) { return Boolean.valueOf(fn.test(target)); }
+    }
+
+    /**
      * Tente de produire un {@link LambdaAccessor} via {@link java.lang.invoke.LambdaMetafactory}.
+     * Pour les types primitifs ({@code long}/{@code int}/{@code double}/{@code boolean}),
+     * privilégie un accesseur typé ({@link LongAccessor}/{@link IntAccessor}/
+     * {@link DoubleAccessor}/{@link BooleanAccessor}) qui évitera le boxing
+     * dans le hot path {@code writeObject} (P6.2).
      * Retourne {@code null} si la classe n'est pas accessible publiquement ou
      * si la metafactory échoue (classe non exportée, etc.).
      */
@@ -1604,8 +1650,46 @@ final class RuntimeBindingRegistry {
             var lookup = java.lang.invoke.MethodHandles.publicLookup();
             var implMethod = lookup.findVirtual(declaring, methodName,
                     java.lang.invoke.MethodType.methodType(returnType));
-            var samMethodType = java.lang.invoke.MethodType.methodType(Object.class, Object.class);
             var instMethodType = java.lang.invoke.MethodType.methodType(returnType, declaring);
+
+            // P6.2 — fast path primitif (sans boxing) selon le type de retour.
+            if (returnType == long.class) {
+                var samType = java.lang.invoke.MethodType.methodType(long.class, Object.class);
+                var cs = java.lang.invoke.LambdaMetafactory.metafactory(lookup, "applyAsLong",
+                        java.lang.invoke.MethodType.methodType(java.util.function.ToLongFunction.class),
+                        samType, implMethod, instMethodType);
+                var fn = (java.util.function.ToLongFunction<Object>) cs.getTarget().invokeExact();
+                return new LongAccessor(fn);
+            }
+            if (returnType == int.class) {
+                var samType = java.lang.invoke.MethodType.methodType(int.class, Object.class);
+                var cs = java.lang.invoke.LambdaMetafactory.metafactory(lookup, "applyAsInt",
+                        java.lang.invoke.MethodType.methodType(java.util.function.ToIntFunction.class),
+                        samType, implMethod, instMethodType);
+                var fn = (java.util.function.ToIntFunction<Object>) cs.getTarget().invokeExact();
+                return new IntAccessor(fn);
+            }
+            if (returnType == double.class) {
+                var samType = java.lang.invoke.MethodType.methodType(double.class, Object.class);
+                var cs = java.lang.invoke.LambdaMetafactory.metafactory(lookup, "applyAsDouble",
+                        java.lang.invoke.MethodType.methodType(java.util.function.ToDoubleFunction.class),
+                        samType, implMethod, instMethodType);
+                var fn = (java.util.function.ToDoubleFunction<Object>) cs.getTarget().invokeExact();
+                return new DoubleAccessor(fn);
+            }
+            if (returnType == boolean.class) {
+                var samType = java.lang.invoke.MethodType.methodType(boolean.class, Object.class);
+                var cs = java.lang.invoke.LambdaMetafactory.metafactory(lookup, "test",
+                        java.lang.invoke.MethodType.methodType(java.util.function.Predicate.class),
+                        samType, implMethod, instMethodType);
+                var fn = (java.util.function.Predicate<Object>) cs.getTarget().invokeExact();
+                return new BooleanAccessor(fn);
+            }
+
+            // Path générique Object → Object (pour String, types complexes,
+            // Optional…). Boxing automatique sur primitifs non couverts ci-dessus
+            // (short, byte, float, char) via valueOf inséré par LMF.
+            var samMethodType = java.lang.invoke.MethodType.methodType(Object.class, Object.class);
             var callsite = java.lang.invoke.LambdaMetafactory.metafactory(
                     lookup,
                     "apply",
