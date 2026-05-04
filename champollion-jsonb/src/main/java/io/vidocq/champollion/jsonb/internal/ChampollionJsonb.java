@@ -38,6 +38,15 @@ public final class ChampollionJsonb implements Jsonb {
     private final boolean writeNullValues;
     private final boolean strictIJson;
 
+    /**
+     * P9 — pool de parsers Champollion par-thread. Évite la ré-allocation à
+     * chaque {@code fromJson} de {@code JsonTokenizer + char[512] + Deque}.
+     * Ne pool que si le provider est {@code ChampollionJsonProvider} ; pour
+     * tout autre provider on retombe sur {@code createParser}.
+     */
+    private final ThreadLocal<io.vidocq.champollion.jsonp.internal.ChampollionJsonParser> parserPool =
+            ThreadLocal.withInitial(() -> null);
+
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.config = config;
         this.jsonProvider = jsonProvider;
@@ -264,9 +273,30 @@ public final class ChampollionJsonb implements Jsonb {
 
     @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(Reader reader, Type runtimeType) {
+        if (jsonProvider instanceof io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider) {
+            return (T) readValuePooled(reader, runtimeType);
+        }
         try (JsonParser p = jsonProvider.createParser(reader)) {
             return (T) readValue(p, runtimeType);
         }
+    }
+
+    /**
+     * Voie pool : récupère (ou crée) un {@link io.vidocq.champollion.jsonp.internal.ChampollionJsonParser}
+     * thread-local, le {@code reset(reader)}, lit la valeur, et le laisse en
+     * place pour le prochain appel sur ce thread. Le {@code reader} fourni
+     * n'est pas fermé — c'est la responsabilité de l'appelant (cohérent avec
+     * le contrat habituel des méthodes {@code fromJson(Reader, ...)}).
+     */
+    private Object readValuePooled(Reader reader, Type runtimeType) {
+        var parser = parserPool.get();
+        if (parser == null) {
+            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(reader);
+            parserPool.set(parser);
+        } else {
+            parser.reset(reader);
+        }
+        return readValue(parser, runtimeType);
     }
 
     @Override public <T> T fromJson(InputStream stream, Class<T> type) {

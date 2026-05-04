@@ -42,6 +42,7 @@ public final class JsonTokenizer {
         this.reader = reader;
     }
 
+
     /** Ferme le {@link Reader} sous-jacent. Spec : propage IOException en JsonException. */
     void close() {
         try {

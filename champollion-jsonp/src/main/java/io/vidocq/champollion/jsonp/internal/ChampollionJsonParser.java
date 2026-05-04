@@ -29,7 +29,7 @@ public final class ChampollionJsonParser implements JsonParser {
     private enum Scope { ROOT, OBJECT_START, OBJECT_KEY, OBJECT_COLON, OBJECT_VALUE, OBJECT_COMMA,
                          ARRAY_START, ARRAY_VALUE, ARRAY_COMMA, DONE }
 
-    private final JsonTokenizer tokenizer;
+    private JsonTokenizer tokenizer;
     // Capacité initiale 4 — la profondeur de nesting moyenne d'un JSON de
     // production reste largement sous 8 ; le défaut ArrayDeque (16) alloue un
     // backing array inutilement grand sur le hot path read.
@@ -44,6 +44,25 @@ public final class ChampollionJsonParser implements JsonParser {
     public ChampollionJsonParser(Reader reader) {
         this.tokenizer = new JsonTokenizer(reader);
         this.scopes.push(Scope.ROOT);
+    }
+
+    /**
+     * Recycle ce parser pour un nouveau {@link Reader}, en conservant le
+     * {@link Deque} de scopes (alloué 1×) et le pool de strings internes
+     * (P9 — pool de parsers). Le tokenizer est <em>ré-alloué</em> pour
+     * conserver le {@code final Reader} qui permet à HotSpot d'inliner
+     * {@code read()} dans la boucle scan ASCII. Ne ferme <em>pas</em>
+     * l'ancien reader — responsabilité de l'appelant.
+     */
+    public void reset(Reader newReader) {
+        this.tokenizer = new JsonTokenizer(newReader);
+        this.scopes.clear();
+        this.scopes.push(Scope.ROOT);
+        this.next = null;
+        this.nextReady = false;
+        this.lastString = null;
+        this.lastNumber = null;
+        this.lastEvent = null;
     }
 
     @Override
