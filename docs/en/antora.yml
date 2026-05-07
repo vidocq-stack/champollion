@@ -1,0 +1,8 @@
+name: champollion
+title: Champollion
+version: ~
+nav:
+  - modules/ROOT/nav.adoc
+asciidoc:
+  attributes:
+    lang: en

@@ -1,0 +1,63 @@
+= Migration
+:description: From Yasson, Jackson or Gson.
+
+[CAUTION]
+Champollion is at **0.1.0-SNAPSHOT**. The JSON-B 3.0 spec is the target but full coverage is not guaranteed — see `champollion/JSON-ROADMAP.md`.
+
+== From Yasson
+
+[cols="1,1,2"]
+|===
+| Yasson | Champollion | Note
+
+| Runtime reflection
+| APT generation
+| Identical spec behaviour, different perf and startup
+
+| `JsonbBuilder.create()`
+| `JsonbBuilder.create()`
+| Standard API, ServiceLoader returns Champollion if present
+
+| Standard customizations (`@JsonbProperty`, `@JsonbDateFormat`, …)
+| Identical
+| Spec-compliant
+
+| Adapters (`@JsonbTypeAdapter`)
+| Identical
+| Adapter code is reused as-is
+
+| `JsonbConfig#withFormatting(true)`
+| Identical
+| Two-space indentation
+|===
+
+[TIP]
+====
+For a frequently-serialized type, add `@JsonbProperty` or use `champollion-codegen-maven-plugin` to force static binding generation. Without a static binding, Champollion falls back to reflection (logged `[WARN]`).
+====
+
+== From Jackson (Jackson annotations)
+
+Champollion does **not** read Jackson annotations. To migrate:
+
+. Replace `@JsonProperty` → `@JsonbProperty`
+. Replace `@JsonIgnore` → `@JsonbTransient`
+. Replace `@JsonFormat(pattern=...)` → `@JsonbDateFormat(value=...)`
+. Replace `ObjectMapper` → `Jsonb`
+. Adapt custom serializers (`StdSerializer`) into `JsonbSerializer<T>`
+
+[TODO]
+====
+List Jackson `ObjectMapper#configure(...)` features and their `JsonbConfig` equivalent.
+====
+
+== From Gson
+
+[TODO]: to document once a real-world case shows up. Gson differs significantly on the API side; migration goes through rewriting `gson.toJson` / `gson.fromJson` call sites as `jsonb.toJson` / `jsonb.fromJson`.
+
+== JSON-P 2.1
+
+The JSON-P API is standard. No user code should change when switching from Parsson/Glassfish to Champollion. Still verify:
+
+* `Json.createReaderFactory(Map<String, ?>)` — standard properties.
+* `Json.createGeneratorFactory(Map<String, ?>)` — pretty-printing.

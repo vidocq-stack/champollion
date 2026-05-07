@@ -1,0 +1,83 @@
+= Concepts
+:description: APT, static bindings, Maven plugin, JSON-P / JSON-B integration.
+
+== Binding generation
+
+For each serializable Java type:
+
+. `champollion-codegen-apt` reads standard annotations (`@JsonbProperty`, `@JsonbDateFormat`, `@JsonbTypeAdapter`, etc.).
+. Emits a `<Type>_Binding` that implements `JsonbBinding<T>`:
++
+[source,java]
+----
+public final class Order_Binding implements JsonbBinding<Order> {
+    @Override public void write(JsonbWriter w, Order o) { ... }
+    @Override public Order read(JsonbReader r) { ... }
+}
+----
+. Registers the binding via `META-INF/services/io.vidocq.champollion.spi.JsonbBinding`.
+
+At runtime, `Jsonb#fromJson` and `Jsonb#toJson` look up a binding via `ServiceLoader`; if none is found, they fall back to reflection (a `[WARN]` is logged — configuration anomaly).
+
+== Maven plugin (external types)
+
+`champollion-codegen-maven-plugin` generates bindings for types you cannot annotate (third-party JARs):
+
+[source,xml]
+----
+<plugin>
+  <groupId>io.vidocq.champollion</groupId>
+  <artifactId>champollion-codegen-maven-plugin</artifactId>
+  <configuration>
+    <classes>
+      <class>com.example.LegacyDto</class>
+      <class>com.example.LegacyEvent</class>
+    </classes>
+  </configuration>
+</plugin>
+----
+
+== JSON-P 2.1
+
+`champollion-jsonp` implements:
+
+* `Json.createReader/Writer/Generator/Parser`
+* `JsonObject`, `JsonArray`, `JsonValue`, `JsonString`, `JsonNumber`
+* JSON Pointer (RFC 6901), JSON Patch (RFC 6902), JSON Merge Patch (RFC 7396)
+
+== JSON-B 3.0
+
+`champollion-jsonb` implements:
+
+* `Jsonb`, `JsonbBuilder`, `JsonbConfig`
+* standard customizations (`@JsonbProperty`, `@JsonbCreator`, `@JsonbTypeAdapter`, `@JsonbVisibility`)
+* custom serializers/deserializers via `@JsonbTypeSerializer`
+
+== Performance
+
+[TODO]
+====
+Summarize `champollion-bench` (JMH):
+
+* small record write/read (`SmallStaticRecord`)
+* large record write/read (`OrderStaticRecord`)
+* comparison vs Yasson, Jackson, Gson
+* delta with/without static codegen
+
+See `champollion/BENCH.md` at the repo root.
+====
+
+== TCK
+
+`champollion-tck` is out-of-reactor (standalone `modelVersion 4.0.0` POM). Run:
+
+[source,bash]
+----
+./run-official-tck-jsonp-2.1.sh    # JSON-P smoke test
+./run-official-tck-jsonb-3.0.sh    # JSON-B smoke test
+----
+
+[NOTE]
+====
+See `champollion/JSON-ROADMAP.md` for the current status of both suites.
+====

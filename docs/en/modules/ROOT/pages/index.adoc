@@ -1,0 +1,22 @@
+= Champollion
+:description: Jakarta JSON-P 2.1 + JSON-B 3.0 implementation, zero dependency, virtual threads, static codegen.
+
+[.lead]
+Champollion implements Jakarta JSON Processing 2.1 and Jakarta JSON Binding 3.0 — zero dependency, virtual threads, serialization emitted at compile time via APT and Class-File API. Read and write JSON without runtime reflection, as one decodes a text whose grammar is already known.
+
+== Why?
+
+Jean-François Champollion (1790-1832), philologist and Egyptologist, deciphered the hieroglyphs in 1822 thanks to the Rosetta Stone. He did not guess them: he showed each sign was a combination of logograms, syllabograms and determinatives, and that the grammar followed rules. Once the table was established, reading became mechanical.
+
+The Champollion JSON implementation applies the very same idea. Instead of serializing through runtime reflection, the APT module (`champollion-codegen-apt`) reads every type annotated `@JsonbProperty` or used in a `Jsonb#fromJson(...)`, and generates at compile time a `BindingFactory` that knows exactly how to read and write that type. At runtime, JSON is read like an Egyptian text: the grammar is already known.
+
+== At a glance
+
+* **Jakarta JSON-P 2.1** — `Json.createReader()`, `Json.createGenerator()`, JSON Pointer, JSON Patch, JSON Merge Patch.
+* **Jakarta JSON-B 3.0** — `Jsonb.fromJson()`, `Jsonb.toJson()`, standard customizations (`@JsonbProperty`, `@JsonbDateFormat`, etc.).
+* **Static codegen** — `champollion-codegen-apt` generates bindings at `process-classes`. No classpath scan, no runtime reflection on annotated types.
+* **Maven plugin** — `champollion-codegen-maven-plugin` for external types you cannot annotate.
+* **Zero runtime dependency** — only the `jakarta.json-api` and `jakarta.json.bind-api` specs.
+* **Official TCKs** — JSON-P 2.1 + JSON-B 3.0, out-of-reactor modules (see xref:reference.adoc[Reference]).
+
+xref:getting-started.adoc[Get started →]

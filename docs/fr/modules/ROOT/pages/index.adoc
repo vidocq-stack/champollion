@@ -1,0 +1,22 @@
+= Champollion
+:description: Implémentation Jakarta JSON-P 2.1 + JSON-B 3.0, zéro dépendance, virtual threads, compilation statique.
+
+[.lead]
+Champollion implémente Jakarta JSON Processing 2.1 et Jakarta JSON Binding 3.0 — zéro dépendance, virtual threads, sérialisation générée à la compilation par APT et Class-File API. Lire et écrire le JSON sans réflexion à chaud, comme on déchiffre un texte dont on connaît déjà la grammaire.
+
+== Pourquoi ?
+
+Jean-François Champollion (1790-1832), philologue et égyptologue, déchiffreur des hiéroglyphes en 1822 grâce à la Pierre de Rosette. Il n'a pas deviné les hiéroglyphes : il a démontré que chaque signe était une combinaison de logogrammes, syllabogrammes et déterminatifs, et que la grammaire suivait des règles. Une fois la table établie, lire devenait mécanique.
+
+Champollion, l'implémentation JSON, applique exactement cette idée. Au lieu de sérialiser à coups de réflexion à chaud, le module APT (`champollion-codegen-apt`) lit chaque type annoté `@JsonbProperty` ou utilisé dans un `Jsonb#fromJson(...)`, et génère à la compilation un `BindingFactory` qui sait exactement comment lire et écrire ce type. À l'exécution, on lit le JSON comme on lit un texte égyptien : on connaît déjà la grammaire.
+
+== En bref
+
+* **Jakarta JSON-P 2.1** — `Json.createReader()`, `Json.createGenerator()`, JSON Pointer, JSON Patch, JSON Merge Patch.
+* **Jakarta JSON-B 3.0** — `Jsonb.fromJson()`, `Jsonb.toJson()`, customizations standards (`@JsonbProperty`, `@JsonbDateFormat`, etc.).
+* **Compilation statique** — `champollion-codegen-apt` génère les bindings au `process-classes`. Pas de scan classpath, pas de réflexion runtime sur les types annotés.
+* **Plugin Maven** — `champollion-codegen-maven-plugin` pour les types externes non annotables.
+* **Zéro dépendance runtime** — seules les specs `jakarta.json-api` et `jakarta.json.bind-api`.
+* **TCK officiels** — JSON-P 2.1 + JSON-B 3.0, modules hors-reactor (voir xref:reference.adoc[Référence]).
+
+xref:getting-started.adoc[Démarrer →]

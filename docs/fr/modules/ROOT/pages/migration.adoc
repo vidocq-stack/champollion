@@ -1,0 +1,63 @@
+= Migration
+:description: Depuis Yasson, Jackson ou Gson.
+
+[CAUTION]
+Champollion est en **0.1.0-SNAPSHOT**. La spec JSON-B 3.0 est cible mais la couverture totale n'est pas garantie — voir `champollion/JSON-ROADMAP.md`.
+
+== Depuis Yasson
+
+[cols="1,1,2"]
+|===
+| Yasson | Champollion | Note
+
+| Réflexion runtime
+| Génération APT
+| Comportement spec identique, perf et démarrage différents
+
+| `JsonbBuilder.create()`
+| `JsonbBuilder.create()`
+| API standard, ServiceLoader retourne Champollion si présent
+
+| Customizations standards (`@JsonbProperty`, `@JsonbDateFormat`, …)
+| Identiques
+| Spec respectée
+
+| Adapters (`@JsonbTypeAdapter`)
+| Identiques
+| Le code des adapters est repris tel quel
+
+| `JsonbConfig#withFormatting(true)`
+| Identique
+| Indentation 2 espaces
+|===
+
+[TIP]
+====
+Pour un type sérialisé fréquemment, ajouter `@JsonbProperty` ou utiliser `champollion-codegen-maven-plugin` pour forcer la génération du binding statique. Sans binding statique, Champollion fallback sur réflexion (loggué `[WARN]`).
+====
+
+== Depuis Jackson (annotations Jackson)
+
+Champollion ne lit **pas** les annotations Jackson. Pour migrer :
+
+. Remplacer `@JsonProperty` → `@JsonbProperty`
+. Remplacer `@JsonIgnore` → `@JsonbTransient`
+. Remplacer `@JsonFormat(pattern=...)` → `@JsonbDateFormat(value=...)`
+. Remplacer `ObjectMapper` → `Jsonb`
+. Adapter custom serializers (`StdSerializer`) en `JsonbSerializer<T>`
+
+[TODO]
+====
+Lister les `ObjectMapper#configure(...)` features Jackson et leur équivalent `JsonbConfig`.
+====
+
+== Depuis Gson
+
+[TODO] : à documenter dès qu'un cas réel se présente. Gson est très différent côté API ; la migration passe par une réécriture des points d'appel `gson.toJson` / `gson.fromJson` en `jsonb.toJson` / `jsonb.fromJson`.
+
+== JSON-P 2.1
+
+L'API JSON-P est standard. Aucun code utilisateur ne devrait changer en passant de Parsson/Glassfish à Champollion. Vérifier néanmoins :
+
+* `Json.createReaderFactory(Map<String, ?>)` — propriétés standards.
+* `Json.createGeneratorFactory(Map<String, ?>)` — pretty-printing.

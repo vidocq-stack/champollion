@@ -1,0 +1,98 @@
+= Démarrage rapide
+:description: Premier mapping JSON-B 3.0 généré à la compilation par Champollion.
+
+== Pré-requis
+
+* **Java 25**, **Maven 4.0.0-rc-5** — `.sdkmanrc` à la racine du repo.
+
+== Coordonnées Maven
+
+[source,xml]
+----
+<dependencies>
+    <dependency>
+        <groupId>jakarta.json</groupId>
+        <artifactId>jakarta.json-api</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>jakarta.json.bind</groupId>
+        <artifactId>jakarta.json.bind-api</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-jsonp</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <scope>runtime</scope>
+    </dependency>
+    <dependency>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-jsonb</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <scope>runtime</scope>
+    </dependency>
+    <dependency>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-codegen-apt</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+----
+
+== Hello world
+
+Définir un type :
+
+[source,java]
+----
+package io.example;
+
+import jakarta.json.bind.annotation.JsonbProperty;
+
+public record Order(
+    @JsonbProperty("orderId") long id,
+    String customer,
+    java.util.List<Item> items
+) {}
+
+public record Item(String sku, int quantity, double price) {}
+----
+
+Sérialiser :
+
+[source,java]
+----
+import jakarta.json.bind.Jsonb;
+import jakarta.json.bind.JsonbBuilder;
+
+void main() {
+    var jsonb = JsonbBuilder.create();
+    var order = new Order(42L, "Vauban", java.util.List.of(
+        new Item("PIK-01", 2, 19.50)
+    ));
+
+    String json = jsonb.toJson(order);
+    System.out.println(json);
+
+    Order back = jsonb.fromJson(json, Order.class);
+    assert back.id() == 42L;
+}
+----
+
+== Sous le capot
+
+À la compilation, `champollion-codegen-apt` a généré dans `target/generated-sources/` un `Order_Binding` qui sait écrire et lire `Order` sans réflexion. À l'exécution, `JsonbBuilder.create()` énumère les bindings via `ServiceLoader` et n'a plus qu'à les invoquer.
+
+== Build et lancement
+
+[source,bash]
+----
+sdk env
+./mvnw -ntp install -DskipTests
+java -jar target/myapp.jar
+----
+
+[TIP]
+====
+Pour les types externes que tu ne peux pas annoter, utilise `champollion-codegen-maven-plugin` avec une liste de classes cibles dans la configuration du plugin.
+====

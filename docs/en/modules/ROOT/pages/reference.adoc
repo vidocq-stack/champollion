@@ -1,0 +1,67 @@
+= Reference
+:description: Maven artefacts, supported annotations, plugin, TCK, scripts.
+
+== Maven artefacts
+
+[cols="1,3"]
+|===
+| Artefact | Role
+
+| `io.vidocq.champollion:champollion-api:0.1.0-SNAPSHOT`
+| Public API (SPI `JsonbBinding`, exceptions)
+
+| `io.vidocq.champollion:champollion-jsonp:0.1.0-SNAPSHOT`
+| Jakarta JSON-P 2.1 implementation
+
+| `io.vidocq.champollion:champollion-jsonb:0.1.0-SNAPSHOT`
+| Jakarta JSON-B 3.0 implementation
+
+| `io.vidocq.champollion:champollion-codegen-apt:0.1.0-SNAPSHOT`
+| APT (typically `provided` scope)
+
+| `io.vidocq.champollion:champollion-codegen-maven-plugin:0.1.0-SNAPSHOT`
+| Maven plugin (external types)
+
+| `io.vidocq.champollion:champollion-bench:0.1.0-SNAPSHOT`
+| JMH benchmarks (Yasson, Jackson, Gson)
+
+| `io.vidocq.champollion:champollion-examples:0.1.0-SNAPSHOT`
+| Examples
+|===
+
+`champollion-tck` is **out-of-reactor**.
+
+== Supported JSON-B annotations
+
+[TODO]
+====
+List exhaustively:
+
+* `@JsonbProperty`, `@JsonbCreator`, `@JsonbDateFormat`, `@JsonbNumberFormat`
+* `@JsonbTransient`, `@JsonbVisibility`, `@JsonbNillable`, `@JsonbProperyOrder`
+* `@JsonbTypeAdapter`, `@JsonbTypeSerializer`, `@JsonbTypeDeserializer`
+
+and APT coverage status.
+====
+
+== TCK
+
+[source,bash]
+----
+cd champollion
+./run-official-tck-jsonp-2.1.sh    # JSON-P smoke
+./run-official-tck-jsonb-3.0.sh    # JSON-B smoke
+----
+
+See `champollion/JSON-ROADMAP.md` for detailed tracking.
+
+== Bugs and benchmarks
+
+* `champollion/BUG.md`
+* `champollion/BENCH.md`
+
+== Compatibility
+
+* Java 25, Maven 4.0.0-rc-5.
+* JSON-P 2.1, JSON-B 3.0.
+* No runtime reflection except fallback (logged `[WARN]`).
