@@ -85,7 +85,7 @@
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
 
         <!-- Outils internes -->
-        <junit.version>5.11.4</junit.version>
+        <junit.version>6.0.3</junit.version>
         <jmh.version>1.37</jmh.version>
     </properties>
 
