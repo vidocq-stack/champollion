@@ -1,67 +1,216 @@
 = Référence
-:description: Artefacts Maven, annotations supportées, plugin, TCK, scripts.
+:description: API publique, annotations JSON-B, configuration, attributs JPMS exportés.
 
-== Artefacts Maven
+[.lead]
+Référence consolidée des artifacts Maven, modules JPMS, annotations supportées, propriétés `JsonbConfig`, et points de configuration runtime de Champollion.
 
-[cols="1,3"]
+== Artifacts Maven
+
+[cols="3,5"]
 |===
-| Artefact | Rôle
+| `groupId:artifactId` | Rôle
 
-| `io.vidocq.champollion:champollion-api:0.1.0-SNAPSHOT`
-| API publique (SPI `JsonbBinding`, exceptions)
+| `io.vidocq.champollion:champollion-api`
+| Re-exposition pure des specs Jakarta (`jakarta.json`, `jakarta.json.bind`). Utile pour les modules consommateurs qui ne veulent pas dépendre d'une implémentation.
 
-| `io.vidocq.champollion:champollion-jsonp:0.1.0-SNAPSHOT`
-| Implémentation Jakarta JSON-P 2.1
+| `io.vidocq.champollion:champollion-jsonp`
+| Implémentation JSON-P 2.1 (parser, generator, object model, Patch / Pointer / Merge Patch). `JsonProvider` ServiceLoader.
 
-| `io.vidocq.champollion:champollion-jsonb:0.1.0-SNAPSHOT`
-| Implémentation Jakarta JSON-B 3.0
+| `io.vidocq.champollion:champollion-jsonb`
+| Implémentation JSON-B 3.0 (`Jsonb`, `JsonbBuilder`, `JsonbConfig`). Dépend de `champollion-jsonp`.
 
-| `io.vidocq.champollion:champollion-codegen-apt:0.1.0-SNAPSHOT`
-| APT (scope `provided`)
+| `io.vidocq.champollion:champollion-codegen-apt`
+| Annotation Processor (scope `provided`) qui génère les `JsonbBinding<T>` à la compilation.
 
-| `io.vidocq.champollion:champollion-codegen-maven-plugin:0.1.0-SNAPSHOT`
-| Plugin Maven (types externes)
+| `io.vidocq.champollion:champollion-codegen-maven-plugin`
+| Mojo `champollion:generate` lié à `generate-sources` ; scanne le classpath et invoque l'APT sur les types détectés mais non annotés.
 
-| `io.vidocq.champollion:champollion-bench:0.1.0-SNAPSHOT`
-| Benchmarks JMH (Yasson, Jackson, Gson)
+| `io.vidocq.champollion:champollion-bench`
+| JMH — comparatifs Parsson/Yasson/Jackson. Pas de scope runtime.
 
-| `io.vidocq.champollion:champollion-examples:0.1.0-SNAPSHOT`
-| Exemples
+| `io.vidocq.champollion:champollion-examples`
+| Exemples exécutables.
+
+| `io.vidocq.champollion:champollion-tck` (hors reactor)
+| Runners TCK officiels JSON-P 2.1 + JSON-B 3.0. Lancement via `run-official-tck-*.sh` uniquement.
 |===
 
-`champollion-tck` est **hors-reactor**.
+== Modules JPMS
+
+[cols="2,3,3"]
+|===
+| Module | Exports publics | SPI / provides
+
+| `io.vidocq.champollion.api`
+| `jakarta.json` (transitive), `jakarta.json.bind` (transitive)
+| —
+
+| `io.vidocq.champollion.jsonp`
+| `io.vidocq.champollion.jsonp.spi`
+| `provides jakarta.json.spi.JsonProvider with io.vidocq.champollion.jsonp.ChampollionJsonProvider`
+
+| `io.vidocq.champollion.jsonb`
+| `io.vidocq.champollion.jsonb.spi`, `io.vidocq.champollion.jsonb.annotation`
+| `provides jakarta.json.bind.spi.JsonbProvider with io.vidocq.champollion.jsonb.ChampollionJsonbProvider`
+
+| `io.vidocq.champollion.codegen.apt`
+| —
+| `provides javax.annotation.processing.Processor with io.vidocq.champollion.codegen.apt.JsonbStaticProcessor`
+|===
+
+Packages internes (`internal.*`) **non exportés** — ne pas dépendre dessus, ils peuvent casser entre versions.
+
+// TODO@user: confirmer les noms exacts des modules JPMS et des classes ChampollionJsonProvider/ChampollionJsonbProvider en lisant les module-info.java après le M5
 
 == Annotations JSON-B supportées
 
-[TODO]
-====
-Lister exhaustivement :
+Annotations standard Jakarta JSON Binding 3.0 — toutes supportées :
 
-* `@JsonbProperty`, `@JsonbCreator`, `@JsonbDateFormat`, `@JsonbNumberFormat`
-* `@JsonbTransient`, `@JsonbVisibility`, `@JsonbNillable`, `@JsonbProperyOrder`
-* `@JsonbTypeAdapter`, `@JsonbTypeSerializer`, `@JsonbTypeDeserializer`
+[cols="2,5"]
+|===
+| Annotation | Effet
 
-et l'état de la couverture côté APT.
-====
+| `@JsonbProperty("name")`
+| Renomme la propriété JSON. Sur paramètre de constructeur : utilisé pour la résolution.
 
-== TCK
+| `@JsonbTransient`
+| Exclut la propriété (lecture **et** écriture).
 
-[source,bash]
+| `@JsonbDateFormat("yyyy-MM-dd")`
+| Format date / time. S'applique à `java.time.*`, `java.util.Date`, `Calendar`.
+
+| `@JsonbNumberFormat("#,##0.00")`
+| Format numérique (cf. `DecimalFormat`).
+
+| `@JsonbTypeAdapter(MyAdapter.class)`
+| Adapter sur la propriété ou la classe.
+
+| `@JsonbTypeSerializer(MySer.class)` / `@JsonbTypeDeserializer(...)`
+| Sérialiseur / désérialiseur custom.
+
+| `@JsonbVisibility(MyStrategy.class)`
+| Stratégie de visibilité (champs vs accesseurs).
+
+| `@JsonbCreator`
+| Constructeur ou factory à utiliser pour la désérialisation. Records natifs supportés sans annotation.
+
+| `@JsonbNillable`
+| Force l'écriture des `null` pour cette propriété (ou classe).
+
+| `@JsonbPropertyOrder({"a", "b", "c"})`
+| Ordre d'écriture des propriétés.
+
+| `@JsonbTypeInfo` + `@JsonbSubtype`
+| Polymorphisme avec discriminant (nouveau en JSON-B 3.0).
+|===
+
+Annotations Champollion-spécifiques :
+
+[cols="2,5"]
+|===
+| `@JsonbStatic`
+| Marque un type pour la génération de binding par `champollion-codegen-apt`. Optionnel — l'APT scanne aussi les types annotés `@JsonbProperty` etc.
+|===
+
+== Propriétés `JsonbConfig`
+
+Toutes les propriétés standard de `jakarta.json.bind.JsonbConfig` sont supportées (cf. {spec-jsonb-3-0}) :
+
+[cols="2,5"]
+|===
+| Propriété | Description
+
+| `JSONB_FORMATTING` (`withFormatting`)
+| Pretty-print avec indentation.
+
+| `JSONB_NULL_VALUES` (`withNullValues`)
+| Inclure les propriétés à `null` dans la sortie.
+
+| `JSONB_LOCALE` (`withLocale`)
+| Locale pour les formats date / nombre.
+
+| `JSONB_DATE_FORMAT` (`withDateFormat`)
+| Format date / time global.
+
+| `JSONB_PROPERTY_NAMING_STRATEGY`
+| `IDENTITY`, `LOWER_CASE_WITH_DASHES`, `LOWER_CASE_WITH_UNDERSCORES`, `UPPER_CAMEL_CASE`, `CASE_INSENSITIVE`...
+
+| `JSONB_PROPERTY_ORDER_STRATEGY`
+| `LEXICOGRAPHICAL`, `ANY`, `REVERSE`.
+
+| `JSONB_BINARY_DATA_STRATEGY`
+| `BYTE`, `BASE_64`, `BASE_64_URL`.
+
+| `JSONB_ENCODING`
+| `UTF-8` par défaut.
+
+| `withAdapters(...)`, `withSerializers(...)`, `withDeserializers(...)`
+| Enregistrement global.
+|===
+
+Propriétés Champollion-spécifiques (préfixe `champollion.`) :
+
+[cols="2,5"]
+|===
+| `champollion.jsonb.warn-on-fallback`
+| Si `true`, log `WARN` quand le runtime tombe en fallback réflexif (binding statique non trouvé). Utile en audit production. Défaut `false`.
+
+| `champollion.jsonp.buffer-pool-size`
+| Taille du pool de buffers du parser. Défaut : 8.
+|===
+
+== `JsonProvider` & `JsonbProvider`
+
+Découverts automatiquement via `ServiceLoader` :
+
+* `META-INF/services/jakarta.json.spi.JsonProvider` → `io.vidocq.champollion.jsonp.ChampollionJsonProvider`
+* `META-INF/services/jakarta.json.bind.spi.JsonbProvider` → `io.vidocq.champollion.jsonb.ChampollionJsonbProvider`
+
+Pour forcer l'implémentation (cas multi-impl sur le classpath) :
+
+[source,properties]
 ----
-cd champollion
-./run-official-tck-jsonp-2.1.sh    # smoke JSON-P
-./run-official-tck-jsonb-3.0.sh    # smoke JSON-B
+-Djakarta.json.provider=io.vidocq.champollion.jsonp.ChampollionJsonProvider
+-Djakarta.json.bind.provider=io.vidocq.champollion.jsonb.ChampollionJsonbProvider
 ----
 
-Voir `champollion/JSON-ROADMAP.md` pour le tracking détaillé.
+== Plugin Maven `champollion-codegen-maven-plugin`
 
-== Bugs et benchmarks
+[source,xml]
+----
+<plugin>
+  <groupId>io.vidocq.champollion</groupId>
+  <artifactId>champollion-codegen-maven-plugin</artifactId>
+  <version>${champollion.version}</version>
+  <executions>
+    <execution>
+      <goals><goal>generate</goal></goals>
+    </execution>
+  </executions>
+  <configuration>
+    <targets>
+      <target>com.acme.dto.*</target>
+    </targets>
+    <excludes>
+      <exclude>com.acme.dto.internal.*</exclude>
+    </excludes>
+  </configuration>
+</plugin>
+----
 
-* `champollion/BUG.md`
-* `champollion/BENCH.md`
+Lié à `generate-sources`. Délègue 100 % à `champollion-codegen-apt` — pas de duplication.
 
 == Compatibilité
 
-* Java 25, Maven 4.0.0-rc-5.
-* JSON-P 2.1, JSON-B 3.0.
-* Pas de réflexion runtime sauf fallback (loggué `[WARN]`).
+* **Java** : 25 (LTS).
+* **Maven** : 4.0.0-rc-5 (Model 4.1.0 pour le reactor principal ; le module `champollion-tck` reste en Model 4.0.0 standalone — voir xref:tck.adoc[]).
+* **JPMS** : strict, tous les modules ont un `module-info.java`.
+* **Virtual threads** : aucun `synchronized`, aucun `ThreadLocal` exporté.
+* **AOT** : compatible GraalVM `native-image` et Leyden CDS en mode codegen statique.
+* **Specs** : conforme {spec-jsonp-2-1} et {spec-jsonb-3-0}.
+
+== Ressources
+
+* lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] — benchmarks JMH vs Parsson / Yasson / Jackson
+* lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] — détail TCK
+* lien:{repo-champollion}/src/branch/main/ROADMAP.md[ROADMAP.md] — phases M0..M7

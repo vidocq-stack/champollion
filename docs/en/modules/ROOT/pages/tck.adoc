@@ -1,0 +1,160 @@
+= TCK Jakarta JSON-P 2.1 + JSON-B 3.0
+:description: Conformance status against the official Jakarta Technology Compatibility Kits.
+
+[.lead]
+This page consolidates the **official TCK** results for Jakarta JSON Processing 2.1 and Jakarta JSON Binding 3.0 run against Champollion. Daily source of truth: lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] in the repo.
+
+[NOTE]
+====
+The `champollion-tck` module is **deliberately out of reactor** (standalone Model 4.0.0 POM, no `<parent>`) to bypass ShrinkWrap Maven Resolver 3.3 which cannot parse Maven Model 4.1.0 POMs. Always invoke through the `run-official-tck-*.sh` scripts — never via `mvn -pl champollion-tck`.
+====
+
+== Global summary
+
+[cols="2,1,1,1,3"]
+|===
+| TCK | Total | PASS | Fails/Errors | Status
+
+| Jakarta JSON Processing 2.1
+| 179 (api)
+| 178 (99.4%)
+| 1 ERROR (env)
+| ✅ 100% of applicable tests PASS
+
+| Jakarta JSON Binding 3.0
+| ~250
+| ongoing
+| variable
+| 🔄 baseline being consolidated
+|===
+
+Last baseline date: **2026-05-03** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_First TCK run_).
+
+== JSON-P 2.1 — detailed status
+
+[cols="1,1,1,3"]
+|===
+| Metric | Baseline 2026-05-03 | After M2.x + M3.4 | After M6.x
+
+| Tests run
+| 197
+| 179 (api only)
+| 179
+
+| **PASS**
+| 65 (33%)
+| 168 (94%)
+| **178 (99.4%)** ✅
+
+| FAIL
+| 112
+| 7
+| 0
+
+| ERROR
+| 20
+| 4
+| 1 (env)
+|===
+
+The single remaining `ERROR` is `JSONPSigTest.signatureTest` — see _Tests skipped due to environment_ below.
+
+=== Major stability jump
+
+The TCK's `JsonProviderTest.systemProperty()` polluted `System.getProperty("jakarta.json.provider")` without cleanup, which caused `JsonProvider.provider()` to be shadowed by a mock in all subsequent tests. Fix: `forkCount=1, reuseForks=false` in surefire + isolating pluggability into its own profile. Detailed in `TCK.md`.
+
+=== Recent fixes (M6.x)
+
+* `ChampollionJsonObject.getString/getInt/getBoolean/isNull` now throw NPE if the key is missing (spec §2.1.4).
+* `ChampollionJsonObjectBuilder.remove(null)` & `addAll(null)` throw NPE.
+* `JsonProvider.createValue(Number)` accepts `Integer/Long/Double/Float/Short/Byte/BigDecimal`.
+* `createObjectBuilder(JsonObject|Map)` & `createArrayBuilder(JsonArray|Collection)` overrides.
+* `autoDetectingReader` throws `JsonException` when the encoding cannot be determined (single byte `0x00` → `jsonObjectUnknownEncoding.json`).
+* `ChampollionJsonPointer`: the exception on a malformed `~n` is deferred to resolution (TCK `testResolvePathWithUnencodedTilde` catches the exception in `getValue()`, not in `createPointer()`).
+
+== JSON-B 3.0 — known challenges
+
+[cols="3,2,5"]
+|===
+| Test | Status | Justification
+
+| `JsonbBuilderTest.testCreateConfig`, `testWithConfig`
+| under investigation
+| `JsonbBuilder.newBuilder()` + `withConfig()` behaviour to dig into. Spec interpretation differs between Yasson and the TCK expectation.
+
+| _others_
+| under investigation
+| First global run to surface divergences. Per-test fine analysis on the next-release schedule.
+|===
+
+The contractual target remains **100% PASS** before any structural merge on `champollion-jsonb`. The `--static` (codegen) mode must achieve the same score as runtime — validated by _differential testing_ (cf. xref:internals.adoc[]).
+
+== Tests skipped due to environment
+
+[cols="3,5"]
+|===
+| Test | Reason
+
+| `JSONPSigTest.signatureTest`
+| The official `jakarta-jsonp-tck-2.1.0.zip` does not ship the Eclipse _signature file_ required (non-public artifact). Clean skip — `EX_CONFIG` (78). Not an applicative gap.
+|===
+
+== Tests deliberately skipped (applicative)
+
+As of today, **none**. Should a spec-interpretation divergence appear later, it will be documented here with spec citation, test hash, and reactivation plan — that's the Champollion release discipline.
+
+== Reproduce locally
+
+=== Install the official TCKs
+
+The repo-root script downloads the official ZIPs from `download.eclipse.org` and installs them via `mvn install:install-file` with their genuine POMs (idempotent — won't re-download if already present):
+
+[source,bash]
+----
+cd champollion
+./install-tck.sh          # JSON-P + JSON-B
+./install-tck.sh jsonp    # JSON-P 2.1 only
+./install-tck.sh jsonb    # JSON-B 3.0 only
+----
+
+Maven coordinates installed:
+
+* `jakarta.json:jakarta-json-tck:2.1.0`
+* `jakarta.json.bind:jakarta.json.bind-tck:3.0.0`
+
+=== Run the JSON-P 2.1 TCK
+
+[source,bash]
+----
+cd champollion
+./run-official-tck-jsonp-2.1.sh             # smoke test (default)
+./run-official-tck-jsonp-2.1.sh all         # full suite
+./run-official-tck-jsonp-2.1.sh -Dtest=Foo  # targeted test
+----
+
+Report: `champollion-tck/target/tck-report-jsonp.txt`.
+
+=== Run the JSON-B 3.0 TCK
+
+[source,bash]
+----
+cd champollion
+./run-official-tck-jsonb-3.0.sh                    # smoke test (default)
+./run-official-tck-jsonb-3.0.sh all                # full suite (runtime mode)
+./run-official-tck-jsonb-3.0.sh all --static       # static codegen mode
+./run-official-tck-jsonb-3.0.sh -Dtest=Foo         # targeted test
+----
+
+The `--static` flag recompiles the TCK fixtures with `champollion-codegen-apt` to validate runtime ↔ codegen consistency.
+
+Report: `champollion-tck/target/tck-report-jsonb.txt`.
+
+=== Behaviour when the TCK is not installed
+
+The scripts check the presence of the TCK jar in `~/.m2/`. If absent: exit `78` (`EX_CONFIG`, clean _skip_). The Forgejo CI job (`.forgejo/workflows/ci.yml`) treats this exit code as a skip and does not fail the build — useful while TCKs are not pre-installed on the runner.
+
+== Release discipline
+
+* **No structural merge** on `champollion-jsonp` or `champollion-jsonb` without a 100% TCK PASS.
+* Any change in `champollion-codegen-apt` must preserve the _differential testing_ score before merge.
+* Disabled tests are documented in `TCK.md` with spec citation, test hash, and reactivation plan. No silent skip.

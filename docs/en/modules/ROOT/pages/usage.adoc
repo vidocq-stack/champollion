@@ -1,0 +1,168 @@
+= Usage
+:description: Advanced JSON-P and JSON-B recipes — streaming, Patch, adapters, locales, formats.
+
+[.lead]
+Recurring patterns with Champollion: event-based streaming, manipulation by JSON Pointer / Patch, JSON-B customization (adapters, serializers, date formats, locales). All recipes are virtual-thread-safe — no `synchronized`, no exported `ThreadLocal`.
+
+== JSON-P streaming — parser and generator
+
+=== Pull parser (`JsonParser`)
+
+[source,java]
+----
+try (var p = Json.createParser(input)) {
+    while (p.hasNext()) {
+        switch (p.next()) {
+            case START_OBJECT -> { /* descent */ }
+            case KEY_NAME     -> handleKey(p.getString());
+            case VALUE_STRING -> handleString(p.getString());
+            case VALUE_NUMBER -> handleNumber(p.getBigDecimal());
+            case END_OBJECT   -> { /* ascent */ }
+            // VALUE_TRUE, VALUE_FALSE, VALUE_NULL, START_ARRAY, END_ARRAY
+        }
+    }
+}
+----
+
+`p.skipObject()` / `p.skipArray()` skip without materializing. `p.getValue()` materializes the sub-tree `JsonValue` at the current position (handy for leaves).
+
+=== Push generator (`JsonGenerator`)
+
+[source,java]
+----
+try (var g = Json.createGenerator(System.out)) {
+    g.writeStartObject()
+     .write("name", "Champollion")
+     .writeStartArray("works")
+        .write("Lettre à M. Dacier (1822)")
+        .write("Précis du système hiéroglyphique (1824)")
+     .writeEnd()
+     .writeEnd();
+}
+----
+
+Configuration via `Json.createGeneratorFactory(Map.of(JsonGenerator.PRETTY_PRINTING, true))`.
+
+== JSON-P object model
+
+`JsonValue` is a `sealed interface` — exhaustive pattern matching is possible:
+
+[source,java]
+----
+JsonValue v = ...;
+String label = switch (v) {
+    case JsonString s  -> "str: " + s.getString();
+    case JsonNumber n  -> "num: " + n.bigDecimalValue();
+    case JsonObject o  -> "obj(" + o.size() + " keys)";
+    case JsonArray  a  -> "arr(" + a.size() + " items)";
+    case JsonValue x   -> x.getValueType().name(); // TRUE / FALSE / NULL
+};
+----
+
+== JSON Pointer (RFC 6901)
+
+[source,java]
+----
+JsonObject doc = ...;
+JsonPointer p = Json.createPointer("/users/0/name");
+JsonValue name = p.getValue(doc);
+JsonObject patched = (JsonObject) p.replace(doc, Json.createValue("Jean-François"));
+----
+
+The error on a malformed `~` (e.g. `~n`) is deferred to resolution, as required by the TCK (cf. xref:tck.adoc[]).
+
+== JSON Patch (RFC 6902)
+
+[source,java]
+----
+JsonPatch patch = Json.createPatchBuilder()
+        .add("/users/0/role", "admin")
+        .replace("/version", 2)
+        .remove("/draft")
+        .build();
+
+JsonObject after = patch.apply(before);
+----
+
+== JSON Merge Patch (RFC 7396)
+
+[source,java]
+----
+JsonMergePatch mp = Json.createMergePatch(Json.createObjectBuilder()
+        .add("name", "new")
+        .addNull("toRemove")
+        .build());
+JsonValue merged = mp.apply(before);
+----
+
+== JSON-B — `JsonbConfig`
+
+[source,java]
+----
+Jsonb jsonb = JsonbBuilder.newBuilder()
+        .withConfig(new JsonbConfig()
+            .withFormatting(true)
+            .withNullValues(false)
+            .withLocale(Locale.US)
+            .withDateFormat("yyyy-MM-dd", Locale.US)
+            .withPropertyNamingStrategy(PropertyNamingStrategy.LOWER_CASE_WITH_DASHES))
+        .build();
+----
+
+All standard `jakarta.json.bind.JsonbConfig` properties are supported (cf. {spec-jsonb-3-0}).
+
+== JSON-B — common annotations
+
+[source,java]
+----
+public record Person(
+    @JsonbProperty("first_name") String firstName,
+    @JsonbDateFormat("dd/MM/yyyy") LocalDate birthDate,
+    @JsonbNumberFormat("#,##0.00") BigDecimal balance,
+    @JsonbTransient String internalToken,
+    @JsonbTypeAdapter(MoneyAdapter.class) Money salary
+) {}
+----
+
+== JSON-B — custom adapter
+
+[source,java]
+----
+public final class MoneyAdapter implements JsonbAdapter<Money, String> {
+    @Override public String adaptToJson(Money m) { return m.amount() + " " + m.currency(); }
+    @Override public Money adaptFromJson(String s) {
+        var parts = s.split(" ");
+        return new Money(new BigDecimal(parts[0]), parts[1]);
+    }
+}
+----
+
+Global registration through `JsonbConfig.withAdapters(new MoneyAdapter())` or local through `@JsonbTypeAdapter`.
+
+== JSON-B — low-level serializer / deserializer
+
+When an adapter is not enough (multi-field polymorphic case), implement `JsonbSerializer<T>` / `JsonbDeserializer<T>` directly — they push to / read from the JSON-P `JsonGenerator` / `JsonParser`:
+
+[source,java]
+----
+public final class GeoPointSerializer implements JsonbSerializer<GeoPoint> {
+    @Override public void serialize(GeoPoint p, JsonGenerator g, SerializationContext ctx) {
+        g.writeStartArray().write(p.lon()).write(p.lat()).writeEnd();
+    }
+}
+----
+
+== Polymorphism (JSON-B 3.0)
+
+[source,java]
+----
+@JsonbTypeInfo(key = "@type", value = {
+    @JsonbSubtype(alias = "rect",   type = Rect.class),
+    @JsonbSubtype(alias = "circle", type = Circle.class)
+})
+public sealed interface Shape permits Rect, Circle {}
+----
+
+== Virtual threads and ScopedValue
+
+Champollion has no `synchronized` and no exported `ThreadLocal`. The current context during `toJson` / `fromJson` is carried by `ScopedValue` (cf. xref:internals.adoc[]) — use it freely from `Executors.newVirtualThreadPerTaskExecutor()` without precaution.

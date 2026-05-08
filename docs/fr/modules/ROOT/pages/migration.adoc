@@ -1,63 +1,197 @@
 = Migration
-:description: Depuis Yasson, Jackson ou Gson.
+:description: Migrer depuis Parsson (JSON-P RI), Yasson (JSON-B RI) ou Jackson vers Champollion.
 
-[CAUTION]
-Champollion est en **0.1.0-SNAPSHOT**. La spec JSON-B 3.0 est cible mais la couverture totale n'est pas garantie — voir `champollion/JSON-ROADMAP.md`.
+[.lead]
+Champollion implémente strictement les specs Jakarta {spec-jsonp-2-1} et {spec-jsonb-3-0}. Migrer depuis **Parsson** ou **Yasson** est essentiellement une bascule de coordonnées Maven. Migrer depuis **Jackson** demande une re-écriture des annotations propriétaires en équivalents standard Jakarta.
 
-== Depuis Yasson
+== Depuis Parsson (JSON-P RI Eclipse)
 
-[cols="1,1,2"]
+Parsson est l'implémentation de référence Eclipse de JSON-P 2.1. La bascule est mécanique.
+
+=== Maven
+
+[source,xml]
+----
+<!-- Avant -->
+<dependency>
+  <groupId>org.eclipse.parsson</groupId>
+  <artifactId>parsson</artifactId>
+  <version>1.1.7</version>
+</dependency>
+
+<!-- Après -->
+<dependency>
+  <groupId>io.vidocq.champollion</groupId>
+  <artifactId>champollion-jsonp</artifactId>
+  <version>${champollion.version}</version>
+</dependency>
+----
+
+=== Code applicatif
+
+Aucun changement. Le code applicatif n'utilise que `jakarta.json.*` (spec) — la résolution de `JsonProvider` passe par `ServiceLoader`.
+
+=== Performance attendue
+
+Champollion est environ **2-3× plus lent que Parsson** sur le streaming (parser pull et generator push). Pour des charges JSON-P pures intensives, Parsson reste plus rapide. Détails dans lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md].
+
+=== Bénéfices de la bascule
+
+* Zéro dépendance — Parsson tire `jakarta.json-api`, Champollion réexpose la spec sans dépendance externe additionnelle.
+* JPMS strict, packages internes non exportés.
+* Cohérence avec le reste de l'écosystème Vidocq (`io.vidocq.*`).
+
+== Depuis Yasson (JSON-B RI Eclipse)
+
+Yasson est l'implémentation de référence Eclipse de JSON-B 3.0.
+
+=== Maven
+
+[source,xml]
+----
+<!-- Avant -->
+<dependency>
+  <groupId>org.eclipse</groupId>
+  <artifactId>yasson</artifactId>
+  <version>3.0.4</version>
+</dependency>
+
+<!-- Après -->
+<dependency>
+  <groupId>io.vidocq.champollion</groupId>
+  <artifactId>champollion-jsonb</artifactId>
+  <version>${champollion.version}</version>
+</dependency>
+----
+
+=== Code applicatif
+
+Aucun changement de code applicatif. Tous les `@Jsonb*` sont standard Jakarta.
+
+=== Activer le codegen statique (recommandé)
+
+Pour bénéficier des bindings sans réflexion (point fort identitaire de Champollion) :
+
+. Ajouter l'APT en `provided` :
++
+[source,xml]
+----
+<dependency>
+  <groupId>io.vidocq.champollion</groupId>
+  <artifactId>champollion-codegen-apt</artifactId>
+  <version>${champollion.version}</version>
+  <scope>provided</scope>
+</dependency>
+----
+. Annoter les types racines `@JsonbStatic` (optionnel — l'APT scanne aussi les types annotés `@JsonbProperty` etc.).
+. Recompiler. Le runtime auto-découvre les `<Type>$$Binding` via ServiceLoader. Activer `champollion.jsonb.warn-on-fallback=true` pour vérifier qu'aucun type ne retombe en réflexion.
+
+=== Performance attendue
+
+Champollion est **comparable à Yasson** sur tous les workloads (mode runtime). En mode codegen statique, l'écart se resserre encore — voir lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.
+
+=== Différences subtiles
+
+* Pas de `synchronized` ni `ThreadLocal` — meilleur comportement sous virtual threads.
+* L'erreur sur clé manquante de `JsonObject.getString(key)` est plus stricte (NPE conforme spec §2.1.4) — Yasson tolérait silencieusement.
+
+== Depuis Jackson
+
+Jackson n'implémente pas Jakarta JSON-B — il a son propre univers d'annotations (`@JsonProperty`, `@JsonIgnore`, `@JsonFormat`, `@JsonInclude`...). La migration demande une **réécriture des annotations**.
+
+=== Table de correspondance
+
+[cols="3,3,4"]
 |===
-| Yasson | Champollion | Note
+| Jackson | Jakarta JSON-B (Champollion) | Notes
 
-| Réflexion runtime
-| Génération APT
-| Comportement spec identique, perf et démarrage différents
+| `@JsonProperty("foo")`
+| `@JsonbProperty("foo")`
+| Direct.
 
-| `JsonbBuilder.create()`
-| `JsonbBuilder.create()`
-| API standard, ServiceLoader retourne Champollion si présent
+| `@JsonIgnore`
+| `@JsonbTransient`
+| Direct.
 
-| Customizations standards (`@JsonbProperty`, `@JsonbDateFormat`, …)
-| Identiques
-| Spec respectée
+| `@JsonFormat(pattern = "yyyy-MM-dd")`
+| `@JsonbDateFormat("yyyy-MM-dd")`
+| Pour les types `java.time.*` / `Date`.
 
-| Adapters (`@JsonbTypeAdapter`)
-| Identiques
-| Le code des adapters est repris tel quel
+| `@JsonInclude(Include.NON_NULL)` (au niveau classe)
+| `JsonbConfig.withNullValues(false)` (global) ou `@JsonbNillable(false)` (par propriété)
+| Granularité différente.
 
-| `JsonbConfig#withFormatting(true)`
-| Identique
-| Indentation 2 espaces
+| `@JsonSerialize(using = X.class)`
+| `@JsonbTypeSerializer(X.class)`
+| Signatures différentes (cf. ci-dessous).
+
+| `@JsonDeserialize(using = X.class)`
+| `@JsonbTypeDeserializer(X.class)`
+| Idem.
+
+| `@JsonCreator` + `@JsonProperty`
+| `@JsonbCreator` + `@JsonbProperty`
+| Records natifs : aucune annotation requise.
+
+| `@JsonTypeInfo` + `@JsonSubTypes`
+| `@JsonbTypeInfo` + `@JsonbSubtype`
+| Nouveau en JSON-B 3.0.
+
+| `@JsonNaming(SnakeCaseStrategy.class)`
+| `JsonbConfig.withPropertyNamingStrategy(LOWER_CASE_WITH_UNDERSCORES)`
+| Configuration globale plutôt qu'annotation.
+
+| `ObjectMapper`
+| `Jsonb` (via `JsonbBuilder.create()`)
+| `Jsonb` thread-safe, créé une fois.
+
+| `objectMapper.writeValueAsString(o)`
+| `jsonb.toJson(o)`
+| Idem en lecture : `readValue` → `fromJson`.
 |===
 
-[TIP]
-====
-Pour un type sérialisé fréquemment, ajouter `@JsonbProperty` ou utiliser `champollion-codegen-maven-plugin` pour forcer la génération du binding statique. Sans binding statique, Champollion fallback sur réflexion (loggué `[WARN]`).
-====
+=== Sérialiseur custom
 
-== Depuis Jackson (annotations Jackson)
+[source,java]
+----
+// Jackson
+public class MyJsonSer extends JsonSerializer<Money> {
+    @Override public void serialize(Money m, JsonGenerator g, SerializerProvider p) throws IOException {
+        g.writeString(m.amount() + " " + m.currency());
+    }
+}
 
-Champollion ne lit **pas** les annotations Jackson. Pour migrer :
+// Champollion (Jakarta JSON-B)
+public final class MyJsonbSer implements JsonbSerializer<Money> {
+    @Override public void serialize(Money m, JsonGenerator g, SerializationContext ctx) {
+        g.write(m.amount() + " " + m.currency());
+    }
+}
+----
 
-. Remplacer `@JsonProperty` → `@JsonbProperty`
-. Remplacer `@JsonIgnore` → `@JsonbTransient`
-. Remplacer `@JsonFormat(pattern=...)` → `@JsonbDateFormat(value=...)`
-. Remplacer `ObjectMapper` → `Jsonb`
-. Adapter custom serializers (`StdSerializer`) en `JsonbSerializer<T>`
+Le `JsonGenerator` côté JSON-B est celui de **Jakarta JSON-P** — pas l'`ObjectGenerator` Jackson. Pas d'`IOException` checked, fluent.
 
-[TODO]
-====
-Lister les `ObjectMapper#configure(...)` features Jackson et leur équivalent `JsonbConfig`.
-====
+=== Performance attendue
 
-== Depuis Gson
+Jackson reste **3-4× plus rapide** que Champollion sur le binding (15 ans d'optimisations spécifiques POJO + codegen bytecode des accesseurs). Jackson n'est pourtant **pas** une implémentation Jakarta JSON-B — la migration n'est pertinente que pour s'aligner sur les specs Jakarta et bénéficier de la portabilité du standard.
 
-[TODO] : à documenter dès qu'un cas réel se présente. Gson est très différent côté API ; la migration passe par une réécriture des points d'appel `gson.toJson` / `gson.fromJson` en `jsonb.toJson` / `jsonb.fromJson`.
+=== Bénéfices de la bascule
 
-== JSON-P 2.1
+* Conformité Jakarta JSON-B 3.0 — portable entre toutes les implémentations Jakarta.
+* Compatibilité native AOT (GraalVM, Leyden) en mode codegen statique.
+* Zéro dépendance externe.
+* JPMS strict, virtual threads natifs.
 
-L'API JSON-P est standard. Aucun code utilisateur ne devrait changer en passant de Parsson/Glassfish à Champollion. Vérifier néanmoins :
+== Depuis Gson, Genson, JSON-Simple...
 
-* `Json.createReaderFactory(Map<String, ?>)` — propriétés standards.
-* `Json.createGeneratorFactory(Map<String, ?>)` — pretty-printing.
+Mêmes principes que Jackson : ces libs sont propriétaires et la migration vers Champollion (= Jakarta JSON-B) demande de remplacer leurs annotations par leurs équivalents standard. `Gson`, `Genson`, etc. n'implémentent pas Jakarta JSON-B et n'ont pas vocation à être remplaçables au sens du `ServiceLoader`.
+
+== Validation de la migration
+
+[source,bash]
+----
+# Test différentiel : sortir du JSON avec l'ancienne lib et la nouvelle, comparer
+mvn -ntp -Dtest=MigrationDifferentialTest test
+----
+
+Pour un projet existant, on recommande d'introduire Champollion en parallèle de l'ancienne lib le temps d'un cycle de tests, puis de basculer définitivement après validation des sorties.

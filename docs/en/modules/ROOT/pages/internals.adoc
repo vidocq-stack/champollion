@@ -1,0 +1,149 @@
+= Internals
+:description: JSON-P parser pipeline, APT + Class-File API codegen for JSON-B, virtual threads, AOT.
+
+[.lead]
+Champollion's technical signature lies in two points: a hand-written **JSON-P state-machine parser** designed to minimize allocation, and a **compile-time JSON-B codegen** via APT that removes runtime reflection. This page details both pipelines.
+
+== Modules overview
+
+[plantuml]
+....
+@startuml
+skinparam componentStyle rectangle
+
+[champollion-api]            as api
+[champollion-jsonp]          as jsonp
+[champollion-jsonb]          as jsonb
+[champollion-codegen-apt]    as apt
+[champollion-codegen-mvn]    as mvn
+[champollion-bench]          as bench
+[champollion-tck]            as tck
+
+api    --> jsonp : re-exports
+api    --> jsonb : re-exports
+jsonb  --> jsonp : emits via JsonGenerator
+mvn    --> apt   : delegates
+apt    ..> jsonb : produces BindingFactoryProvider
+bench  ..> jsonp
+bench  ..> jsonb
+tck    ..> jsonp
+tck    ..> jsonb
+@enduml
+....
+
+`champollion-jsonb` depends on `champollion-jsonp`. **Never the reverse** — the binding layer composes on the processing layer.
+
+== JSON-P pipeline — pull parser
+
+The parser implements an **RFC 8259 state machine** scanning character by character, as _branchless_ as possible.
+
+[mermaid]
+....
+stateDiagram-v2
+    [*] --> START
+    START --> IN_OBJECT: '{'
+    START --> IN_ARRAY: '['
+    START --> VALUE: literal
+    IN_OBJECT --> KEY: '"'
+    KEY --> AFTER_KEY: '"'
+    AFTER_KEY --> VALUE: ':'
+    VALUE --> AFTER_VALUE
+    AFTER_VALUE --> IN_OBJECT: ','
+    AFTER_VALUE --> END_OBJECT: '}'
+    AFTER_VALUE --> IN_ARRAY: ','
+    AFTER_VALUE --> END_ARRAY: ']'
+    END_OBJECT --> [*]
+    END_ARRAY --> [*]
+....
+
+Key components (package `io.vidocq.champollion.internal.jsonp.parser`):
+
+* `ChampollionJsonParser` — heart of the state machine, exposes the `JsonParser` API.
+* Char-by-char tokenizer, branchless when possible (transition tables instead of `switch`).
+* BOM detection for UTF-8 / UTF-16 BE/LE / UTF-32 BE/LE per RFC 8259 + JSON-P §3.3.
+* Simple `BufferPool` (bounded MPMC queue), no external dependency — discovered through `Json.createParserFactory(Map)`.
+
+The symmetric `JsonGenerator` pushes through an automatically buffered `Writer` (`BufferedWriter` interposed on any non-already-buffered `Writer`). Precompiled RFC 8259 §7 escape table for control characters.
+
+== JSON-B pipeline — runtime introspection (default mode)
+
+[mermaid]
+....
+sequenceDiagram
+    participant App
+    participant Jsonb as ChampollionJsonb
+    participant Cache as ClassValue&lt;BindingPlan&gt;
+    participant MH as MethodHandles
+    participant Gen as JsonGenerator
+
+    App->>Jsonb: toJson(person)
+    Jsonb->>Cache: get(Person.class)
+    alt cache miss
+        Cache->>MH: privateLookupIn + unreflect
+        MH-->>Cache: BindingPlan{writers...}
+    end
+    Cache-->>Jsonb: BindingPlan
+    loop for each PropertyWriter
+        Jsonb->>Gen: write(name, MH.invoke(person))
+    end
+    Gen-->>App: "{...}"
+....
+
+* `BindingPlan` is computed **once per class**, lock-free reads via `ClassValue`.
+* `PropertyWriter` / `PropertyReader` rely on `MethodHandles` — no `setAccessible(true)` at runtime, the consumer must `opens` its package.
+* Customization (`@JsonbProperty`, `@JsonbDateFormat`, `@JsonbTypeAdapter`, etc.) is baked into the plan once.
+
+== JSON-B pipeline — static codegen (APT)
+
+This is Champollion's **identity-defining strength**. Rather than introspecting at runtime, the `champollion-codegen-apt` annotation processor emits at compile time a `<Type>$$Binding.java` that implements `JsonbBinding<T>` directly, **without reflection**.
+
+[mermaid]
+....
+flowchart LR
+    src[Source<br/>annotated @JsonbStatic<br/>or @JsonbProperty] --> apt[champollion-codegen-apt<br/>Annotation Processor]
+    apt --> bind[Person$$Binding.java<br/>implements JsonbBinding&lt;Person&gt;]
+    apt --> svc[META-INF/services/<br/>BindingFactoryProvider]
+    bind --> javac[javac<br/>compile-time]
+    svc --> javac
+    javac --> jar[(jar)]
+    jar -. ServiceLoader .-> rt[ChampollionJsonb<br/>runtime]
+    rt -- "static binding<br/>(zero reflection)" --> out[(JSON)]
+....
+
+Key traits:
+
+* **Generated Java code, no bytecode** in `champollion-codegen-apt`. Bytecode comes via `javac` on the generated source — debuggable, readable.
+* **Class-File API (JEP 484)** considered for secondary passes (precomputed UTF-8 byte-array constants in bytecode). No Byte Buddy, no ASM.
+* **`META-INF/services/io.vidocq.champollion.jsonb.spi.BindingFactoryProvider`**: ServiceLoader auto-discovery by `ChampollionJsonb`.
+* **Runtime fallback**: if no static binding found, `ChampollionJsonb` falls back to M4 introspection. Logged INFO; flag `champollion.jsonb.warn-on-fallback=true` to audit in production.
+* **AOT-friendly**: zero reflection ⇒ GraalVM `native-image` with no config, Leyden CDS happy.
+* **Optimizations in the generated binding**: property names as precomputed UTF-8 `byte[]` constants, stable write order, grouped writes (`writeStartObject` + first `write` merged via the `writeString` fast-path).
+
+`champollion-codegen-maven-plugin` is a Maven orchestrator that scans the host project's classpath and invokes the APT on JSON-B types detected but not annotated `@JsonbStatic` (useful for third-party classes).
+
+== Virtual threads & ScopedValue
+
+* **No `synchronized`**, **no exported `ThreadLocal`**.
+* Context propagation during `toJson` / `fromJson` (current config, recursion guard) goes through `ScopedValue` (`JsonbContext.CURRENT`).
+* A parser pool is exposed JPMS-qualified: `exports io.vidocq.champollion.internal.jsonp.parser to io.vidocq.champollion.jsonb` (cf. lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.4).
+
+== AOT compatibility
+
+[cols="1,3"]
+|===
+| GraalVM `native-image`
+| Static mode: zero config required (no reflection). Runtime mode: requires reachability metadata for bound classes.
+
+| Leyden CDS
+| Static mode: fully supported; AppCDS preloads `<Type>$$Binding`. Runtime mode: compatible but no benefit.
+
+| Java Module System
+| Strict `module-info.java` per artifact; `internal.*` packages not exported; SPI exposed only via `provides ... with`.
+|===
+
+== Why this architecture?
+
+* **Zero dependency**: Champollion embeds in any runtime without dragging Parsson, Yasson, Jackson, or their transitives. Minimal attack surface, fast startup.
+* **Codegen over reflection**: predictable (no first-hit surprise), AOT-friendly, debuggable (the generated code is readable).
+* **Strict JPMS**: strong encapsulation, `internal.*` may break between versions without notice.
+* **Virtual threads**: modern REST servers (xref:cassini::index.adoc[Cassini]) run thousands of concurrent threads — no contention point in the serializer.

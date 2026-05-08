@@ -1,22 +1,74 @@
 = Champollion
-:description: Jakarta JSON-P 2.1 + JSON-B 3.0 implementation, zero dependency, virtual threads, static codegen.
+:description: Jakarta JSON-P 2.1 + JSON-B 3.0 implementation, zero dependency, compile-time APT codegen.
 
 [.lead]
-Champollion implements Jakarta JSON Processing 2.1 and Jakarta JSON Binding 3.0 — zero dependency, virtual threads, serialization emitted at compile time via APT and Class-File API. Read and write JSON without runtime reflection, as one decodes a text whose grammar is already known.
+Champollion is the Jakarta **JSON Processing 2.1** + **JSON Binding 3.0** implementation of the Vidocq ecosystem. Zero dependency outside specs, strict JPMS, virtual threads, and JSON-B bindings emitted at compile time by an APT — no runtime reflection, AOT-friendly (GraalVM, Leyden CDS).
 
-== Why?
+== Origin of the name
 
-Jean-François Champollion (1790-1832), philologist and Egyptologist, deciphered the hieroglyphs in 1822 thanks to the Rosetta Stone. He did not guess them: he showed each sign was a combination of logograms, syllabograms and determinatives, and that the grammar followed rules. Once the table was established, reading became mechanical.
+**Jean-François Champollion** (1790-1832) is the French Egyptologist who deciphered Egyptian hieroglyphs in 1822 thanks to the Rosetta Stone. He moved an opaque symbol system to a rigorous grammatical reading by combining phonetic signs and ideograms.
 
-The Champollion JSON implementation applies the very same idea. Instead of serializing through runtime reflection, the APT module (`champollion-codegen-apt`) reads every type annotated `@JsonbProperty` or used in a `Jsonb#fromJson(...)`, and generates at compile time a `BindingFactory` that knows exactly how to read and write that type. At runtime, JSON is read like an Egyptian text: the grammar is already known.
+See lien:https://en.wikipedia.org/wiki/Jean-Fran%C3%A7ois_Champollion[Wikipedia — Jean-François Champollion].
+
+The metaphor is direct: **decoding arbitrary JSON and translating it into typed Java objects** is exactly deciphering a sequence of symbols to make it intelligible. Champollion (the module) reads JSON structures, just as Champollion (the man) read royal cartouches.
 
 == At a glance
 
-* **Jakarta JSON-P 2.1** — `Json.createReader()`, `Json.createGenerator()`, JSON Pointer, JSON Patch, JSON Merge Patch.
-* **Jakarta JSON-B 3.0** — `Jsonb.fromJson()`, `Jsonb.toJson()`, standard customizations (`@JsonbProperty`, `@JsonbDateFormat`, etc.).
-* **Static codegen** — `champollion-codegen-apt` generates bindings at `process-classes`. No classpath scan, no runtime reflection on annotated types.
-* **Maven plugin** — `champollion-codegen-maven-plugin` for external types you cannot annotate.
-* **Zero runtime dependency** — only the `jakarta.json-api` and `jakarta.json.bind-api` specs.
-* **Official TCKs** — JSON-P 2.1 + JSON-B 3.0, out-of-reactor modules (see xref:reference.adoc[Reference]).
+[cols="1,3"]
+|===
+| Implemented specs
+| {spec-jsonp-2-1}[Jakarta JSON Processing 2.1] + {spec-jsonb-3-0}[Jakarta JSON Binding 3.0]
 
-xref:getting-started.adoc[Get started →]
+| Repo
+| {repo-champollion}
+
+| Java
+| 25 (LTS)
+
+| JPMS modules
+| `io.vidocq.champollion.api`, `io.vidocq.champollion.jsonp`, `io.vidocq.champollion.jsonb`, `io.vidocq.champollion.codegen.apt`
+
+| Runtime dependencies
+| None outside Jakarta specs — no transitive baggage
+
+| TCK JSON-P 2.1
+| 178 / 179 PASS (99.4%) — details xref:tck.adoc[here]
+
+| TCK JSON-B 3.0
+| Baseline run in progress — see xref:tck.adoc[detailed status]
+
+| Performance
+| On par with Yasson, ~2.5× slower than Parsson on streaming, ~3-4× slower than Jackson on binding (production-ready band) — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md]
+|===
+
+== Position in the ecosystem
+
+[mermaid]
+....
+flowchart TB
+    cassini[Cassini<br/>Jakarta REST 4.0]
+    foy[Foy<br/>Jakarta Servlet 6.1]
+    champollion[Champollion<br/>JSON-P 2.1 + JSON-B 3.0]
+    chappe[Chappe<br/>HTTP/1.1+H2/H3]
+    spec_jsonp[(Jakarta JSON-P 2.1)]
+    spec_jsonb[(Jakarta JSON-B 3.0)]
+
+    cassini -- entity provider --> champollion
+    foy -.optional.-> champollion
+    champollion --> spec_jsonp
+    champollion --> spec_jsonb
+    cassini --> chappe
+    foy --> chappe
+....
+
+Champollion is a **leaf** module on the JSON side. It depends on nothing in the Vidocq ecosystem; conversely, xref:cassini::index.adoc[Cassini] (REST) consumes it as the default JSON entity provider, and xref:foy::index.adoc[Foy] may use it for JSON streaming servlets.
+
+== Quick links
+
+* xref:getting-started.adoc[Getting started] — `Json.createReader`, `JsonbBuilder.create()`
+* xref:usage.adoc[Usage] — streaming, object model, Patch / Pointer, `JsonbConfig`, adapters
+* xref:concepts.adoc[Concepts] — JSON-P and JSON-B vocabulary
+* xref:internals.adoc[Internals] — APT codegen, Class-File API, parser pipeline
+* xref:tck.adoc[TCK status] — official JSON-P 2.1 + JSON-B 3.0 coverage
+* xref:reference.adoc[Reference] — public API, annotations, JPMS
+* xref:migration.adoc[Migration] — from Parsson, Yasson or Jackson

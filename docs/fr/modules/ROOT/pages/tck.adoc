@@ -1,0 +1,160 @@
+= TCK Jakarta JSON-P 2.1 + JSON-B 3.0
+:description: État de conformité aux Technology Compatibility Kits officiels Jakarta.
+
+[.lead]
+Cette page consolide l'état des **TCK officiels** Jakarta JSON Processing 2.1 et Jakarta JSON Binding 3.0 exécutés contre Champollion. Source de vérité au quotidien : lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] dans le repo.
+
+[NOTE]
+====
+Le module `champollion-tck` est **volontairement hors reactor** (POM Model 4.0.0 standalone, sans `<parent>`) pour contourner ShrinkWrap Maven Resolver 3.3 qui ne sait pas parser les POMs Maven Model 4.1.0. Toujours invoquer via les scripts `run-official-tck-*.sh` — jamais via `mvn -pl champollion-tck`.
+====
+
+== Synthèse globale
+
+[cols="2,1,1,1,3"]
+|===
+| TCK | Total | PASS | Échecs/Erreurs | Statut
+
+| Jakarta JSON Processing 2.1
+| 179 (api)
+| 178 (99,4 %)
+| 1 ERROR (env)
+| ✅ 100 % des tests applicatifs PASS
+
+| Jakarta JSON Binding 3.0
+| ~250
+| en cours
+| variable
+| 🔄 baseline en consolidation
+|===
+
+Dernier baseline daté : **2026-05-03** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Premier run TCK_).
+
+== JSON-P 2.1 — détail par état
+
+[cols="1,1,1,3"]
+|===
+| Métrique | Baseline 2026-05-03 | Après M2.x + M3.4 | Après M6.x
+
+| Tests exécutés
+| 197
+| 179 (api seulement)
+| 179
+
+| **PASS**
+| 65 (33 %)
+| 168 (94 %)
+| **178 (99,4 %)** ✅
+
+| FAIL
+| 112
+| 7
+| 0
+
+| ERROR
+| 20
+| 4
+| 1 (env)
+|===
+
+L'unique `ERROR` restant est `JSONPSigTest.signatureTest` — voir _Tests skippés pour cause d'environnement_ ci-dessous.
+
+=== Saut majeur de stabilité
+
+`JsonProviderTest.systemProperty()` du TCK polluait `System.getProperty("jakarta.json.provider")` sans cleanup, ce qui faisait shadow `JsonProvider.provider()` par un mock dans tous les tests suivants. Fix : `forkCount=1, reuseForks=false` dans surefire + séparation pluggability dans son propre profil. Détaillé dans `TCK.md`.
+
+=== Fixes récents (M6.x)
+
+* `ChampollionJsonObject.getString/getInt/getBoolean/isNull` lèvent NPE si la clé n'existe pas (spec §2.1.4).
+* `ChampollionJsonObjectBuilder.remove(null)` & `addAll(null)` lèvent NPE.
+* `JsonProvider.createValue(Number)` accepte `Integer/Long/Double/Float/Short/Byte/BigDecimal`.
+* `createObjectBuilder(JsonObject|Map)` & `createArrayBuilder(JsonArray|Collection)` overrides.
+* `autoDetectingReader` lève `JsonException` si l'encoding est indéterminable (1 octet `0x00` → `jsonObjectUnknownEncoding.json`).
+* `ChampollionJsonPointer` : la levée d'exception sur `~n` mal formé est différée à la résolution (le TCK `testResolvePathWithUnencodedTilde` attrape l'exception dans `getValue()`, pas dans `createPointer()`).
+
+== JSON-B 3.0 — challenges connus
+
+[cols="3,2,5"]
+|===
+| Test | Statut | Justification
+
+| `JsonbBuilderTest.testCreateConfig`, `testWithConfig`
+| à investiguer
+| Comportement de `JsonbBuilder.newBuilder()` + `withConfig()` à creuser. Différence d'interprétation spec entre Yasson et l'attente du TCK.
+
+| _autres_
+| à investiguer
+| Premier run global pour découvrir les divergences. Analyse fine TCK par test au calendrier des prochaines releases.
+|===
+
+L'objectif contractuel reste **100 % PASS** avant tout merge structurel sur `champollion-jsonb`. Le mode `--static` (codegen) doit obtenir le même score que le mode runtime — c'est validé par le _differential testing_ (cf. xref:internals.adoc[]).
+
+== Tests skippés pour cause d'environnement
+
+[cols="3,5"]
+|===
+| Test | Raison
+
+| `JSONPSigTest.signatureTest`
+| Le ZIP officiel `jakarta-jsonp-tck-2.1.0.zip` ne distribue pas le _signature file_ Eclipse requis (artefact non public). Skip propre — `EX_CONFIG` (78). Pas un manquement applicatif.
+|===
+
+== Tests volontairement skippés (applicatifs)
+
+À ce jour, **aucun**. Si une divergence d'interprétation spec apparaît à l'avenir, elle sera documentée ici avec citation spec, hash du test, et plan de réactivation — c'est la discipline de release Champollion.
+
+== Reproduire localement
+
+=== Installer les TCK officiels
+
+Le script à la racine télécharge les ZIP officiels depuis `download.eclipse.org` et les installe via `mvn install:install-file` avec leurs vrais POMs (idempotent — ne re-télécharge pas si présent) :
+
+[source,bash]
+----
+cd champollion
+./install-tck.sh          # JSON-P + JSON-B
+./install-tck.sh jsonp    # JSON-P 2.1 uniquement
+./install-tck.sh jsonb    # JSON-B 3.0 uniquement
+----
+
+Coordonnées Maven installées :
+
+* `jakarta.json:jakarta-json-tck:2.1.0`
+* `jakarta.json.bind:jakarta.json.bind-tck:3.0.0`
+
+=== Lancer le TCK JSON-P 2.1
+
+[source,bash]
+----
+cd champollion
+./run-official-tck-jsonp-2.1.sh             # smoke test (défaut)
+./run-official-tck-jsonp-2.1.sh all         # suite complète
+./run-official-tck-jsonp-2.1.sh -Dtest=Foo  # test ciblé
+----
+
+Rapport : `champollion-tck/target/tck-report-jsonp.txt`.
+
+=== Lancer le TCK JSON-B 3.0
+
+[source,bash]
+----
+cd champollion
+./run-official-tck-jsonb-3.0.sh                    # smoke test (défaut)
+./run-official-tck-jsonb-3.0.sh all                # suite complète (mode runtime)
+./run-official-tck-jsonb-3.0.sh all --static       # mode codegen statique
+./run-official-tck-jsonb-3.0.sh -Dtest=Foo         # test ciblé
+----
+
+Le flag `--static` recompile les fixtures TCK avec `champollion-codegen-apt` pour valider la cohérence runtime ↔ codegen.
+
+Rapport : `champollion-tck/target/tck-report-jsonb.txt`.
+
+=== Comportement quand le TCK n'est pas installé
+
+Les scripts vérifient la présence du jar TCK dans `~/.m2/`. Absent : exit `78` (`EX_CONFIG`, _skip_ propre). Le job CI Forgejo (`.forgejo/workflows/ci.yml`) traite cet exit code comme un skip et n'échoue pas le build — utile tant que les TCK ne sont pas pré-installés sur le runner.
+
+== Discipline de release
+
+* **Aucun merge structurel** sur `champollion-jsonp` ou `champollion-jsonb` sans TCK PASS à 100 %.
+* Toute modification de `champollion-codegen-apt` doit préserver le score _differential testing_ avant merge.
+* Les tests désactivés sont documentés dans `TCK.md` avec citation spec, hash du test, et plan de réactivation. Pas de skip silencieux.
