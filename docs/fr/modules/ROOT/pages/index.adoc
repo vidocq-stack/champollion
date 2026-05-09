@@ -1,6 +1,10 @@
 = Champollion
 :description: Implémentation Jakarta JSON-P 2.1 + JSON-B 3.0, zéro dépendance, codegen APT compile-time.
 
+[.text-center]
+image::champollion-logo.png[Champollion,300,role=module-logo]
+
+
 [.lead]
 Champollion est l'implémentation Jakarta **JSON Processing 2.1** + **JSON Binding 3.0** de l'écosystème Vidocq. Zéro dépendance hors specs, JPMS strict, virtual threads, et bindings JSON-B générés à la compilation par APT — pas de réflexion à chaud, compatible AOT (GraalVM, Leyden CDS).
 
