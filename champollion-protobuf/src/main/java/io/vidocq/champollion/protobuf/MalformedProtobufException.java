@@ -40,6 +40,13 @@ public final class MalformedProtobufException extends IOException {
                 "Protocol message contained an invalid wire type: " + wireType);
     }
 
+    public static MalformedProtobufException invalidUtf8(Throwable cause) {
+        return new MalformedProtobufException(
+                "Protocol message contained a string field with malformed UTF-8 "
+                        + "(features.utf8_validation = VERIFY).",
+                cause);
+    }
+
     public static MalformedProtobufException recursionLimitExceeded() {
         return new MalformedProtobufException(
                 "Protocol message had too many levels of nesting. May be malicious. "

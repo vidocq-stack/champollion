@@ -2,6 +2,10 @@ package io.vidocq.champollion.protobuf;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
@@ -219,6 +223,30 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         }
         byte[] bytes = readRawBytes(size);
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Lit une chaîne {@code length-delimited} avec validation UTF-8 stricte —
+     * comportement {@code Utf8Validation.VERIFY} d'Edition 2023 (proto3 par défaut).
+     *
+     * <p>Toute séquence mal formée (continuation invalide, overlong, surrogate codé en
+     * 3 octets, etc. cf. RFC 3629 §3) déclenche {@link MalformedProtobufException}
+     * plutôt qu'un {@code U+FFFD} silencieux.</p>
+     */
+    public final String readStringRequireUtf8() throws IOException {
+        int size = readRawVarint32();
+        if (size < 0) {
+            throw MalformedProtobufException.negativeSize();
+        }
+        byte[] bytes = readRawBytes(size);
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        try {
+            return decoder.decode(ByteBuffer.wrap(bytes)).toString();
+        } catch (CharacterCodingException e) {
+            throw MalformedProtobufException.invalidUtf8(e);
+        }
     }
 
     // ------------------------------------------------------------------ Skip
