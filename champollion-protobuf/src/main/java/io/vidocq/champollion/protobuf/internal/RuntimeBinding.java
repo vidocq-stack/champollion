@@ -423,7 +423,7 @@ public final class RuntimeBinding {
             case FIXED64 -> in.readFixed64();
             case SFIXED64 -> in.readSFixed64();
             case DOUBLE -> in.readDouble();
-            case STRING -> in.readString();
+            case STRING -> in.readStringRequireUtf8();
             case BYTES -> in.readBytes();
             case MESSAGE -> {
                 int size = in.readRawVarint32();

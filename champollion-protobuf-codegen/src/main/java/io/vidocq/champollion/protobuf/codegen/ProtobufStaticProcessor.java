@@ -307,7 +307,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case SFIXED64 -> "in.readSFixed64()";
             case DOUBLE -> "in.readDouble()";
             case BOOL -> "in.readBool()";
-            case STRING -> "in.readString()";
+            case STRING -> "in.readStringRequireUtf8()";
             case BYTES -> "in.readBytes()";
             case ENUM -> javaElemType + ".values()[in.readEnum()]";
             case MESSAGE -> "readNested(" + javaElemType + ".class, in)";
