@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.util.Objects;
+import java.util.ServiceLoader;
 
 /**
  * Point d'entrée pour la sérialisation et la désérialisation Protocol Buffers.
@@ -32,6 +33,13 @@ public final class Protobuf {
 
     public static <T> Parser<T> parser(Class<T> type) {
         Objects.requireNonNull(type, "type");
+        // Mode statique préféré : un ParserProvider chargé par ServiceLoader
+        // (produit par l'APT @ProtobufStatic) peut fournir un parser sans
+        // réflexion, compatible AOT.
+        for (ParserProvider p : ServiceLoader.load(ParserProvider.class)) {
+            Parser<T> candidate = p.parserFor(type);
+            if (candidate != null) return candidate;
+        }
         return RuntimeBinding.parser(type);
     }
 

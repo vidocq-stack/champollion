@@ -10,6 +10,7 @@ module io.vidocq.champollion.protobuf.codegen {
 
     exports io.vidocq.champollion.protobuf.codegen;
 
-    // Internal : lexer/parser .proto — visible aux tests via patch-module.
-    // Activation du Processor déclarée en M3.
+    // APT @ProtobufStatic : activé par javac via ServiceLoader.
+    provides javax.annotation.processing.Processor
+            with io.vidocq.champollion.protobuf.codegen.ProtobufStaticProcessor;
 }

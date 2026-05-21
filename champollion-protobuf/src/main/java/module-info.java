@@ -13,4 +13,7 @@ module io.vidocq.champollion.protobuf {
 
     exports io.vidocq.champollion.protobuf;
     exports io.vidocq.champollion.protobuf.wkt;
+
+    // SPI ServiceLoader pour les parsers statiques générés par l'APT.
+    uses io.vidocq.champollion.protobuf.ParserProvider;
 }
