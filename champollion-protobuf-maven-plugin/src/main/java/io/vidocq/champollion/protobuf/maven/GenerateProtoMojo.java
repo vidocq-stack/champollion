@@ -2,6 +2,7 @@ package io.vidocq.champollion.protobuf.maven;
 
 import io.vidocq.champollion.protobuf.Descriptors;
 import io.vidocq.champollion.protobuf.codegen.JavaEmitter;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst;
 import io.vidocq.champollion.protobuf.codegen.SchemaResolver;
 import io.vidocq.champollion.protobuf.codegen.internal.ProtoParser;
 
@@ -75,9 +76,23 @@ public final class GenerateProtoMojo extends AbstractMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Cannot create output dir " + outputDirectory, e);
         }
-        int total = 0;
+        // Multi-file resolver : on parse tous les fichiers d'abord, puis on
+        // résout globalement pour permettre les imports cross-file.
+        List<ProtoAst.ProtoFile> asts = new ArrayList<>(protoFiles.size());
         for (Path proto : protoFiles) {
-            total += generateOne(proto);
+            String content;
+            try {
+                content = Files.readString(proto);
+            } catch (IOException e) {
+                throw new MojoExecutionException("Cannot read " + proto, e);
+            }
+            asts.add(ProtoParser.parse(proto.getFileName().toString(), content));
+        }
+        Map<String, Descriptors.FileDescriptor> resolved = SchemaResolver.resolveAll(asts);
+
+        int total = 0;
+        for (Descriptors.FileDescriptor desc : resolved.values()) {
+            total += emitFile(desc);
         }
         getLog().info("champollion-protobuf:generate — wrote " + total
                 + " Java file(s) for " + protoFiles.size() + " .proto source(s) → " + outputDirectory);
@@ -87,15 +102,7 @@ public final class GenerateProtoMojo extends AbstractMojo {
         }
     }
 
-    int generateOne(Path proto) throws MojoExecutionException {
-        String content;
-        try {
-            content = Files.readString(proto);
-        } catch (IOException e) {
-            throw new MojoExecutionException("Cannot read " + proto, e);
-        }
-        var ast = ProtoParser.parse(proto.getFileName().toString(), content);
-        Descriptors.FileDescriptor desc = SchemaResolver.resolve(ast);
+    int emitFile(Descriptors.FileDescriptor desc) throws MojoExecutionException {
         String pkg = effectiveJavaPackage(desc);
         Map<String, String> emitted = new JavaEmitter(pkg).emit(desc);
         int count = 0;

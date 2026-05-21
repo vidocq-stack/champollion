@@ -16,6 +16,7 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.Scalar;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.ScalarType;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,15 +49,45 @@ public final class SchemaResolver {
     /** Résout un seul fichier (pas de cross-file imports). */
     public static Descriptors.FileDescriptor resolve(ProtoFile file) {
         Map<String, Symbol> table = new LinkedHashMap<>();
+        indexFile(file, table);
+        return resolveOne(file, table);
+    }
+
+    /**
+     * Résolution multi-file. La table de symboles est construite par walk de
+     * tous les fichiers (chaque message/enum est indexé par son fullName, le
+     * package proto étant le préfixe). Les références cross-file dans
+     * {@link NamedType} sont résolues contre cette table commune.
+     *
+     * <p>Note M2.5 : les imports ne sont pas exigés pour pouvoir référencer
+     * un type cross-file — la résolution est globale. Le check strict
+     * "tout type référencé doit provenir d'un import déclaré" sera ajouté
+     * en M2.6 quand on traitera la stricte séparation des namespaces.</p>
+     *
+     * @return map {@code fileName → FileDescriptor} préservant l'ordre
+     *         d'insertion des sources.
+     */
+    public static Map<String, Descriptors.FileDescriptor> resolveAll(Collection<ProtoFile> files) {
+        Objects.requireNonNull(files, "files");
+        Map<String, Symbol> table = new LinkedHashMap<>();
+        for (ProtoFile f : files) indexFile(f, table);
+        Map<String, Descriptors.FileDescriptor> out = new LinkedHashMap<>();
+        for (ProtoFile f : files) out.put(f.fileName(), resolveOne(f, table));
+        return out;
+    }
+
+    private static void indexFile(ProtoFile file, Map<String, Symbol> table) {
         String pkg = file.packageName();
         for (MessageDecl m : file.messages()) indexMessage(m, pkg, table);
         for (EnumDecl e : file.enums()) indexEnum(e, pkg, table);
+    }
 
+    private static Descriptors.FileDescriptor resolveOne(ProtoFile file, Map<String, Symbol> table) {
+        String pkg = file.packageName();
         List<Descriptors.Descriptor> outMsgs = new ArrayList<>();
         for (MessageDecl m : file.messages()) outMsgs.add(resolveMessage(m, pkg, table));
         List<Descriptors.EnumDescriptor> outEnums = new ArrayList<>();
         for (EnumDecl e : file.enums()) outEnums.add(toEnumDescriptor(e, pkg));
-
         return new Descriptors.FileDescriptor(
                 file.fileName(),
                 pkg,
