@@ -12,4 +12,5 @@ module io.vidocq.champollion.protobuf {
     requires transitive io.vidocq.champollion.jsonp;
 
     exports io.vidocq.champollion.protobuf;
+    exports io.vidocq.champollion.protobuf.wkt;
 }

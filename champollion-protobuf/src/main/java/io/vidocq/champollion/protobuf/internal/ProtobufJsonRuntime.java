@@ -3,6 +3,16 @@ package io.vidocq.champollion.protobuf.internal;
 import io.vidocq.champollion.protobuf.Descriptors;
 import io.vidocq.champollion.protobuf.FieldType;
 import io.vidocq.champollion.protobuf.ProtobufField;
+import io.vidocq.champollion.protobuf.wkt.Duration;
+import io.vidocq.champollion.protobuf.wkt.Empty;
+import io.vidocq.champollion.protobuf.wkt.FieldMask;
+import io.vidocq.champollion.protobuf.wkt.Timestamp;
+import io.vidocq.champollion.protobuf.wkt.Wrappers;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 
 import jakarta.json.Json;
 import jakarta.json.stream.JsonGenerator;
@@ -61,6 +71,8 @@ public final class ProtobufJsonRuntime {
     }
 
     private static void writeMessage(JsonBindingPlan plan, Object message, JsonGenerator gen) {
+        // Well-Known Types : encodage canonical spécifique (non objet JSON).
+        if (writeWktTopLevel(message, gen)) return;
         gen.writeStartObject();
         for (FieldBinding fb : plan.fields) {
             Object value;
@@ -137,12 +149,233 @@ public final class ProtobufJsonRuntime {
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case MESSAGE -> {
+                // WKT en champ imbriqué : émettre la valeur canonical à plat (string/number).
+                if (writeWktAsValue(value, gen, key)) return;
                 if (key != null) gen.writeStartObject(key); else gen.writeStartObject();
                 JsonBindingPlan nested = planFor(value.getClass());
                 writeMessageBody(nested, value, gen);
                 gen.writeEnd();
             }
         }
+    }
+
+    // ============================================================ Well-Known Types
+
+    /**
+     * Émet le message {@code message} comme top-level d'un document JSON s'il
+     * s'agit d'un WKT. Retourne {@code true} si géré.
+     */
+    private static boolean writeWktTopLevel(Object message, JsonGenerator gen) {
+        if (message instanceof Empty) {
+            gen.writeStartObject().writeEnd();
+            return true;
+        }
+        if (message instanceof Timestamp t) {
+            gen.write(formatTimestamp(t));
+            return true;
+        }
+        if (message instanceof Duration d) {
+            gen.write(formatDuration(d));
+            return true;
+        }
+        if (message instanceof FieldMask m) {
+            gen.write(formatFieldMask(m));
+            return true;
+        }
+        return writeWrapperTopLevel(message, gen);
+    }
+
+    private static boolean writeWktAsValue(Object v, JsonGenerator gen, String key) {
+        if (v instanceof Empty) {
+            if (key != null) gen.writeStartObject(key).writeEnd();
+            else gen.writeStartObject().writeEnd();
+            return true;
+        }
+        if (v instanceof Timestamp t) {
+            String s = formatTimestamp(t);
+            if (key != null) gen.write(key, s); else gen.write(s);
+            return true;
+        }
+        if (v instanceof Duration d) {
+            String s = formatDuration(d);
+            if (key != null) gen.write(key, s); else gen.write(s);
+            return true;
+        }
+        if (v instanceof FieldMask m) {
+            String s = formatFieldMask(m);
+            if (key != null) gen.write(key, s); else gen.write(s);
+            return true;
+        }
+        return writeWrapperAsValue(v, gen, key);
+    }
+
+    private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
+        return switch (v) {
+            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, null); yield true; }
+            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, null); yield true; }
+            case Wrappers.Int64Value w -> { gen.write(Long.toString(w.value())); yield true; }
+            case Wrappers.UInt64Value w -> { gen.write(Long.toString(w.value())); yield true; }
+            case Wrappers.Int32Value w -> { gen.write(w.value()); yield true; }
+            case Wrappers.UInt32Value w -> { gen.write(w.value()); yield true; }
+            case Wrappers.BoolValue w -> { gen.write(w.value()); yield true; }
+            case Wrappers.StringValue w -> { gen.write(w.value()); yield true; }
+            case Wrappers.BytesValue w -> { gen.write(java.util.Base64.getEncoder().encodeToString(w.value())); yield true; }
+            default -> false;
+        };
+    }
+
+    private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
+        return switch (v) {
+            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, key); yield true; }
+            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, key); yield true; }
+            case Wrappers.Int64Value w -> {
+                String s = Long.toString(w.value());
+                if (key != null) gen.write(key, s); else gen.write(s);
+                yield true;
+            }
+            case Wrappers.UInt64Value w -> {
+                String s = Long.toString(w.value());
+                if (key != null) gen.write(key, s); else gen.write(s);
+                yield true;
+            }
+            case Wrappers.Int32Value w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+                yield true;
+            }
+            case Wrappers.UInt32Value w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+                yield true;
+            }
+            case Wrappers.BoolValue w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+                yield true;
+            }
+            case Wrappers.StringValue w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+                yield true;
+            }
+            case Wrappers.BytesValue w -> {
+                String s = java.util.Base64.getEncoder().encodeToString(w.value());
+                if (key != null) gen.write(key, s); else gen.write(s);
+                yield true;
+            }
+            default -> false;
+        };
+    }
+
+    private static void writeWrapperDouble(double v, JsonGenerator gen, String key) {
+        if (Double.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
+        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
+        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
+        else { if (key != null) gen.write(key, v); else gen.write(v); }
+    }
+
+    private static void writeWrapperFloat(float v, JsonGenerator gen, String key) {
+        if (Float.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
+        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
+        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
+        else { if (key != null) gen.write(key, v); else gen.write(v); }
+    }
+
+    private static String formatTimestamp(Timestamp t) {
+        Instant instant = t.toInstant();
+        // RFC 3339 / ISO-8601 — fraction nanoseconde optionnelle, toujours suffixe Z.
+        return DateTimeFormatter.ISO_INSTANT.format(instant);
+    }
+
+    private static String formatDuration(Duration d) {
+        long sec = d.seconds();
+        int nanos = d.nanos();
+        StringBuilder sb = new StringBuilder();
+        // Représentation négative : signe sur seconds OU nanos (proto garantit même signe).
+        boolean negative = sec < 0 || nanos < 0;
+        if (negative) {
+            sb.append('-');
+            sec = -sec;
+            nanos = -nanos;
+        }
+        sb.append(sec);
+        if (nanos > 0) {
+            sb.append('.');
+            // Précision adaptative : 3, 6 ou 9 chiffres selon ce qui est nécessaire.
+            String s = String.format("%09d", nanos);
+            int trim = s.length();
+            while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
+            // Arrondi à un multiple de 3 (3, 6, ou 9 chiffres canonical).
+            int width = trim <= 3 ? 3 : (trim <= 6 ? 6 : 9);
+            sb.append(s, 0, width);
+        }
+        sb.append('s');
+        return sb.toString();
+    }
+
+    private static String formatFieldMask(FieldMask m) {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (String path : m.paths()) {
+            if (!first) sb.append(',');
+            first = false;
+            // Conversion snake_case → camelCase sur chaque segment du path.
+            String[] segments = path.split("\\.");
+            for (int i = 0; i < segments.length; i++) {
+                if (i > 0) sb.append('.');
+                sb.append(Descriptors.toJsonName(segments[i]));
+            }
+        }
+        return sb.toString();
+    }
+
+    private static Timestamp parseTimestamp(String s) {
+        Instant instant = DateTimeFormatter.ISO_INSTANT.parse(s, Instant::from);
+        return Timestamp.from(instant);
+    }
+
+    private static Duration parseDuration(String s) {
+        if (!s.endsWith("s")) {
+            throw new IllegalArgumentException("Duration must end with 's': " + s);
+        }
+        String body = s.substring(0, s.length() - 1);
+        boolean negative = body.startsWith("-");
+        if (negative) body = body.substring(1);
+        int dot = body.indexOf('.');
+        long sec;
+        int nanos = 0;
+        if (dot < 0) {
+            sec = Long.parseLong(body);
+        } else {
+            sec = Long.parseLong(body.substring(0, dot));
+            String frac = body.substring(dot + 1);
+            // Padder à 9 chiffres ou tronquer si plus long (les 9 premiers).
+            if (frac.length() > 9) frac = frac.substring(0, 9);
+            else while (frac.length() < 9) frac += "0";
+            nanos = Integer.parseInt(frac);
+        }
+        if (negative) { sec = -sec; nanos = -nanos; }
+        return new Duration(sec, nanos);
+    }
+
+    private static FieldMask parseFieldMask(String s) {
+        if (s.isEmpty()) return new FieldMask(List.of());
+        // Conversion inverse camelCase → snake_case sur chaque segment des paths.
+        String[] paths = s.split(",");
+        List<String> out = new ArrayList<>(paths.length);
+        for (String p : paths) {
+            StringBuilder buf = new StringBuilder();
+            String[] segments = p.split("\\.");
+            for (int i = 0; i < segments.length; i++) {
+                if (i > 0) buf.append('.');
+                for (int j = 0; j < segments[i].length(); j++) {
+                    char c = segments[i].charAt(j);
+                    if (Character.isUpperCase(c)) {
+                        buf.append('_').append(Character.toLowerCase(c));
+                    } else {
+                        buf.append(c);
+                    }
+                }
+            }
+            out.add(buf.toString());
+        }
+        return new FieldMask(out);
     }
 
     private static void writeMessageBody(JsonBindingPlan plan, Object message, JsonGenerator gen) {
@@ -172,13 +405,109 @@ public final class ProtobufJsonRuntime {
 
     @SuppressWarnings("unchecked")
     public static <T> T fromJsonString(Class<T> type, String json) throws IOException {
-        JsonBindingPlan plan = planFor(type);
         try (JsonParser parser = Json.createParser(new StringReader(json))) {
-            if (!parser.hasNext() || parser.next() != JsonParser.Event.START_OBJECT) {
-                throw new IOException("Expected JSON object for " + type.getSimpleName());
+            if (!parser.hasNext()) {
+                throw new IOException("Empty JSON for " + type.getSimpleName());
             }
+            JsonParser.Event first = parser.next();
+            // WKT : la représentation top-level n'est pas un objet (sauf Empty).
+            if (isWktClass(type) && type != Empty.class) {
+                return (T) readWktValue(type, parser, first);
+            }
+            if (first != JsonParser.Event.START_OBJECT) {
+                throw new IOException("Expected JSON object for " + type.getSimpleName() + ", got " + first);
+            }
+            if (type == Empty.class) {
+                // Consommer le END_OBJECT et retourner singleton.
+                while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {
+                    // skip champs inattendus
+                }
+                return (T) Empty.INSTANCE;
+            }
+            JsonBindingPlan plan = planFor(type);
             return (T) readMessage(plan, parser);
         }
+    }
+
+    private static boolean isWktClass(Class<?> type) {
+        return type == Timestamp.class
+                || type == Duration.class
+                || type == Empty.class
+                || type == FieldMask.class
+                || type == Wrappers.DoubleValue.class
+                || type == Wrappers.FloatValue.class
+                || type == Wrappers.Int64Value.class
+                || type == Wrappers.UInt64Value.class
+                || type == Wrappers.Int32Value.class
+                || type == Wrappers.UInt32Value.class
+                || type == Wrappers.BoolValue.class
+                || type == Wrappers.StringValue.class
+                || type == Wrappers.BytesValue.class;
+    }
+
+    private static Object readWktValue(Class<?> type, JsonParser parser, JsonParser.Event v) throws IOException {
+        if (type == Timestamp.class) {
+            requireString(v, "Timestamp");
+            return parseTimestamp(parser.getString());
+        }
+        if (type == Duration.class) {
+            requireString(v, "Duration");
+            return parseDuration(parser.getString());
+        }
+        if (type == FieldMask.class) {
+            requireString(v, "FieldMask");
+            return parseFieldMask(parser.getString());
+        }
+        if (type == Wrappers.DoubleValue.class) {
+            return new Wrappers.DoubleValue(readFloating(parser, v).doubleValue());
+        }
+        if (type == Wrappers.FloatValue.class) {
+            return new Wrappers.FloatValue(readFloating(parser, v).floatValue());
+        }
+        if (type == Wrappers.Int64Value.class) {
+            return new Wrappers.Int64Value(readInt64(parser, v));
+        }
+        if (type == Wrappers.UInt64Value.class) {
+            return new Wrappers.UInt64Value(readInt64(parser, v));
+        }
+        if (type == Wrappers.Int32Value.class) {
+            return new Wrappers.Int32Value(readInt32(parser, v));
+        }
+        if (type == Wrappers.UInt32Value.class) {
+            return new Wrappers.UInt32Value(readInt32(parser, v));
+        }
+        if (type == Wrappers.BoolValue.class) {
+            if (v == JsonParser.Event.VALUE_TRUE) return new Wrappers.BoolValue(true);
+            if (v == JsonParser.Event.VALUE_FALSE) return new Wrappers.BoolValue(false);
+            throw new IOException("Expected boolean for BoolValue, got " + v);
+        }
+        if (type == Wrappers.StringValue.class) {
+            requireString(v, "StringValue");
+            return new Wrappers.StringValue(parser.getString());
+        }
+        if (type == Wrappers.BytesValue.class) {
+            requireString(v, "BytesValue");
+            return new Wrappers.BytesValue(java.util.Base64.getDecoder().decode(parser.getString()));
+        }
+        throw new IOException("Not a WKT class: " + type);
+    }
+
+    private static void requireString(JsonParser.Event v, String wkt) throws IOException {
+        if (v != JsonParser.Event.VALUE_STRING) {
+            throw new IOException("Expected JSON string for " + wkt + ", got " + v);
+        }
+    }
+
+    private static long readInt64(JsonParser parser, JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_STRING) return Long.parseLong(parser.getString());
+        if (v == JsonParser.Event.VALUE_NUMBER) return parser.getLong();
+        throw new IOException("Expected int64 value, got " + v);
+    }
+
+    private static int readInt32(JsonParser parser, JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_NUMBER) return parser.getInt();
+        if (v == JsonParser.Event.VALUE_STRING) return Integer.parseInt(parser.getString());
+        throw new IOException("Expected int32 value, got " + v);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -284,8 +613,16 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("Expected enum value, got " + v);
             }
             case MESSAGE -> {
+                // WKT imbriqué : la valeur est un scalaire (string/number/bool) sauf Empty.
+                if (isWktClass(fb.elementType) && fb.elementType != Empty.class) {
+                    yield readWktValue(fb.elementType, parser, v);
+                }
                 if (v != JsonParser.Event.START_OBJECT) {
                     throw new IOException("Expected message object, got " + v);
+                }
+                if (fb.elementType == Empty.class) {
+                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {}
+                    yield Empty.INSTANCE;
                 }
                 yield readMessage(planFor(fb.elementType), parser);
             }
