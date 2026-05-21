@@ -109,6 +109,43 @@ public final class Descriptors {
     public enum Syntax { PROTO2, PROTO3, EDITION_2023 }
 
     /**
+     * Edition 2023 {@code google.protobuf.FeatureSet} — surcouche d'attributs
+     * configurable par fichier/message/champ qui remplace les conventions
+     * implicites de proto2/proto3.
+     *
+     * <p>Spec : <a href="https://protobuf.dev/editions/features/">Edition Features</a>.
+     * Defaults M4.1 = équivalent proto3.</p>
+     */
+    public record Features(
+            FieldPresence fieldPresence,
+            EnumType enumType,
+            RepeatedFieldEncoding repeatedFieldEncoding,
+            Utf8Validation utf8Validation,
+            MessageEncoding messageEncoding,
+            JsonFormat jsonFormat) {
+
+        public static final Features PROTO3_DEFAULTS = new Features(
+                FieldPresence.IMPLICIT, EnumType.OPEN,
+                RepeatedFieldEncoding.PACKED, Utf8Validation.VERIFY,
+                MessageEncoding.LENGTH_PREFIXED, JsonFormat.ALLOW);
+
+        public static final Features PROTO2_DEFAULTS = new Features(
+                FieldPresence.EXPLICIT, EnumType.CLOSED,
+                RepeatedFieldEncoding.EXPANDED, Utf8Validation.NONE,
+                MessageEncoding.LENGTH_PREFIXED, JsonFormat.LEGACY_BEST_EFFORT);
+
+        /** Edition 2023 = mêmes defaults que proto3, modulables par feature. */
+        public static final Features EDITION_2023_DEFAULTS = PROTO3_DEFAULTS;
+    }
+
+    public enum FieldPresence { EXPLICIT, IMPLICIT, LEGACY_REQUIRED }
+    public enum EnumType { OPEN, CLOSED }
+    public enum RepeatedFieldEncoding { PACKED, EXPANDED }
+    public enum Utf8Validation { VERIFY, NONE }
+    public enum MessageEncoding { LENGTH_PREFIXED, DELIMITED }
+    public enum JsonFormat { ALLOW, LEGACY_BEST_EFFORT }
+
+    /**
      * Cardinalité — {@code IMPLICIT} = proto3 default (pas de présence
      * explicite), {@code EXPLICIT} = proto2 / Editions {@code field_presence=EXPLICIT},
      * {@code REPEATED} = liste, {@code REQUIRED} = legacy proto2.
@@ -229,7 +266,8 @@ public final class Descriptors {
             Cardinality cardinality,
             boolean packed,
             String messageTypeName,
-            String enumTypeName) {
+            String enumTypeName,
+            Features features) {
 
         public FieldDescriptor {
             if (number < WireFormat.FIRST_FIELD_NUMBER || number > WireFormat.MAX_FIELD_NUMBER) {
@@ -239,6 +277,15 @@ public final class Descriptors {
             cardinality = cardinality == null ? Cardinality.IMPLICIT : cardinality;
             // jsonName auto-derived si null
             jsonName = jsonName == null ? toJsonName(name) : jsonName;
+            features = features == null ? Features.PROTO3_DEFAULTS : features;
+        }
+
+        /** Constructeur de compat (sans features) — defaults proto3. */
+        public FieldDescriptor(String name, String jsonName, int number,
+                               FieldType type, Cardinality cardinality, boolean packed,
+                               String messageTypeName, String enumTypeName) {
+            this(name, jsonName, number, type, cardinality, packed,
+                    messageTypeName, enumTypeName, Features.PROTO3_DEFAULTS);
         }
 
         public boolean isRepeated() {
