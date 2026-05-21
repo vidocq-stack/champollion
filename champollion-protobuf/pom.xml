@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-parent</artifactId>
+    </parent>
+
+    <artifactId>champollion-protobuf</artifactId>
+    <name>Champollion :: Protobuf</name>
+    <description>Implémentation Protocol Buffers (wire binaire proto3 + canonical JSON mapping) — zéro dépendance hors JDK, prête pour gRPC via chappe</description>
+
+    <dependencies>
+        <!--
+            Requis pour le canonical JSON mapping (M1.5) : Timestamp, Duration,
+            FieldMask, Any sérialisés via JsonGenerator de champollion-jsonp.
+            En M1.1..M1.4 le module ne touche pas à JSON et la dépendance est
+            donc inutilisée — elle reste déclarée pour stabiliser le graphe JPMS.
+        -->
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

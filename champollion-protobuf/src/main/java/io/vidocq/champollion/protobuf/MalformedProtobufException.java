@@ -1,0 +1,48 @@
+package io.vidocq.champollion.protobuf;
+
+import java.io.IOException;
+
+/**
+ * Levée quand le flux binaire ne respecte pas le wire format Protocol Buffers
+ * (varint > 10 octets, wire type inconnu, longueur LEN négative, troncature, etc.).
+ *
+ * <p>Spec : <a href="https://protobuf.dev/programming-guides/encoding/">Protocol Buffers Encoding</a>.</p>
+ */
+public final class MalformedProtobufException extends IOException {
+
+    public MalformedProtobufException(String message) {
+        super(message);
+    }
+
+    public MalformedProtobufException(String message, Throwable cause) {
+        super(message, cause);
+    }
+
+    static MalformedProtobufException truncated() {
+        return new MalformedProtobufException(
+                "While parsing a protocol message, the input ended unexpectedly "
+                        + "in the middle of a field. This could mean either that the input "
+                        + "has been truncated or that an embedded message misreported its own length.");
+    }
+
+    static MalformedProtobufException malformedVarint() {
+        return new MalformedProtobufException(
+                "CodedInputStream encountered a malformed varint (more than 10 bytes).");
+    }
+
+    static MalformedProtobufException negativeSize() {
+        return new MalformedProtobufException(
+                "CodedInputStream encountered an embedded string or message which claimed to have negative size.");
+    }
+
+    static MalformedProtobufException invalidWireType(int wireType) {
+        return new MalformedProtobufException(
+                "Protocol message contained an invalid wire type: " + wireType);
+    }
+
+    static MalformedProtobufException recursionLimitExceeded() {
+        return new MalformedProtobufException(
+                "Protocol message had too many levels of nesting. May be malicious. "
+                        + "Use CodedInputStream.setRecursionLimit() to increase the depth limit.");
+    }
+}

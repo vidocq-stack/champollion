@@ -99,6 +99,9 @@
         <subproject>champollion-api</subproject>
         <subproject>champollion-jsonp</subproject>
         <subproject>champollion-jsonb</subproject>
+        <subproject>champollion-protobuf</subproject>
+        <subproject>champollion-protobuf-codegen</subproject>
+        <subproject>champollion-protobuf-maven-plugin</subproject>
         <subproject>champollion-codegen-apt</subproject>
         <subproject>champollion-codegen-maven-plugin</subproject>
         <subproject>champollion-bench</subproject>
@@ -169,6 +172,21 @@
             <dependency>
                 <groupId>io.vidocq.champollion</groupId>
                 <artifactId>champollion-codegen-maven-plugin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.champollion</groupId>
+                <artifactId>champollion-protobuf</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.champollion</groupId>
+                <artifactId>champollion-protobuf-codegen</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.champollion</groupId>
+                <artifactId>champollion-protobuf-maven-plugin</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
