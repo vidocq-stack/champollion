@@ -57,6 +57,14 @@ public final class GenerateProtoMojo extends AbstractMojo {
     @Parameter(defaultValue = "")
     private String javaPackage;
 
+    /**
+     * Si {@code true}, les records émis sont annotés {@code @ProtobufStatic} —
+     * l'APT {@code ProtobufStaticProcessor} (M3.1) produira un parser
+     * zéro-réflexion ServiceLoader-discoverable. AOT-friendly.
+     */
+    @Parameter(defaultValue = "false")
+    private boolean staticParser;
+
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
 
@@ -104,7 +112,7 @@ public final class GenerateProtoMojo extends AbstractMojo {
 
     int emitFile(Descriptors.FileDescriptor desc) throws MojoExecutionException {
         String pkg = effectiveJavaPackage(desc);
-        Map<String, String> emitted = new JavaEmitter(pkg).emit(desc);
+        Map<String, String> emitted = new JavaEmitter(pkg, staticParser).emit(desc);
         int count = 0;
         for (Map.Entry<String, String> e : emitted.entrySet()) {
             Path target = outputDirectory.toPath().resolve(toRelativeJavaPath(e.getKey()));
@@ -147,4 +155,5 @@ public final class GenerateProtoMojo extends AbstractMojo {
     void setSourceDirectory(File d) { this.sourceDirectory = d; }
     void setOutputDirectory(File d) { this.outputDirectory = d; }
     void setJavaPackage(String p) { this.javaPackage = p; }
+    void setStaticParser(boolean b) { this.staticParser = b; }
 }

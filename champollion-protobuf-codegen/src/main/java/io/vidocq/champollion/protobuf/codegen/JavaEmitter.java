@@ -27,13 +27,25 @@ import java.util.Objects;
 public final class JavaEmitter {
 
     private final String javaPackage;
+    private final boolean staticParser;
 
     /**
      * @param javaPackage Package Java dans lequel placer les sources émises.
      *                    Distinct du {@code package} proto (qui sert au fullName).
      */
     public JavaEmitter(String javaPackage) {
+        this(javaPackage, false);
+    }
+
+    /**
+     * @param javaPackage  Package Java cible des sources émises.
+     * @param staticParser Si {@code true}, chaque record émis porte aussi
+     *                     {@code @ProtobufStatic} — l'APT M3.1 produira alors
+     *                     un parser zéro-réflexion ServiceLoader-discoverable.
+     */
+    public JavaEmitter(String javaPackage, boolean staticParser) {
         this.javaPackage = Objects.requireNonNull(javaPackage, "javaPackage");
+        this.staticParser = staticParser;
     }
 
     /**
@@ -106,12 +118,18 @@ public final class JavaEmitter {
         sb.append("import io.vidocq.champollion.protobuf.Message;\n");
         sb.append("import io.vidocq.champollion.protobuf.ProtobufField;\n");
         sb.append("import io.vidocq.champollion.protobuf.ProtobufMessage;\n");
+        if (staticParser) {
+            sb.append("import io.vidocq.champollion.protobuf.ProtobufStatic;\n");
+        }
         sb.append("import java.util.List;\n\n");
         emitMessageType(sb, d, "");
         return sb.toString();
     }
 
     private void emitMessageType(StringBuilder sb, Descriptors.Descriptor d, String indent) {
+        if (staticParser) {
+            sb.append(indent).append("@ProtobufStatic\n");
+        }
         sb.append(indent).append("@ProtobufMessage(\"").append(d.fullName()).append("\")\n");
         sb.append(indent).append("public record ").append(d.name()).append("(\n");
         for (int i = 0; i < d.fields().size(); i++) {
