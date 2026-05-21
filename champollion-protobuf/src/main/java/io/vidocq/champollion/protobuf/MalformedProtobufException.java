@@ -40,6 +40,13 @@ public final class MalformedProtobufException extends IOException {
                 "Protocol message contained an invalid wire type: " + wireType);
     }
 
+    public static MalformedProtobufException invalidUtf8Encode(Throwable cause) {
+        return new MalformedProtobufException(
+                "Cannot encode string field as valid UTF-8 (unpaired UTF-16 surrogate, "
+                        + "features.utf8_validation = VERIFY).",
+                cause);
+    }
+
     public static MalformedProtobufException invalidUtf8(Throwable cause) {
         return new MalformedProtobufException(
                 "Protocol message contained a string field with malformed UTF-8 "

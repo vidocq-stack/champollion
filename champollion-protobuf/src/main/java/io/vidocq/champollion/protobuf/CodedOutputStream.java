@@ -2,6 +2,11 @@ package io.vidocq.champollion.protobuf;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
@@ -180,8 +185,25 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
         writeRawBytes(value, 0, value.length);
     }
 
+    /**
+     * Encode {@code value} en UTF-8 strict — toute séquence UTF-16 mal formée
+     * (surrogate non-pairé) lève {@link MalformedProtobufException}.
+     *
+     * <p>Cohérent avec {@code features.utf8_validation = VERIFY} (défaut proto3 / Edition
+     * 2023) et avec la conformance Google {@code Required.Proto3.ProtobufOutput.InvalidUtf8}.</p>
+     */
     public final void writeStringNoTag(String value) throws IOException {
-        byte[] utf8 = value.getBytes(StandardCharsets.UTF_8);
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer encoded;
+        try {
+            encoded = encoder.encode(CharBuffer.wrap(value));
+        } catch (CharacterCodingException e) {
+            throw MalformedProtobufException.invalidUtf8Encode(e);
+        }
+        byte[] utf8 = new byte[encoded.remaining()];
+        encoded.get(utf8);
         writeBytesNoTag(utf8);
     }
 

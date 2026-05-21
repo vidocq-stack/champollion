@@ -84,4 +84,36 @@ class Utf8ValidationTest {
             assertThrows(MalformedProtobufException.class, in::readStringRequireUtf8);
         }
     }
+
+    @Nested
+    @DisplayName("writeStringNoTag — strict côté écriture")
+    class Write {
+
+        @Test
+        void unpaired_high_surrogate_rejected() {
+            // "\uD800" sans low surrogate — invalide UTF-16, donc inconvertible UTF-8.
+            // Conformance Google : Required.Proto3.ProtobufOutput.InvalidUtf8.
+            java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+            CodedOutputStream out = CodedOutputStream.newInstance(sink);
+            assertThrows(MalformedProtobufException.class, () -> out.writeStringNoTag("\uD800"));
+        }
+
+        @Test
+        void unpaired_low_surrogate_rejected() {
+            java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+            CodedOutputStream out = CodedOutputStream.newInstance(sink);
+            assertThrows(MalformedProtobufException.class, () -> out.writeStringNoTag("\uDC00"));
+        }
+
+        @Test
+        void valid_string_writes_normally() throws Exception {
+            java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+            CodedOutputStream out = CodedOutputStream.newInstance(sink);
+            out.writeStringNoTag("héllo🐉");
+            out.flush();
+            // Round-trip lecture stricte
+            CodedInputStream in = CodedInputStream.newInstance(sink.toByteArray());
+            assertEquals("héllo🐉", in.readStringRequireUtf8());
+        }
+    }
 }
