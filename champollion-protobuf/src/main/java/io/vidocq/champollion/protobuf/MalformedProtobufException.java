@@ -18,29 +18,29 @@ public final class MalformedProtobufException extends IOException {
         super(message, cause);
     }
 
-    static MalformedProtobufException truncated() {
+    public static MalformedProtobufException truncated() {
         return new MalformedProtobufException(
                 "While parsing a protocol message, the input ended unexpectedly "
                         + "in the middle of a field. This could mean either that the input "
                         + "has been truncated or that an embedded message misreported its own length.");
     }
 
-    static MalformedProtobufException malformedVarint() {
+    public static MalformedProtobufException malformedVarint() {
         return new MalformedProtobufException(
                 "CodedInputStream encountered a malformed varint (more than 10 bytes).");
     }
 
-    static MalformedProtobufException negativeSize() {
+    public static MalformedProtobufException negativeSize() {
         return new MalformedProtobufException(
                 "CodedInputStream encountered an embedded string or message which claimed to have negative size.");
     }
 
-    static MalformedProtobufException invalidWireType(int wireType) {
+    public static MalformedProtobufException invalidWireType(int wireType) {
         return new MalformedProtobufException(
                 "Protocol message contained an invalid wire type: " + wireType);
     }
 
-    static MalformedProtobufException recursionLimitExceeded() {
+    public static MalformedProtobufException recursionLimitExceeded() {
         return new MalformedProtobufException(
                 "Protocol message had too many levels of nesting. May be malicious. "
                         + "Use CodedInputStream.setRecursionLimit() to increase the depth limit.");
