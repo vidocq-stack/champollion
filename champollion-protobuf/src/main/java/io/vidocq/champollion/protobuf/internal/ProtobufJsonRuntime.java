@@ -95,7 +95,7 @@ public final class ProtobufJsonRuntime {
                 gen.writeStartArray(fb.jsonName);
                 for (Object item : list) writeScalar(fb, item, gen, null);
                 gen.writeEnd();
-            } else if (isDefault(fb, value)) {
+            } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 continue; // proto3 implicit presence
             } else {
                 writeScalar(fb, value, gen, fb.jsonName);
@@ -865,8 +865,8 @@ public final class ProtobufJsonRuntime {
             String protoName = rc.getName();
             String jsonName = Descriptors.toJsonName(protoName);
             FieldBinding fb = new FieldBinding(
-                    pf.number(), pf.type(), repeated, element, i,
-                    getter, protoName, jsonName);
+                    pf.number(), pf.type(), repeated, pf.explicitPresence(),
+                    element, i, getter, protoName, jsonName);
             fields.add(fb);
             byJsonName.put(jsonName, fb);
             byProtoName.put(protoName, fb);
@@ -905,17 +905,20 @@ public final class ProtobufJsonRuntime {
         final int number;
         final FieldType type;
         final boolean repeated;
+        final boolean explicitPresence;
         final Class<?> elementType;
         final int componentIndex;
         final MethodHandle getter;
         final String protoName;
         final String jsonName;
 
-        FieldBinding(int number, FieldType type, boolean repeated, Class<?> elementType,
-                     int componentIndex, MethodHandle getter, String protoName, String jsonName) {
+        FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
+                     Class<?> elementType, int componentIndex, MethodHandle getter,
+                     String protoName, String jsonName) {
             this.number = number;
             this.type = type;
             this.repeated = repeated;
+            this.explicitPresence = explicitPresence;
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;

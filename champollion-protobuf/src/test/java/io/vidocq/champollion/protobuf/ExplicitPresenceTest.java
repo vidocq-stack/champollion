@@ -69,4 +69,22 @@ class ExplicitPresenceTest {
             assertEquals(0, wire.length);
         }
     }
+
+    @Nested
+    @DisplayName("JSON canonical — explicitPresence émet le défaut en JSON")
+    class JsonOutput {
+
+        @Test
+        void implicit_default_is_omitted_in_json() {
+            String json = ProtobufJson.toJson(new ImplicitMessage(""));
+            assertEquals("{}", json, "proto3 IMPLICIT : default omis du JSON canonical");
+        }
+
+        @Test
+        void explicit_default_is_present_in_json() {
+            String json = ProtobufJson.toJson(new ExplicitMessage(""));
+            assertEquals("{\"name\":\"\"}", json,
+                    "EXPLICIT : default émis comme champ JSON présent");
+        }
+    }
 }
