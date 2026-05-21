@@ -63,6 +63,27 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         return old;
     }
 
+    // ------------------------------------------------------------------ Sub-stream limit
+
+    /**
+     * Réduit temporairement la limite de lecture à {@code byteLimit} octets à
+     * partir de la position courante. Utile pour parser un embedded message
+     * (wire type LEN) ou un payload packed sans allouer un sous-buffer.
+     *
+     * <p>L'appelant doit appairer chaque {@code pushLimit} avec un {@link #popLimit(int)}
+     * passant la valeur retournée — pattern try/finally recommandé.</p>
+     */
+    public abstract int pushLimit(int byteLimit) throws IOException;
+
+    /** Restaure la limite précédente. */
+    public abstract void popLimit(int oldLimit);
+
+    /**
+     * Nombre d'octets encore lisibles avant d'atteindre la limite courante.
+     * Renvoie {@code Integer.MAX_VALUE} si aucune limite n'a été poussée.
+     */
+    public abstract int getBytesUntilLimit();
+
     // ------------------------------------------------------------------ Tag
 
     /**
@@ -283,11 +304,13 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
 
     static final class ArrayDecoder extends CodedInputStream {
         private final byte[] buffer;
-        private final int limit;
+        private final int hardLimit;
+        private int limit;
         private int position;
 
         ArrayDecoder(byte[] buffer, int offset, int length) {
             this.buffer = buffer;
+            this.hardLimit = offset + length;
             this.limit = offset + length;
             this.position = offset;
         }
@@ -295,6 +318,27 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         @Override
         public boolean isAtEnd() {
             return position >= limit;
+        }
+
+        @Override
+        public int pushLimit(int byteLimit) throws IOException {
+            if (byteLimit < 0) throw MalformedProtobufException.negativeSize();
+            int newAbsoluteLimit = position + byteLimit;
+            int old = limit;
+            if (newAbsoluteLimit > old) throw MalformedProtobufException.truncated();
+            limit = newAbsoluteLimit;
+            return old;
+        }
+
+        @Override
+        public void popLimit(int oldLimit) {
+            limit = oldLimit;
+        }
+
+        @Override
+        public int getBytesUntilLimit() {
+            if (limit == hardLimit) return Integer.MAX_VALUE;
+            return limit - position;
         }
 
         @Override
@@ -418,6 +462,8 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         private int bufferPos;
         private int bufferSize;
         private boolean eof;
+        private int totalBytesRetired = 0;
+        private int currentLimit = Integer.MAX_VALUE;
 
         StreamDecoder(InputStream in, int bufferSize) {
             this.in = in;
@@ -426,27 +472,59 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
             this.bufferSize = 0;
         }
 
+        private int totalBytesRead() {
+            return totalBytesRetired + bufferPos;
+        }
+
         private boolean refill() throws IOException {
             if (eof) return false;
-            int read = in.read(buffer, 0, buffer.length);
+            // Avant de re-remplir, archiver le buffer entièrement consommé.
+            totalBytesRetired += bufferSize;
+            bufferPos = 0;
+            bufferSize = 0;
+            // Ne pas lire au-delà de la limite courante.
+            int remainingBeforeLimit = currentLimit - totalBytesRetired;
+            if (remainingBeforeLimit <= 0) return false;
+            int toRead = Math.min(buffer.length, remainingBeforeLimit);
+            int read = in.read(buffer, 0, toRead);
             if (read <= 0) {
                 eof = true;
-                bufferPos = 0;
-                bufferSize = 0;
                 return false;
             }
-            bufferPos = 0;
             bufferSize = read;
             return true;
         }
 
         @Override
         public boolean isAtEnd() throws IOException {
+            if (totalBytesRead() >= currentLimit) return true;
             return bufferPos == bufferSize && !refill();
         }
 
         @Override
+        public int pushLimit(int byteLimit) throws IOException {
+            if (byteLimit < 0) throw MalformedProtobufException.negativeSize();
+            int newAbsoluteLimit = totalBytesRead() + byteLimit;
+            int old = currentLimit;
+            if (newAbsoluteLimit > old) throw MalformedProtobufException.truncated();
+            currentLimit = newAbsoluteLimit;
+            return old;
+        }
+
+        @Override
+        public void popLimit(int oldLimit) {
+            currentLimit = oldLimit;
+        }
+
+        @Override
+        public int getBytesUntilLimit() {
+            if (currentLimit == Integer.MAX_VALUE) return Integer.MAX_VALUE;
+            return currentLimit - totalBytesRead();
+        }
+
+        @Override
         public byte readRawByte() throws IOException {
+            if (totalBytesRead() >= currentLimit) throw MalformedProtobufException.truncated();
             if (bufferPos == bufferSize && !refill()) {
                 throw MalformedProtobufException.truncated();
             }
@@ -456,6 +534,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         @Override
         public byte[] readRawBytes(int size) throws IOException {
             if (size < 0) throw MalformedProtobufException.negativeSize();
+            if (size > getBytesUntilLimit()) throw MalformedProtobufException.truncated();
             if (size == 0) return EMPTY_BYTES;
             byte[] out = new byte[size];
             int filled = 0;
@@ -476,6 +555,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         @Override
         public void skipRawBytes(int size) throws IOException {
             if (size < 0) throw MalformedProtobufException.negativeSize();
+            if (size > getBytesUntilLimit()) throw MalformedProtobufException.truncated();
             int remaining = size;
             while (remaining > 0) {
                 int available = bufferSize - bufferPos;
