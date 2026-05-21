@@ -10,5 +10,6 @@ module io.vidocq.champollion.protobuf.codegen {
 
     exports io.vidocq.champollion.protobuf.codegen;
 
+    // Internal : lexer/parser .proto — visible aux tests via patch-module.
     // Activation du Processor déclarée en M3.
 }
