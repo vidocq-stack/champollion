@@ -73,12 +73,20 @@ public final class ProtoAst {
             String name,
             List<FieldDecl> fields,
             List<MessageDecl> nestedMessages,
-            List<EnumDecl> nestedEnums) {
+            List<EnumDecl> nestedEnums,
+            List<OptionEntry> options) {
 
         public MessageDecl {
             fields = List.copyOf(fields);
             nestedMessages = List.copyOf(nestedMessages);
             nestedEnums = List.copyOf(nestedEnums);
+            options = List.copyOf(options);
+        }
+
+        /** Constructeur de compat (sans options) — call-sites pré-M4.2. */
+        public MessageDecl(String name, List<FieldDecl> fields,
+                           List<MessageDecl> nestedMessages, List<EnumDecl> nestedEnums) {
+            this(name, fields, nestedMessages, nestedEnums, List.of());
         }
     }
 

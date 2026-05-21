@@ -86,8 +86,11 @@ public final class SchemaResolver {
 
     private static Descriptors.FileDescriptor resolveOne(ProtoFile file, Map<String, Symbol> table) {
         String pkg = file.packageName();
+        Descriptors.Syntax syntax = toSyntax(file.syntax());
+        Descriptors.Features fileFeatures = featuresFromOptions(
+                file.options(), defaultFeaturesFor(syntax));
         List<Descriptors.Descriptor> outMsgs = new ArrayList<>();
-        for (MessageDecl m : file.messages()) outMsgs.add(resolveMessage(m, pkg, table));
+        for (MessageDecl m : file.messages()) outMsgs.add(resolveMessage(m, pkg, table, fileFeatures));
         List<Descriptors.EnumDescriptor> outEnums = new ArrayList<>();
         for (EnumDecl e : file.enums()) outEnums.add(toEnumDescriptor(e, pkg));
         List<Descriptors.ServiceDescriptor> outServices = new ArrayList<>();
@@ -95,10 +98,48 @@ public final class SchemaResolver {
         return new Descriptors.FileDescriptor(
                 file.fileName(),
                 pkg,
-                toSyntax(file.syntax()),
+                syntax,
                 outMsgs,
                 outEnums,
                 outServices);
+    }
+
+    private static Descriptors.Features defaultFeaturesFor(Descriptors.Syntax syntax) {
+        return switch (syntax) {
+            case PROTO2 -> Descriptors.Features.PROTO2_DEFAULTS;
+            case PROTO3 -> Descriptors.Features.PROTO3_DEFAULTS;
+            case EDITION_2023 -> Descriptors.Features.EDITION_2023_DEFAULTS;
+        };
+    }
+
+    /**
+     * Convertit une liste d'options (format {@code features.<name> = <VALUE>})
+     * en {@link Descriptors.Features}, en partant des defaults fournis et en
+     * appliquant chaque override.
+     */
+    private static Descriptors.Features featuresFromOptions(List<ProtoAst.OptionEntry> options,
+                                                            Descriptors.Features base) {
+        Descriptors.FieldPresence fp = base.fieldPresence();
+        Descriptors.EnumType et = base.enumType();
+        Descriptors.RepeatedFieldEncoding rfe = base.repeatedFieldEncoding();
+        Descriptors.Utf8Validation uv = base.utf8Validation();
+        Descriptors.MessageEncoding me = base.messageEncoding();
+        Descriptors.JsonFormat jf = base.jsonFormat();
+        for (ProtoAst.OptionEntry o : options) {
+            if (!o.name().startsWith("features.")) continue;
+            String key = o.name().substring("features.".length());
+            String v = o.value();
+            switch (key) {
+                case "field_presence" -> fp = Descriptors.FieldPresence.valueOf(v);
+                case "enum_type" -> et = Descriptors.EnumType.valueOf(v);
+                case "repeated_field_encoding" -> rfe = Descriptors.RepeatedFieldEncoding.valueOf(v);
+                case "utf8_validation" -> uv = Descriptors.Utf8Validation.valueOf(v);
+                case "message_encoding" -> me = Descriptors.MessageEncoding.valueOf(v);
+                case "json_format" -> jf = Descriptors.JsonFormat.valueOf(v);
+                default -> { /* feature inconnue — silencieusement ignorée */ }
+            }
+        }
+        return new Descriptors.Features(fp, et, rfe, uv, me, jf);
     }
 
     private static Descriptors.ServiceDescriptor resolveService(ServiceDecl s, String pkg, Map<String, Symbol> table) {
@@ -181,18 +222,23 @@ public final class SchemaResolver {
 
     // ============================================================ Resolution
 
-    private static Descriptors.Descriptor resolveMessage(MessageDecl m, String scope, Map<String, Symbol> table) {
+    private static Descriptors.Descriptor resolveMessage(MessageDecl m, String scope,
+                                                         Map<String, Symbol> table,
+                                                         Descriptors.Features inherited) {
         String full = join(scope, m.name());
+        Descriptors.Features msgFeatures = featuresFromOptions(m.options(), inherited);
         List<Descriptors.FieldDescriptor> fields = new ArrayList<>();
-        for (FieldDecl f : m.fields()) fields.add(resolveField(f, full, table));
+        for (FieldDecl f : m.fields()) fields.add(resolveField(f, full, table, msgFeatures));
         List<Descriptors.Descriptor> nested = new ArrayList<>();
-        for (MessageDecl n : m.nestedMessages()) nested.add(resolveMessage(n, full, table));
+        for (MessageDecl n : m.nestedMessages()) nested.add(resolveMessage(n, full, table, msgFeatures));
         List<Descriptors.EnumDescriptor> nestedE = new ArrayList<>();
         for (EnumDecl e : m.nestedEnums()) nestedE.add(toEnumDescriptor(e, full));
         return new Descriptors.Descriptor(m.name(), full, fields, nested, nestedE);
     }
 
-    private static Descriptors.FieldDescriptor resolveField(FieldDecl f, String scope, Map<String, Symbol> table) {
+    private static Descriptors.FieldDescriptor resolveField(FieldDecl f, String scope,
+                                                            Map<String, Symbol> table,
+                                                            Descriptors.Features inherited) {
         Descriptors.Cardinality card = switch (f.kind()) {
             case REPEATED -> Descriptors.Cardinality.REPEATED;
             case OPTIONAL -> Descriptors.Cardinality.EXPLICIT;
@@ -225,7 +271,10 @@ public final class SchemaResolver {
             }
         }
 
-        boolean packed = card == Descriptors.Cardinality.REPEATED && type.packable();
+        // packed dépend désormais de la feature repeated_field_encoding
+        boolean packed = card == Descriptors.Cardinality.REPEATED
+                && type.packable()
+                && inherited.repeatedFieldEncoding() == Descriptors.RepeatedFieldEncoding.PACKED;
         return new Descriptors.FieldDescriptor(
                 f.name(),
                 Descriptors.toJsonName(f.name()),
@@ -234,7 +283,8 @@ public final class SchemaResolver {
                 card,
                 packed,
                 messageTypeName,
-                enumTypeName);
+                enumTypeName,
+                inherited);
     }
 
     private static String canonicalFullName(String scope, String simpleName,

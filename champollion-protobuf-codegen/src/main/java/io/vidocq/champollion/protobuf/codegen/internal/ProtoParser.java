@@ -228,6 +228,7 @@ public final class ProtoParser {
         List<FieldDecl> fields = new ArrayList<>();
         List<MessageDecl> nested = new ArrayList<>();
         List<EnumDecl> nestedEnums = new ArrayList<>();
+        List<OptionEntry> options = new ArrayList<>();
         while (peek().kind() != TokenKind.RBRACE && peek().kind() != TokenKind.EOF) {
             Token t = peek();
             if (t.kind() == TokenKind.SEMI) { consume(); continue; }
@@ -242,7 +243,7 @@ public final class ProtoParser {
                     case "enum" -> nestedEnums.add(parseEnum());
                     case "reserved" -> skipUntilSemi();
                     case "extensions" -> skipUntilSemi();
-                    case "option" -> parseOption();
+                    case "option" -> options.add(parseOption());
                     case "oneof" -> skipBlock("oneof"); // M2.1 : ignore oneof
                     case "map" -> skipUntilSemi();      // M2.1 : ignore map
                     default -> fields.add(parseField());
@@ -252,7 +253,7 @@ public final class ProtoParser {
             }
         }
         expect(TokenKind.RBRACE);
-        return new MessageDecl(name.text(), fields, nested, nestedEnums);
+        return new MessageDecl(name.text(), fields, nested, nestedEnums, options);
     }
 
     private FieldDecl parseField() {
