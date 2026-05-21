@@ -84,9 +84,11 @@ public final class RuntimeBinding {
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
         } catch (IllegalAccessException e) {
-            throw new IllegalStateException(
-                    "Cannot access " + type + ". Add 'opens " + type.getPackageName()
-                            + " to io.vidocq.champollion.protobuf;' in the consumer module-info.", e);
+            // Fallback : un record public dans un module non-ouvert (par
+            // exemple chargé dynamiquement dans l'unnamed module) reste
+            // utilisable via publicLookup — son ctor canonique et ses
+            // accessors sont publics par construction.
+            lookup = MethodHandles.publicLookup();
         }
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];

@@ -704,8 +704,7 @@ public final class ProtobufJsonRuntime {
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
         } catch (IllegalAccessException e) {
-            throw new IllegalStateException(
-                    "Cannot access " + type + " — open package to io.vidocq.champollion.protobuf.", e);
+            lookup = MethodHandles.publicLookup();
         }
         List<FieldBinding> fields = new ArrayList<>();
         Map<String, FieldBinding> byJsonName = new HashMap<>();
