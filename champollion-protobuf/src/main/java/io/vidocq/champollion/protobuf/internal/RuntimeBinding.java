@@ -116,6 +116,7 @@ public final class RuntimeBinding {
                     pf.type(),
                     repeated,
                     packed,
+                    pf.explicitPresence(),
                     elementType,
                     i,
                     getter,
@@ -174,8 +175,9 @@ public final class RuntimeBinding {
             if (value == null) continue;
             if (fb.repeated) {
                 writeRepeated(fb, (List<?>) value, out);
-            } else if (isDefault(fb, value)) {
+            } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 // Proto3 implicit presence : on omet les valeurs par défaut sur la wire.
+                // En EXPLICIT (proto2 / Edition 2023 override), on écrit toujours.
                 continue;
             } else {
                 out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
@@ -261,7 +263,7 @@ public final class RuntimeBinding {
                         total += fb.tagBytes.length + scalarSize(fb, item);
                     }
                 }
-            } else if (isDefault(fb, value)) {
+            } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 continue;
             } else {
                 total += fb.tagBytes.length + scalarSize(fb, value);
@@ -465,6 +467,7 @@ public final class RuntimeBinding {
         final FieldType type;
         final boolean repeated;
         final boolean packed;
+        final boolean explicitPresence;
         final Class<?> elementType;
         final int componentIndex;
         final MethodHandle getter;
@@ -472,12 +475,14 @@ public final class RuntimeBinding {
         final byte[] packedTagBytes;
 
         FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
+                     boolean explicitPresence,
                      Class<?> elementType, int componentIndex, MethodHandle getter,
                      byte[] tagBytes, byte[] packedTagBytes) {
             this.number = number;
             this.type = type;
             this.repeated = repeated;
             this.packed = packed;
+            this.explicitPresence = explicitPresence;
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;

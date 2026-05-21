@@ -30,4 +30,14 @@ public @interface ProtobufField {
      * ou non-packables. {@code true} par défaut (conforme à proto3 / Editions 2023).
      */
     boolean packed() default true;
+
+    /**
+     * {@code features.field_presence = EXPLICIT} (proto2 / Edition 2023 override) —
+     * sérialise le champ même si sa valeur est égale au default proto3 (chaîne vide,
+     * 0, false). {@code false} par défaut (proto3 IMPLICIT : omet les défauts).
+     *
+     * <p>{@code null} reste toujours omis : ce flag distingue {@code default} de
+     * {@code absent}, pas l'inverse.</p>
+     */
+    boolean explicitPresence() default false;
 }
