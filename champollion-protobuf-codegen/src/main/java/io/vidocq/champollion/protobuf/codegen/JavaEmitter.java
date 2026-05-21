@@ -49,7 +49,52 @@ public final class JavaEmitter {
         for (Descriptors.EnumDescriptor e : file.enumTypes()) {
             out.put(javaPackage + "." + e.name(), emitEnumFile(e));
         }
+        for (Descriptors.ServiceDescriptor s : file.services()) {
+            out.put(javaPackage + "." + s.name(), emitServiceFile(s));
+        }
         return out;
+    }
+
+    // ============================================================ Service
+
+    private String emitServiceFile(Descriptors.ServiceDescriptor s) {
+        StringBuilder sb = new StringBuilder(1024);
+        sb.append("package ").append(javaPackage).append(";\n\n");
+        sb.append("import io.vidocq.champollion.protobuf.ProtobufRpc;\n");
+        sb.append("import io.vidocq.champollion.protobuf.ProtobufService;\n\n");
+        sb.append("@ProtobufService(\"").append(s.fullName()).append("\")\n");
+        sb.append("public interface ").append(s.name()).append(" {\n");
+        for (Descriptors.MethodDescriptor m : s.methods()) {
+            sb.append('\n');
+            sb.append("    @ProtobufRpc(value = \"").append(m.name()).append('"');
+            if (m.clientStreaming()) sb.append(", clientStreaming = true");
+            if (m.serverStreaming()) sb.append(", serverStreaming = true");
+            sb.append(")\n");
+            String input = simpleNameForReference(m.inputType());
+            String output = simpleNameForReference(m.outputType());
+            // Unary uniquement pour M2.6. Le streaming est exposé via la
+            // signature avec types byte[] (canal opaque) en attendant un
+            // type d'abstraction stable (Flow.Publisher en M2.7).
+            if (m.isUnary()) {
+                sb.append("    ").append(output).append(' ')
+                        .append(decapitalize(m.name())).append("(")
+                        .append(input).append(" request);\n");
+            } else {
+                sb.append("    // TODO M2.7 — streaming (clientStreaming=")
+                        .append(m.clientStreaming()).append(", serverStreaming=")
+                        .append(m.serverStreaming()).append(")\n");
+                sb.append("    java.util.concurrent.Flow.Publisher<byte[]> ")
+                        .append(decapitalize(m.name())).append("(")
+                        .append("java.util.concurrent.Flow.Publisher<byte[]> request);\n");
+            }
+        }
+        sb.append("}\n");
+        return sb.toString();
+    }
+
+    private static String decapitalize(String s) {
+        if (s.isEmpty()) return s;
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     // ============================================================ Message

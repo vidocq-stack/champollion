@@ -12,7 +12,9 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.NamedType;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.OptionEntry;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.ProtoFile;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Scalar;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst.MethodDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.ScalarType;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst.ServiceDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Syntax;
 import io.vidocq.champollion.protobuf.codegen.internal.ProtoLexer.Token;
 import io.vidocq.champollion.protobuf.codegen.internal.ProtoLexer.TokenKind;
@@ -57,6 +59,7 @@ public final class ProtoParser {
         List<ImportDecl> imports = new ArrayList<>();
         List<MessageDecl> messages = new ArrayList<>();
         List<EnumDecl> enums = new ArrayList<>();
+        List<ServiceDecl> services = new ArrayList<>();
         List<OptionEntry> options = new ArrayList<>();
 
         while (peek().kind() != TokenKind.EOF) {
@@ -68,7 +71,7 @@ public final class ProtoParser {
                     case "option" -> options.add(parseOption());
                     case "message" -> messages.add(parseMessage());
                     case "enum" -> enums.add(parseEnum());
-                    case "service" -> skipBlock("service");
+                    case "service" -> services.add(parseService());
                     default -> throw err("Unexpected top-level identifier '" + t.text() + "'", t);
                 }
             } else if (t.kind() == TokenKind.SEMI) {
@@ -77,7 +80,78 @@ public final class ProtoParser {
                 throw err("Unexpected token at top-level", t);
             }
         }
-        return new ProtoFile(fileName, syntax, packageName, imports, messages, enums, options);
+        return new ProtoFile(fileName, syntax, packageName, imports, messages, enums, services, options);
+    }
+
+    private ServiceDecl parseService() {
+        consume(); // 'service'
+        Token name = expect(TokenKind.IDENT);
+        expect(TokenKind.LBRACE);
+        List<MethodDecl> methods = new ArrayList<>();
+        while (peek().kind() != TokenKind.RBRACE && peek().kind() != TokenKind.EOF) {
+            Token t = peek();
+            if (t.kind() == TokenKind.SEMI) { consume(); continue; }
+            if (t.kind() == TokenKind.IDENT) {
+                if (t.text().equals("rpc")) {
+                    methods.add(parseRpcMethod());
+                } else if (t.text().equals("option")) {
+                    parseOption();
+                } else {
+                    throw err("Unexpected token inside service body", t);
+                }
+            } else {
+                throw err("Unexpected token inside service body", t);
+            }
+        }
+        expect(TokenKind.RBRACE);
+        return new ServiceDecl(name.text(), methods);
+    }
+
+    private MethodDecl parseRpcMethod() {
+        consume(); // 'rpc'
+        Token name = expect(TokenKind.IDENT);
+        expect(TokenKind.LPAREN);
+        boolean clientStreaming = false;
+        if (peek().kind() == TokenKind.IDENT && peek().text().equals("stream")) {
+            consume();
+            clientStreaming = true;
+        }
+        String input = parseMessageRef();
+        expect(TokenKind.RPAREN);
+        // 'returns'
+        Token returnsKw = expect(TokenKind.IDENT);
+        if (!returnsKw.text().equals("returns")) {
+            throw err("Expected 'returns' after rpc input", returnsKw);
+        }
+        expect(TokenKind.LPAREN);
+        boolean serverStreaming = false;
+        if (peek().kind() == TokenKind.IDENT && peek().text().equals("stream")) {
+            consume();
+            serverStreaming = true;
+        }
+        String output = parseMessageRef();
+        expect(TokenKind.RPAREN);
+        // Body optionnel { option ... } ou simple ';'
+        if (peek().kind() == TokenKind.LBRACE) {
+            skipBalanced(TokenKind.LBRACE, TokenKind.RBRACE);
+        } else {
+            expect(TokenKind.SEMI);
+        }
+        return new MethodDecl(name.text(), input, output, clientStreaming, serverStreaming);
+    }
+
+    private String parseMessageRef() {
+        StringBuilder sb = new StringBuilder();
+        if (peek().kind() == TokenKind.DOT) {
+            consume();
+            sb.append('.');
+        }
+        sb.append(expect(TokenKind.IDENT).text());
+        while (peek().kind() == TokenKind.DOT) {
+            consume();
+            sb.append('.').append(expect(TokenKind.IDENT).text());
+        }
+        return sb.toString();
     }
 
     private Syntax parseSyntaxOrEdition() {

@@ -8,12 +8,14 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.Edition;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldKind;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MessageDecl;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst.MethodDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.NamedType;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Proto2;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Proto3;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.ProtoFile;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Scalar;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.ScalarType;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst.ServiceDecl;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -88,12 +90,52 @@ public final class SchemaResolver {
         for (MessageDecl m : file.messages()) outMsgs.add(resolveMessage(m, pkg, table));
         List<Descriptors.EnumDescriptor> outEnums = new ArrayList<>();
         for (EnumDecl e : file.enums()) outEnums.add(toEnumDescriptor(e, pkg));
+        List<Descriptors.ServiceDescriptor> outServices = new ArrayList<>();
+        for (ServiceDecl s : file.services()) outServices.add(resolveService(s, pkg, table));
         return new Descriptors.FileDescriptor(
                 file.fileName(),
                 pkg,
                 toSyntax(file.syntax()),
                 outMsgs,
-                outEnums);
+                outEnums,
+                outServices);
+    }
+
+    private static Descriptors.ServiceDescriptor resolveService(ServiceDecl s, String pkg, Map<String, Symbol> table) {
+        String full = join(pkg, s.name());
+        List<Descriptors.MethodDescriptor> outMethods = new ArrayList<>();
+        for (MethodDecl m : s.methods()) {
+            String input = resolveMessageRef(m.inputType(), pkg, table, full, m.name(), "input");
+            String output = resolveMessageRef(m.outputType(), pkg, table, full, m.name(), "output");
+            outMethods.add(new Descriptors.MethodDescriptor(
+                    m.name(), input, output, m.clientStreaming(), m.serverStreaming()));
+        }
+        return new Descriptors.ServiceDescriptor(s.name(), full, outMethods);
+    }
+
+    private static String resolveMessageRef(String ref, String pkg, Map<String, Symbol> table,
+                                            String serviceFull, String methodName, String role) {
+        Symbol sym = lookup(ref, pkg, table);
+        if (sym == null) {
+            throw new SchemaResolutionException(
+                    "Unresolved " + role + " type '" + ref + "' in rpc "
+                            + serviceFull + "." + methodName);
+        }
+        if (!(sym instanceof MessageSymbol ms)) {
+            throw new SchemaResolutionException(
+                    "RPC " + role + " must be a message, got " + ref + " in " + serviceFull + "." + methodName);
+        }
+        // Re-find canonical
+        if (ref.startsWith(".")) return ref.substring(1);
+        String s = pkg;
+        while (true) {
+            String candidate = join(s, ref);
+            if (table.containsKey(candidate)) return candidate;
+            if (s.isEmpty()) break;
+            int dot = s.lastIndexOf('.');
+            s = (dot < 0) ? "" : s.substring(0, dot);
+        }
+        return ms.decl().name();
     }
 
     // ============================================================ Symbol table

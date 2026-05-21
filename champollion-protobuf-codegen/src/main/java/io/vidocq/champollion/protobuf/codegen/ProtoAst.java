@@ -89,6 +89,7 @@ public final class ProtoAst {
             List<ImportDecl> imports,
             List<MessageDecl> messages,
             List<EnumDecl> enums,
+            List<ServiceDecl> services,
             List<OptionEntry> options) {
 
         public ProtoFile {
@@ -97,7 +98,22 @@ public final class ProtoAst {
             imports = List.copyOf(imports);
             messages = List.copyOf(messages);
             enums = List.copyOf(enums);
+            services = List.copyOf(services);
             options = List.copyOf(options);
         }
     }
+
+    /** {@code service Foo { rpc Bar(Req) returns (Resp); }}. */
+    public record ServiceDecl(String name, List<MethodDecl> methods) {
+        public ServiceDecl {
+            methods = List.copyOf(methods);
+        }
+    }
+
+    public record MethodDecl(
+            String name,
+            String inputType,
+            String outputType,
+            boolean clientStreaming,
+            boolean serverStreaming) {}
 }

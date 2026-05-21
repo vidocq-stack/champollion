@@ -224,17 +224,28 @@ class ProtoParserTest {
     class Resilience {
 
         @Test
-        void services_skipped() {
+        void services_parsed_with_methods() {
             String src = """
                     syntax = "proto3";
                     message Req {}
                     message Resp {}
                     service S {
                       rpc Foo (Req) returns (Resp);
+                      rpc Bar (stream Req) returns (stream Resp);
                     }
                     """;
             ProtoFile f = parse(src);
             assertEquals(2, f.messages().size());
+            assertEquals(1, f.services().size());
+            ProtoAst.ServiceDecl svc = f.services().get(0);
+            assertEquals("S", svc.name());
+            assertEquals(2, svc.methods().size());
+            assertEquals("Foo", svc.methods().get(0).name());
+            assertEquals("Req", svc.methods().get(0).inputType());
+            assertEquals("Resp", svc.methods().get(0).outputType());
+            assertEquals(false, svc.methods().get(0).clientStreaming());
+            assertEquals(true, svc.methods().get(1).clientStreaming());
+            assertEquals(true, svc.methods().get(1).serverStreaming());
         }
 
         @Test

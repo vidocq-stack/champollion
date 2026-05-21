@@ -120,7 +120,8 @@ public final class Descriptors {
             String packageName,
             Syntax syntax,
             List<Descriptor> messageTypes,
-            List<EnumDescriptor> enumTypes) {
+            List<EnumDescriptor> enumTypes,
+            List<ServiceDescriptor> services) {
 
         public FileDescriptor {
             Objects.requireNonNull(name, "name");
@@ -128,6 +129,13 @@ public final class Descriptors {
             syntax = syntax == null ? Syntax.PROTO3 : syntax;
             messageTypes = List.copyOf(messageTypes);
             enumTypes = List.copyOf(enumTypes);
+            services = List.copyOf(services);
+        }
+
+        /** Constructeur de compat (sans services), conserve les call-sites M1.4. */
+        public FileDescriptor(String name, String packageName, Syntax syntax,
+                              List<Descriptor> messageTypes, List<EnumDescriptor> enumTypes) {
+            this(name, packageName, syntax, messageTypes, enumTypes, List.of());
         }
 
         public Descriptor findMessageType(String name) {
@@ -136,6 +144,40 @@ public final class Descriptors {
             }
             return null;
         }
+
+        public ServiceDescriptor findService(String name) {
+            for (ServiceDescriptor s : services) {
+                if (s.name().equals(name) || s.fullName().equals(name)) return s;
+            }
+            return null;
+        }
+    }
+
+    public record ServiceDescriptor(
+            String name,
+            String fullName,
+            List<MethodDescriptor> methods) {
+
+        public ServiceDescriptor {
+            methods = List.copyOf(methods);
+        }
+
+        public MethodDescriptor findMethod(String name) {
+            for (MethodDescriptor m : methods) {
+                if (m.name().equals(name)) return m;
+            }
+            return null;
+        }
+    }
+
+    public record MethodDescriptor(
+            String name,
+            String inputType,
+            String outputType,
+            boolean clientStreaming,
+            boolean serverStreaming) {
+
+        public boolean isUnary() { return !clientStreaming && !serverStreaming; }
     }
 
     public record Descriptor(
