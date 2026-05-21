@@ -157,6 +157,11 @@ public final class ProtoParser {
         while (peek().kind() != TokenKind.RBRACE && peek().kind() != TokenKind.EOF) {
             Token t = peek();
             if (t.kind() == TokenKind.SEMI) { consume(); continue; }
+            if (t.kind() == TokenKind.DOT) {
+                // Champ dont le type est fully-qualified (.pkg.Type).
+                fields.add(parseField());
+                continue;
+            }
             if (t.kind() == TokenKind.IDENT) {
                 switch (t.text()) {
                     case "message" -> nested.add(parseMessage());
@@ -197,11 +202,18 @@ public final class ProtoParser {
     }
 
     private FieldTypeRef parseType() {
+        // Leading dot pour fully-qualified : .google.protobuf.Timestamp
+        boolean leading = peek().kind() == TokenKind.DOT;
+        if (leading) consume();
         Token t = expect(TokenKind.IDENT);
-        Scalar scalar = SCALARS.get(t.text());
-        if (scalar != null) return new ScalarType(scalar);
-        // Composer un full ident pour les types nommés (Foo.Bar.Baz).
-        StringBuilder sb = new StringBuilder(t.text());
+        // Un type scalaire ne peut pas avoir de leading dot.
+        if (!leading) {
+            Scalar scalar = SCALARS.get(t.text());
+            if (scalar != null) return new ScalarType(scalar);
+        }
+        StringBuilder sb = new StringBuilder();
+        if (leading) sb.append('.');
+        sb.append(t.text());
         while (peek().kind() == TokenKind.DOT) {
             consume();
             Token next = expect(TokenKind.IDENT);
