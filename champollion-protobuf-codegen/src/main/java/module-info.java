@@ -9,6 +9,7 @@ module io.vidocq.champollion.protobuf.codegen {
     requires io.vidocq.champollion.protobuf;
 
     exports io.vidocq.champollion.protobuf.codegen;
+    exports io.vidocq.champollion.protobuf.codegen.cli;
 
     // APT @ProtobufStatic : activé par javac via ServiceLoader.
     provides javax.annotation.processing.Processor
