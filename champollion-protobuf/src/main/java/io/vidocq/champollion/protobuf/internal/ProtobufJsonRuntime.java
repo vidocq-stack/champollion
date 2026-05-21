@@ -2,11 +2,14 @@ package io.vidocq.champollion.protobuf.internal;
 
 import io.vidocq.champollion.protobuf.Descriptors;
 import io.vidocq.champollion.protobuf.FieldType;
+import io.vidocq.champollion.protobuf.Protobuf;
 import io.vidocq.champollion.protobuf.ProtobufField;
+import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
 import io.vidocq.champollion.protobuf.wkt.Empty;
 import io.vidocq.champollion.protobuf.wkt.FieldMask;
 import io.vidocq.champollion.protobuf.wkt.Timestamp;
+import io.vidocq.champollion.protobuf.wkt.TypeRegistry;
 import io.vidocq.champollion.protobuf.wkt.Wrappers;
 
 import java.math.BigDecimal;
@@ -15,6 +18,10 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
 import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
+import jakarta.json.JsonWriter;
 import jakarta.json.stream.JsonGenerator;
 import jakarta.json.stream.JsonParser;
 
@@ -182,6 +189,10 @@ public final class ProtobufJsonRuntime {
             gen.write(formatFieldMask(m));
             return true;
         }
+        if (message instanceof Any a) {
+            writeAny(a, gen, null);
+            return true;
+        }
         return writeWrapperTopLevel(message, gen);
     }
 
@@ -206,7 +217,127 @@ public final class ProtobufJsonRuntime {
             if (key != null) gen.write(key, s); else gen.write(s);
             return true;
         }
+        if (v instanceof Any a) {
+            writeAny(a, gen, key);
+            return true;
+        }
         return writeWrapperAsValue(v, gen, key);
+    }
+
+    // ============================================================ Any JSON canonical
+
+    /**
+     * Sérialise un {@link Any} selon le canonical mapping :
+     * <ul>
+     *   <li>Si le type wrappé est un WKT (Timestamp, Duration, etc.) →
+     *       {@code {"@type":"...", "value":<wkt-form>}}</li>
+     *   <li>Sinon → {@code {"@type":"...", ...champs aplatis}}</li>
+     *   <li>Type inconnu → fallback dégradé
+     *       {@code {"@type":"...", "value":"<base64>"}} (non strictement
+     *       canonical mais utile pour la traversée opaque)</li>
+     * </ul>
+     */
+    private static void writeAny(Any any, JsonGenerator gen, String key) {
+        String typeUrl = any.type_url();
+        String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
+        Class<?> type = TypeRegistry.lookup(fullName);
+
+        if (key != null) gen.writeStartObject(key);
+        else gen.writeStartObject();
+        gen.write("@type", typeUrl);
+
+        if (type == null) {
+            // Fallback : type inconnu — émet la valeur base64.
+            gen.write("value", java.util.Base64.getEncoder().encodeToString(any.value()));
+            gen.writeEnd();
+            return;
+        }
+
+        // Décoder la valeur dans le type concret.
+        Object wrapped;
+        try {
+            wrapped = Protobuf.parser(type).parseFrom(any.value());
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Cannot decode Any.value as " + type, e);
+        }
+
+        if (isWktClass(type) && type != Empty.class) {
+            // WKT : un seul champ "value" avec le format canonical du WKT.
+            writeWktAsValue(wrapped, gen, "value");
+        } else if (type == Empty.class) {
+            // Empty wrappé : un seul champ "value": {}
+            gen.writeStartObject("value").writeEnd();
+        } else {
+            // Message ordinaire : aplatir les champs au même niveau que @type.
+            JsonBindingPlan plan = planFor(type);
+            writeMessageBody(plan, wrapped, gen);
+        }
+        gen.writeEnd();
+    }
+
+    /**
+     * Lit un {@link Any} depuis un {@link JsonParser}. L'event {@code v}
+     * passé en paramètre est le {@code START_OBJECT} qui débute l'objet Any.
+     * On bufferise tout l'objet dans un {@link JsonObject} DOM pour
+     * pouvoir lire {@code @type} avant le reste — JSON est non-ordonné.
+     */
+    private static Any readAny(JsonParser parser) throws java.io.IOException {
+        JsonObject obj = parser.getObject();
+        if (!obj.containsKey("@type")) {
+            throw new java.io.IOException("Any object must contain @type");
+        }
+        String typeUrl = obj.getString("@type");
+        String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
+        Class<?> type = TypeRegistry.lookup(fullName);
+
+        byte[] valueBytes;
+        if (type == null) {
+            // Fallback : value comme base64
+            JsonValue v = obj.get("value");
+            if (v == null) valueBytes = new byte[0];
+            else if (v instanceof JsonString js) {
+                valueBytes = java.util.Base64.getDecoder().decode(js.getString());
+            } else {
+                valueBytes = new byte[0];
+            }
+            return new Any(typeUrl, valueBytes);
+        }
+
+        if (isWktClass(type)) {
+            // WKT : un seul champ "value" à parser via la mécanique WKT
+            JsonValue v = obj.get("value");
+            if (v == null) {
+                if (type == Empty.class) {
+                    valueBytes = new byte[0];
+                } else {
+                    throw new java.io.IOException("Any/" + fullName + " missing required 'value'");
+                }
+            } else {
+                String wktJson = jsonValueToString(v);
+                Object wrapped = fromJsonString(type, wktJson);
+                valueBytes = Protobuf.toByteArray(wrapped);
+            }
+            return new Any(typeUrl, valueBytes);
+        }
+
+        // Message ordinaire : reconstruire un JSON object sans @type, parser via runtime
+        var builder = Json.createObjectBuilder();
+        for (var entry : obj.entrySet()) {
+            if (!entry.getKey().equals("@type")) builder.add(entry.getKey(), entry.getValue());
+        }
+        JsonObject withoutType = builder.build();
+        String inner = jsonValueToString(withoutType);
+        Object wrapped = fromJsonString(type, inner);
+        valueBytes = Protobuf.toByteArray(wrapped);
+        return new Any(typeUrl, valueBytes);
+    }
+
+    private static String jsonValueToString(JsonValue v) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        try (JsonWriter w = Json.createWriter(sw)) {
+            w.write(v);
+        }
+        return sw.toString();
     }
 
     private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
@@ -434,6 +565,7 @@ public final class ProtobufJsonRuntime {
                 || type == Duration.class
                 || type == Empty.class
                 || type == FieldMask.class
+                || type == Any.class
                 || type == Wrappers.DoubleValue.class
                 || type == Wrappers.FloatValue.class
                 || type == Wrappers.Int64Value.class
@@ -446,6 +578,12 @@ public final class ProtobufJsonRuntime {
     }
 
     private static Object readWktValue(Class<?> type, JsonParser parser, JsonParser.Event v) throws IOException {
+        if (type == Any.class) {
+            if (v != JsonParser.Event.START_OBJECT) {
+                throw new IOException("Expected JSON object for Any, got " + v);
+            }
+            return readAny(parser);
+        }
         if (type == Timestamp.class) {
             requireString(v, "Timestamp");
             return parseTimestamp(parser.getString());
