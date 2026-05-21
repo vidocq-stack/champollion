@@ -43,6 +43,16 @@ public final class Protobuf {
         return RuntimeBinding.parser(type);
     }
 
+    /**
+     * Force le résolveur runtime reflectif ({@code MethodHandles}), même si un
+     * {@code ParserProvider} statique est disponible via {@link ServiceLoader}.
+     * Utile pour le bench différentiel (M3.3) ou les outils de diagnostic.
+     */
+    public static <T> Parser<T> runtimeParser(Class<T> type) {
+        Objects.requireNonNull(type, "type");
+        return RuntimeBinding.parser(type);
+    }
+
     public static byte[] toByteArray(Object message) {
         Objects.requireNonNull(message, "message");
         try {

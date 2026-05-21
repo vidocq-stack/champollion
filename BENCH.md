@@ -439,3 +439,44 @@ java -jar champollion-bench/target/benchmarks.jar -rf json -rff after.json
 diff <(jq '.[] | {benchmark, primaryMetric: .primaryMetric.score}' before.json) \
      <(jq '.[] | {benchmark, primaryMetric: .primaryMetric.score}' after.json)
 ```
+
+---
+
+## 9. Protobuf — Runtime reflectif (M1.3) vs APT statique (M3.1)
+
+**Date** : 2026-05-21
+**Hardware** : macOS aarch64 (Apple Silicon)
+**JVM** : OpenJDK 25 Temurin, Compiler Blackholes activés
+**Commande** :
+
+```bash
+java -jar champollion-bench/target/benchmarks.jar ProtobufBenchmark \
+     -wi 2 -i 3 -f 1 -t 1 -tu us
+```
+
+**Workload** : record `BenchPerson(name, age, repeated tags×3, active, sequence)` — 5 champs, encodé en ~70 octets. Voir `champollion-bench/src/main/java/io/vidocq/champollion/bench/ProtobufBenchmark.java`.
+
+### Résultats bruts
+
+| Benchmark | Mode | Score | Erreur | Unité |
+|---|---|---|---|---|
+| `parse_static` | thrpt | **22,454** | ± 2,996 | ops/µs |
+| `parse_runtime` | thrpt | 7,549 | ± 0,399 | ops/µs |
+| `serialize` | thrpt | 5,120 | ± 0,064 | ops/µs |
+| `parse_static` | avgt | **0,044** | ± 0,001 | µs/op |
+| `parse_runtime` | avgt | 0,148 | ± 0,056 | µs/op |
+| `serialize` | avgt | 0,196 | ± 0,004 | µs/op |
+
+### Lecture
+
+- **Parser statique (M3.1) ≈ 3× plus rapide** que le runtime reflectif sur ce workload représentatif. C'est la validation expérimentale de l'effort APT.
+- **Serialize** n'a pas (encore) de fast-path statique côté écriture — c'est un candidat M3.4 si le besoin se confirme côté chappe-grpc.
+- Le smoke run (2 wi × 3 i × 1 f) garde l'incertitude haute (±13 % en `parse_static`) — un run de validation v1.0 doit faire 5 wi × 10 i × 3 f minimum.
+
+**Delta vs run précédent** : aucun, premier run JMH protobuf.
+
+### À venir (M3.4 / M4 / M5)
+
+- Comparatif vs `com.google.protobuf:protobuf-java` (référence), même workload.
+- Bench Edition 2023 features pour mesurer le coût de `field_presence=EXPLICIT`.
+- Bench JSON canonical (proto3 + Any aplatissement) — comparatif vs `protobuf-java-util`.
