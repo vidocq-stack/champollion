@@ -8,6 +8,9 @@ import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.Conformanc
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceResponse;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.TestCategory;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
+import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
+
+import java.util.List;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -85,8 +88,8 @@ class ConformanceRunnerTest {
             int respLen = din.readInt();
             byte[] respBytes = din.readNBytes(respLen);
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
-            assertTrue(resp.skipped().contains("M1.6"),
-                    "skipped doit mentionner M1.6, got: " + resp.skipped());
+            assertTrue(resp.skipped().contains("Unknown message_type"),
+                    "skipped doit mentionner le message inconnu, got: " + resp.skipped());
             assertEquals("", resp.parse_error());
         }
 
@@ -120,6 +123,76 @@ class ConformanceRunnerTest {
             assertEquals(3, count);
             String log = errBuf.toString();
             assertTrue(log.contains("total=3"), "log doit contenir le compteur: " + log);
+        }
+
+        @Test
+        void known_type_protobuf_roundtrip() throws IOException {
+            // Construit un TestAllTypesProto3 minimal, l'encode, demande au runner
+            // de le re-sérialiser en protobuf — round-trip identité.
+            TestAllTypesProto3 src = new TestAllTypesProto3(
+                    42, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
+                    "hello", new byte[0],
+                    List.of(), List.of(), List.of(), List.of());
+            byte[] payload = Protobuf.toByteArray(src);
+
+            ConformanceRequest req = new ConformanceRequest(
+                    payload, "", WireFormat.PROTOBUF,
+                    "protobuf_test_messages.proto3.TestAllTypesProto3",
+                    TestCategory.BINARY_TEST, "", "", false);
+            byte[] reqBytes = Protobuf.toByteArray(req);
+
+            ByteArrayOutputStream input = new ByteArrayOutputStream();
+            new DataOutputStream(input).writeInt(reqBytes.length);
+            input.write(reqBytes);
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            new ConformanceRunner().run(
+                    new ByteArrayInputStream(input.toByteArray()),
+                    output, new PrintStream(new ByteArrayOutputStream()));
+
+            DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
+            byte[] respBytes = din.readNBytes(din.readInt());
+            ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
+            assertEquals("", resp.parse_error(), "parse_error must be empty");
+            assertEquals("", resp.serialize_error(), "serialize_error must be empty");
+            assertEquals("", resp.skipped(), "must not be skipped");
+            // Re-parse le payload réponse en TestAllTypesProto3 et vérifie identité.
+            TestAllTypesProto3 back = Protobuf.parser(TestAllTypesProto3.class)
+                    .parseFrom(resp.protobuf_payload());
+            assertEquals(42, back.optional_int32());
+            assertEquals("hello", back.optional_string());
+        }
+
+        @Test
+        void known_type_json_output() throws IOException {
+            TestAllTypesProto3 src = new TestAllTypesProto3(
+                    7, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
+                    "", new byte[0],
+                    List.of(), List.of(), List.of(), List.of());
+            byte[] payload = Protobuf.toByteArray(src);
+
+            ConformanceRequest req = new ConformanceRequest(
+                    payload, "", WireFormat.JSON,
+                    "protobuf_test_messages.proto3.TestAllTypesProto3",
+                    TestCategory.BINARY_TEST, "", "", false);
+            byte[] reqBytes = Protobuf.toByteArray(req);
+
+            ByteArrayOutputStream input = new ByteArrayOutputStream();
+            new DataOutputStream(input).writeInt(reqBytes.length);
+            input.write(reqBytes);
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            new ConformanceRunner().run(
+                    new ByteArrayInputStream(input.toByteArray()),
+                    output, new PrintStream(new ByteArrayOutputStream()));
+
+            DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
+            byte[] respBytes = din.readNBytes(din.readInt());
+            ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
+            assertEquals("", resp.parse_error());
+            assertTrue(resp.json_payload().contains("\"optionalInt32\":7"),
+                    "JSON canonical doit utiliser camelCase et inclure optionalInt32:7 — got: "
+                            + resp.json_payload());
         }
 
         @Test

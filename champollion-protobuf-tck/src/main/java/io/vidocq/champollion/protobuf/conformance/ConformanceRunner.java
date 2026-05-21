@@ -2,9 +2,11 @@ package io.vidocq.champollion.protobuf.conformance;
 
 import io.vidocq.champollion.protobuf.Protobuf;
 import io.vidocq.champollion.protobuf.ProtobufJson;
+import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceRequest;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceResponse;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
+import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -12,6 +14,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Main wrapper du {@code conformance_test_runner} Google.
@@ -32,6 +36,24 @@ import java.io.PrintStream;
  * opérationnelle et prête à recevoir M2.</p>
  */
 public final class ConformanceRunner {
+
+    /**
+     * Registry des messages connus indexé par proto fullName (valeur de
+     * {@link ProtobufMessage#value()}). Ajouter ici tout nouveau type généré.
+     */
+    private static final Map<String, Class<?>> KNOWN_TYPES = new HashMap<>();
+    static {
+        register(TestAllTypesProto3.class);
+    }
+
+    private static void register(Class<?> type) {
+        ProtobufMessage ann = type.getAnnotation(ProtobufMessage.class);
+        if (ann == null || ann.value().isEmpty()) {
+            throw new IllegalStateException(
+                    type + " has no @ProtobufMessage(value=protoFullName)");
+        }
+        KNOWN_TYPES.put(ann.value(), type);
+    }
 
     ConformanceRunner() {}
 
@@ -78,17 +100,42 @@ public final class ConformanceRunner {
             return ConformanceResponse.parseError("Cannot decode ConformanceRequest: " + e.getMessage());
         }
 
-        // En M1.6, on ne connaît aucun message_type "TestAllTypesProto3" — le
-        // codegen .proto viendra en M2. On répond skipped pour permettre au
-        // harness de continuer.
-        String type = req.message_type();
-        if (type == null || !type.startsWith("io.vidocq.champollion.protobuf.")) {
+        Class<?> type = KNOWN_TYPES.get(req.message_type());
+        if (type == null) {
             return ConformanceResponse.skipped(
-                    "M1.6 skeleton: message_type '" + type + "' not bound — awaiting M2 codegen.");
+                    "Unknown message_type '" + req.message_type() + "' — not in M5 subset.");
         }
 
-        // Réservé pour M2/M3 : dispatch sur Class<?> par message_type et appel
-        // de Protobuf.parser / ProtobufJson.fromJson selon la WireFormat demandée.
-        return ConformanceResponse.skipped("M1.6 skeleton: in-tree types pending.");
+        Object message;
+        try {
+            if (req.hasProtobufPayload()) {
+                message = Protobuf.parser(type).parseFrom(req.protobuf_payload());
+            } else if (req.hasJsonPayload()) {
+                message = ProtobufJson.fromJson(type, req.json_payload());
+            } else if (req.hasJspbPayload()) {
+                return ConformanceResponse.skipped("JSPB wire format not implemented.");
+            } else if (req.hasTextPayload()) {
+                return ConformanceResponse.skipped("TEXT_FORMAT wire format not implemented.");
+            } else {
+                return ConformanceResponse.runtimeError("No payload provided.");
+            }
+        } catch (Exception e) {
+            return ConformanceResponse.parseError(
+                    "parse failed for " + req.message_type() + ": " + e.getMessage());
+        }
+
+        WireFormat out = req.requested_output_format();
+        try {
+            return switch (out) {
+                case PROTOBUF -> ConformanceResponse.protobufPayload(Protobuf.toByteArray(message));
+                case JSON -> ConformanceResponse.jsonPayload(ProtobufJson.toJson(message));
+                case JSPB -> ConformanceResponse.skipped("JSPB output not implemented.");
+                case TEXT_FORMAT -> ConformanceResponse.skipped("TEXT_FORMAT output not implemented.");
+                case UNSPECIFIED -> ConformanceResponse.runtimeError("Unspecified output format.");
+            };
+        } catch (Exception e) {
+            return ConformanceResponse.serializeError(
+                    "serialize failed for " + req.message_type() + " (" + out + "): " + e.getMessage());
+        }
     }
 }
