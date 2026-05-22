@@ -106,13 +106,26 @@ public final class ProtobufJsonRuntime {
 
     private static void writeScalar(FieldBinding fb, Object value, JsonGenerator gen, String key) {
         switch (fb.type) {
-            case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> {
+            case INT32, SINT32, SFIXED32 -> {
                 int v = (int) value;
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
-            case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> {
-                // Proto3 canonical : int64 *toujours* en string.
+            case UINT32, FIXED32 -> {
+                // Proto3 JSON canonical : uint32 doit toujours apparaître comme
+                // entier non-négatif — un Java int "négatif" (= valeur > 2^31)
+                // doit être promu à long unsigned.
+                long v = Integer.toUnsignedLong((int) value);
+                if (key != null) gen.write(key, v); else gen.write(v);
+            }
+            case INT64, SINT64, SFIXED64 -> {
+                // Proto3 canonical : int64 signé toujours en string.
                 String v = Long.toString((long) value);
+                if (key != null) gen.write(key, v); else gen.write(v);
+            }
+            case UINT64, FIXED64 -> {
+                // Proto3 canonical : uint64 non-signé toujours en string,
+                // en représentation unsigned.
+                String v = Long.toUnsignedString((long) value);
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case BOOL -> {
@@ -703,15 +716,39 @@ public final class ProtobufJsonRuntime {
 
     private static Object readScalar(FieldBinding fb, JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (fb.type) {
-            case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> {
+            case INT32, SINT32, SFIXED32 -> {
                 if (v == JsonParser.Event.VALUE_NUMBER) yield parser.getInt();
                 if (v == JsonParser.Event.VALUE_STRING) yield Integer.parseInt(parser.getString());
                 throw new IOException("Expected int32-compatible JSON value, got " + v);
             }
-            case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> {
+            case UINT32, FIXED32 -> {
+                // Accepte les valeurs [0, 2^32-1] et stocke en int signed (bit-preserving).
+                long raw;
+                if (v == JsonParser.Event.VALUE_NUMBER) raw = parser.getLong();
+                else if (v == JsonParser.Event.VALUE_STRING) raw = Long.parseLong(parser.getString());
+                else throw new IOException("Expected uint32-compatible JSON value, got " + v);
+                if (raw < 0L || raw > 0xFFFFFFFFL) {
+                    throw new IOException("uint32 out of range: " + raw);
+                }
+                yield (int) raw;
+            }
+            case INT64, SINT64, SFIXED64 -> {
                 if (v == JsonParser.Event.VALUE_STRING) yield Long.parseLong(parser.getString());
                 if (v == JsonParser.Event.VALUE_NUMBER) yield parser.getLong();
                 throw new IOException("Expected int64-compatible JSON value, got " + v);
+            }
+            case UINT64, FIXED64 -> {
+                // Accepte les valeurs [0, 2^64-1] et stocke en long signed (bit-preserving).
+                if (v == JsonParser.Event.VALUE_STRING) {
+                    yield Long.parseUnsignedLong(parser.getString());
+                }
+                if (v == JsonParser.Event.VALUE_NUMBER) {
+                    // JsonNumber peut représenter de gros entiers via BigInteger,
+                    // mais getLong() saturera/throw selon impl. On passe par la string.
+                    String s = parser.getValue().toString();
+                    yield Long.parseUnsignedLong(s);
+                }
+                throw new IOException("Expected uint64-compatible JSON value, got " + v);
             }
             case BOOL -> {
                 if (v == JsonParser.Event.VALUE_TRUE) yield true;
