@@ -1,5 +1,7 @@
 package io.vidocq.champollion.protobuf.tck.proto3;
 
+import io.vidocq.champollion.protobuf.ProtoEnumValue;
+
 /**
  * {@code TestAllTypesProto3.NestedEnum} — proto3, NEG=-1 inclus.
  *
@@ -7,8 +9,8 @@ package io.vidocq.champollion.protobuf.tck.proto3;
  * l'APT {@code ProtobufStaticProcessor} sur les types imbriqués.</p>
  */
 public enum NestedEnumT {
-    FOO,
-    BAR,
-    BAZ,
-    NEG
+    FOO,                          // proto value = 0 (default)
+    BAR,                          // proto value = 1
+    BAZ,                          // proto value = 2
+    @ProtoEnumValue(-1) NEG       // proto value = -1
 }

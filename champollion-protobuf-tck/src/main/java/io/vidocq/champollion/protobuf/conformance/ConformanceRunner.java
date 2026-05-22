@@ -54,6 +54,11 @@ public final class ConformanceRunner {
         register(NestedMessageT.class);
         register(TestAllTypesProto2.class);
         register(NestedMessageP2.class);
+        // Enregistre aussi dans le TypeRegistry pour Any.@type roundtrip.
+        io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(TestAllTypesProto3.class);
+        io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(TestAllTypesProto2.class);
+        io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(NestedMessageT.class);
+        io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(NestedMessageP2.class);
         // Well-Known Types — testables top-level via la conformance Google
         // ('google.protobuf.Duration' etc. comme message_type direct).
         register(Timestamp.class);
@@ -61,6 +66,10 @@ public final class ConformanceRunner {
         register(Empty.class);
         register(FieldMask.class);
         register(Any.class);
+        register(io.vidocq.champollion.protobuf.wkt.Struct.class);
+        register(io.vidocq.champollion.protobuf.wkt.Value.class);
+        register(io.vidocq.champollion.protobuf.wkt.ListValue.class);
+        // NullValue est un enum sans @ProtobufMessage → ne peut pas être register top-level.
         register(Wrappers.DoubleValue.class);
         register(Wrappers.FloatValue.class);
         register(Wrappers.Int64Value.class);

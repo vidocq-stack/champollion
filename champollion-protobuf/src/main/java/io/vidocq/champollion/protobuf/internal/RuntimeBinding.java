@@ -7,6 +7,7 @@ import io.vidocq.champollion.protobuf.MalformedProtobufException;
 import io.vidocq.champollion.protobuf.Parser;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
+import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.WireFormat;
 
 import java.io.IOException;
@@ -90,9 +91,24 @@ public final class RuntimeBinding {
             // accessors sont publics par construction.
             lookup = MethodHandles.publicLookup();
         }
+        int unknownFieldsIndex = -1;
+        MethodHandle unknownFieldsGetter = null;
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
+            // Détecter le composant UnknownFieldSet : doit s'appeler "unknownFields"
+            // (par convention) et avoir le type UnknownFieldSet. Pas annoté
+            // @ProtobufField.
+            if (rc.getType() == UnknownFieldSet.class
+                    && "unknownFields".equals(rc.getName())) {
+                unknownFieldsIndex = i;
+                try {
+                    unknownFieldsGetter = lookup.unreflect(rc.getAccessor());
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+                continue;
+            }
             ProtobufField pf = rc.getAnnotation(ProtobufField.class);
             if (pf == null) {
                 throw new IllegalArgumentException(
@@ -158,7 +174,8 @@ public final class RuntimeBinding {
         }
         Map<Integer, FieldBinding> byNumber = new HashMap<>(fields.size() * 2);
         for (FieldBinding fb : fields) byNumber.put(fb.number, fb);
-        return new BindingPlan(type, fields, byNumber, constructor, componentTypes);
+        return new BindingPlan(type, fields, byNumber, constructor, componentTypes,
+                unknownFieldsIndex, unknownFieldsGetter);
     }
 
     private static Class<?> resolveListElementType(RecordComponent rc) {
@@ -222,6 +239,17 @@ public final class RuntimeBinding {
                 writeScalar(fb, value, out);
             }
         }
+        // Ré-émet les unknown fields à la fin du message (forward-compat).
+        if (plan.unknownFieldsIndex >= 0) {
+            try {
+                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
+                if (ufs != null && !ufs.isEmpty()) ufs.writeTo(out);
+            } catch (IOException e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new IOException("Failed to read unknownFields", t);
+            }
+        }
     }
 
     private static void writeRepeated(FieldBinding fb, List<?> list, CodedOutputStream out) throws IOException {
@@ -263,7 +291,7 @@ public final class RuntimeBinding {
             case SINT32 -> out.writeSInt32NoTag((int) value);
             case SINT64 -> out.writeSInt64NoTag((long) value);
             case BOOL -> out.writeBoolNoTag((boolean) value);
-            case ENUM -> out.writeEnumNoTag(((Enum<?>) value).ordinal());
+            case ENUM -> out.writeEnumNoTag(EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value));
             case FIXED32 -> out.writeFixed32NoTag((int) value);
             case SFIXED32 -> out.writeSFixed32NoTag((int) value);
             case FLOAT -> out.writeFloatNoTag((float) value);
@@ -322,7 +350,15 @@ public final class RuntimeBinding {
             case DOUBLE -> 0.0;
             case STRING -> "";
             case BYTES -> new byte[0];
-            case ENUM, MESSAGE, MAP -> null;
+            case ENUM -> {
+                // Default proto3 §enum : la première constante déclarée (value=0).
+                // En cas d'enum unknown reçu sur wire, le caller distingue via byValue→null.
+                if (messageClass != null && messageClass.isEnum()) {
+                    yield messageClass.getEnumConstants()[0];
+                }
+                yield null;
+            }
+            case MESSAGE, MAP -> null;
         };
     }
 
@@ -335,7 +371,7 @@ public final class RuntimeBinding {
             case SINT32 -> out.writeSInt32NoTag((int) value);
             case SINT64 -> out.writeSInt64NoTag((long) value);
             case BOOL -> out.writeBoolNoTag((boolean) value);
-            case ENUM -> out.writeEnumNoTag(((Enum<?>) value).ordinal());
+            case ENUM -> out.writeEnumNoTag(EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value));
             case FIXED32 -> out.writeFixed32NoTag((int) value);
             case SFIXED32 -> out.writeSFixed32NoTag((int) value);
             case FLOAT -> out.writeFloatNoTag((float) value);
@@ -365,7 +401,12 @@ public final class RuntimeBinding {
             case SINT32 -> CodedOutputStream.computeRawVarint32Size(CodedOutputStream.encodeZigZag32((int) value));
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
-            case ENUM -> CodedOutputStream.computeRawVarint32Size(((Enum<?>) value).ordinal());
+            case ENUM -> {
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
+            }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
             case STRING -> {
@@ -447,6 +488,15 @@ public final class RuntimeBinding {
                 total += fb.tagBytes.length + scalarSize(fb, value);
             }
         }
+        // UnknownFieldSet : ajouter sa taille pour le buffer de sortie.
+        if (plan.unknownFieldsIndex >= 0) {
+            try {
+                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
+                if (ufs != null) total += ufs.getSerializedSize();
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
         return total;
     }
 
@@ -461,7 +511,12 @@ public final class RuntimeBinding {
             case SINT32 -> CodedOutputStream.computeRawVarint32Size(CodedOutputStream.encodeZigZag32((int) value));
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
-            case ENUM -> CodedOutputStream.computeRawVarint32Size(((Enum<?>) value).ordinal());
+            case ENUM -> {
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
+            }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
             case STRING -> {
@@ -485,7 +540,7 @@ public final class RuntimeBinding {
     private static boolean isDefault(FieldBinding fb, Object value) {
         return switch (fb.type) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32, ENUM -> {
-                if (value instanceof Enum<?> e) yield e.ordinal() == 0;
+                if (value instanceof Enum<?> e) yield EnumValueMap.forClass(e.getClass()).valueOf(e) == 0;
                 yield ((int) value) == 0;
             }
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> ((long) value) == 0L;
@@ -504,6 +559,12 @@ public final class RuntimeBinding {
     private static Object readMessage(BindingPlan plan, CodedInputStream in) throws IOException {
         Object[] slots = new Object[plan.componentTypes.length];
         boolean[] hasValue = new boolean[plan.componentTypes.length];
+        // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge.
+        java.util.Map<Integer, java.io.ByteArrayOutputStream> messageBuffers = null;
+        // UnknownFieldSet : si le record a un composant `unknownFields`, on collecte
+        // les fields inconnus pour les ré-émettre à la sérialisation (forward-compat).
+        UnknownFieldSet.Builder unknownFieldsBuilder =
+                plan.unknownFieldsIndex >= 0 ? UnknownFieldSet.newBuilder() : null;
 
         while (true) {
             int tag = in.readTag();
@@ -512,7 +573,7 @@ public final class RuntimeBinding {
             int wireType = WireFormat.getTagWireType(tag);
             FieldBinding fb = plan.byNumber.get(fieldNumber);
             if (fb == null) {
-                in.skipField(tag);
+                in.skipField(tag, unknownFieldsBuilder);
                 continue;
             }
             // Spec proto3 §oneof : si plusieurs champs d'un même oneof arrivent sur
@@ -523,17 +584,60 @@ public final class RuntimeBinding {
                     if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
                         slots[other.componentIndex] = null;
                         hasValue[other.componentIndex] = false;
+                        if (messageBuffers != null) messageBuffers.remove(other.componentIndex);
                     }
                 }
+            }
+            // Spec proto3 §field-message-merge : si MESSAGE singulier et déjà vu,
+            // on accumule les bytes pour reparse une seule fois en fin de message.
+            if (fb.type == FieldType.MESSAGE && !fb.repeated
+                    && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                if (messageBuffers == null) messageBuffers = new java.util.HashMap<>();
+                int size = in.readRawVarint32();
+                byte[] payload = in.readRawBytes(size);
+                java.io.ByteArrayOutputStream buf = messageBuffers.get(fb.componentIndex);
+                if (buf == null) {
+                    buf = new java.io.ByteArrayOutputStream();
+                    messageBuffers.put(fb.componentIndex, buf);
+                }
+                buf.write(payload, 0, payload.length);
+                hasValue[fb.componentIndex] = true;
+                continue;
             }
             readInto(fb, wireType, slots, hasValue, in);
         }
 
-        // Compléter les slots vides avec les défauts du record.
+        // Parse les sub-messages merged (proto3 §field-message-merge).
+        if (messageBuffers != null) {
+            for (var entry : messageBuffers.entrySet()) {
+                FieldBinding fb = plan.fields.stream()
+                        .filter(f -> f.componentIndex == entry.getKey())
+                        .findFirst().orElseThrow();
+                byte[] merged = entry.getValue().toByteArray();
+                CodedInputStream nestedIn = CodedInputStream.newInstance(merged);
+                Object nested = readMessage(planFor(fb.elementType), nestedIn);
+                slots[fb.componentIndex] = nested;
+            }
+        }
+
+        // Compléter les slots vides avec les défauts du record. Le composant
+        // unknownFields (s'il existe) reçoit UnknownFieldSet.EMPTY ou le build du Builder.
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
+            if (i == plan.unknownFieldsIndex) {
+                slots[i] = unknownFieldsBuilder != null
+                        ? unknownFieldsBuilder.build()
+                        : UnknownFieldSet.EMPTY;
+                continue;
+            }
             FieldBinding fb = plan.fields.get(indexOfComponent(plan, i));
             slots[i] = defaultFor(fb);
+        }
+        // Le slot unknownFields doit toujours être set (le record l'attend non-null).
+        if (plan.unknownFieldsIndex >= 0 && slots[plan.unknownFieldsIndex] == null) {
+            slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
+                    ? unknownFieldsBuilder.build()
+                    : UnknownFieldSet.EMPTY;
         }
 
         try {
@@ -633,19 +737,14 @@ public final class RuntimeBinding {
             case SINT64 -> in.readSInt64();
             case BOOL -> in.readBool();
             case ENUM -> {
-                int ordinal = in.readEnum();
+                int value = in.readEnum();
                 Class<?> ec = fb.elementType;
                 if (!ec.isEnum()) {
                     throw new IOException("ENUM field bound to non-enum class " + ec);
                 }
-                Object[] constants = ec.getEnumConstants();
-                // Proto3 spec : valeurs enum inconnues sont tolérées (forward compat).
-                // On stocke null (≡ unknown) plutôt que de jeter. Le caller decide
-                // de l'omettre lors de la re-sérialisation ou de re-émettre la valeur.
-                if (ordinal < 0 || ordinal >= constants.length) {
-                    yield null;
-                }
-                yield constants[ordinal];
+                // EnumValueMap honore @ProtoEnumValue + fallback ordinal.
+                // null = unknown value (proto3 forward-compat).
+                yield EnumValueMap.forClass(ec).byValue(value);
             }
             case FIXED32 -> in.readFixed32();
             case SFIXED32 -> in.readSFixed32();
@@ -738,7 +837,17 @@ public final class RuntimeBinding {
                        List<FieldBinding> fields,
                        Map<Integer, FieldBinding> byNumber,
                        MethodHandle constructor,
-                       Class<?>[] componentTypes) {}
+                       Class<?>[] componentTypes,
+                       int unknownFieldsIndex,
+                       MethodHandle unknownFieldsGetter) {
+
+        /** Compat ctor pour les call-sites anciens (sans support UnknownFieldSet). */
+        BindingPlan(Class<?> recordType, List<FieldBinding> fields,
+                    Map<Integer, FieldBinding> byNumber, MethodHandle constructor,
+                    Class<?>[] componentTypes) {
+            this(recordType, fields, byNumber, constructor, componentTypes, -1, null);
+        }
+    }
 
     static final class FieldBinding {
         final int number;

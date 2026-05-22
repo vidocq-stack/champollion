@@ -4,6 +4,7 @@ import io.vidocq.champollion.protobuf.FieldType;
 import io.vidocq.champollion.protobuf.Message;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
+import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
 import io.vidocq.champollion.protobuf.wkt.FieldMask;
@@ -42,6 +43,7 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 15, type = FieldType.BYTES) byte[] optional_bytes,
         @ProtobufField(number = 18, type = FieldType.MESSAGE) NestedMessageT optional_nested_message,
         @ProtobufField(number = 21, type = FieldType.ENUM) NestedEnumT optional_nested_enum,
+        @ProtobufField(number = 23, type = FieldType.ENUM) AliasedEnumT optional_aliased_enum,
         @ProtobufField(number = 31, type = FieldType.INT32) List<Integer> repeated_int32,
         @ProtobufField(number = 32, type = FieldType.INT64) List<Long> repeated_int64,
         @ProtobufField(number = 33, type = FieldType.UINT32) List<Integer> repeated_uint32,
@@ -117,11 +119,16 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 301, type = FieldType.MESSAGE) Duration optional_duration,
         @ProtobufField(number = 302, type = FieldType.MESSAGE) Timestamp optional_timestamp,
         @ProtobufField(number = 303, type = FieldType.MESSAGE) FieldMask optional_field_mask,
+        @ProtobufField(number = 304, type = FieldType.MESSAGE) io.vidocq.champollion.protobuf.wkt.Struct optional_struct,
         @ProtobufField(number = 305, type = FieldType.MESSAGE) Any optional_any,
+        @ProtobufField(number = 306, type = FieldType.MESSAGE) io.vidocq.champollion.protobuf.wkt.Value optional_value,
+        @ProtobufField(number = 307, type = FieldType.ENUM) io.vidocq.champollion.protobuf.wkt.NullValue optional_null_value,
         @ProtobufField(number = 311, type = FieldType.MESSAGE) List<Duration> repeated_duration,
         @ProtobufField(number = 312, type = FieldType.MESSAGE) List<Timestamp> repeated_timestamp,
         @ProtobufField(number = 313, type = FieldType.MESSAGE) List<FieldMask> repeated_fieldmask,
         @ProtobufField(number = 315, type = FieldType.MESSAGE) List<Any> repeated_any,
+        @ProtobufField(number = 316, type = FieldType.MESSAGE) List<io.vidocq.champollion.protobuf.wkt.Value> repeated_value,
+        @ProtobufField(number = 317, type = FieldType.MESSAGE) List<io.vidocq.champollion.protobuf.wkt.ListValue> repeated_list_value,
         // Maps (numéros 56..74, conforme Google test_messages_proto3.proto §maps).
         @ProtobufField(number = 56, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.INT32) Map<Integer, Integer> map_int32_int32,
         @ProtobufField(number = 57, type = FieldType.MAP, mapKey = FieldType.INT64, mapValue = FieldType.INT64) Map<Long, Long> map_int64_int64,
@@ -158,5 +165,8 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 415, type = FieldType.INT32) int field__name15,
         @ProtobufField(number = 416, type = FieldType.INT32) int field__Name16,
         @ProtobufField(number = 417, type = FieldType.INT32) int field_name17__,
-        @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__
+        @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__,
+        // Composant spécial : collecte les fields inconnus pour ré-émission (forward-compat).
+        // Détecté par RuntimeBinding via le type UnknownFieldSet + le nom 'unknownFields'.
+        UnknownFieldSet unknownFields
 ) implements Message {}

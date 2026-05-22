@@ -339,8 +339,9 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                 }
             }
             case WireFormat.WIRETYPE_END_GROUP -> {
-                // Le caller doit gérer END_GROUP via readTag()/checkLastTagWas().
-                return false;
+                // END_GROUP standalone (sans START_GROUP correspondant) = wire malformé.
+                throw new MalformedProtobufException(
+                        "Protocol message contained an unexpected END_GROUP tag.");
             }
             default -> throw MalformedProtobufException.invalidWireType(wireType);
         }
