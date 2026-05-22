@@ -93,7 +93,10 @@ public final class ProtobufJsonRuntime {
                 List<?> list = (List<?>) value;
                 if (list.isEmpty()) continue; // proto3 canonical : omet [] vide
                 gen.writeStartArray(fb.jsonName);
-                for (Object item : list) writeScalar(fb, item, gen, null);
+                for (Object item : list) {
+                    if (item == null) continue; // unknown enum forward-compat
+                    writeScalar(fb, item, gen, null);
+                }
                 gen.writeEnd();
             } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 continue; // proto3 implicit presence
@@ -600,7 +603,10 @@ public final class ProtobufJsonRuntime {
                 List<?> list = (List<?>) value;
                 if (list.isEmpty()) continue;
                 gen.writeStartArray(fb.jsonName);
-                for (Object item : list) writeScalar(fb, item, gen, null);
+                for (Object item : list) {
+                    if (item == null) continue;
+                    writeScalar(fb, item, gen, null);
+                }
                 gen.writeEnd();
             } else if (isDefault(fb, value)) {
                 continue;

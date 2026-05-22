@@ -178,6 +178,12 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("        in.popLimit(ol);");
             pw.println("        return result;");
             pw.println("    }");
+            pw.println();
+            // Helper enum-lenient (proto3 forward-compat : valeurs unknown → null).
+            pw.println("    private static <E> E lookupEnumOrNull(E[] values, int ordinal) {");
+            pw.println("        if (ordinal < 0 || ordinal >= values.length) return null;");
+            pw.println("        return values[ordinal];");
+            pw.println("    }");
             pw.println("}");
         }
     }
@@ -250,6 +256,14 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             return "java.util.List<" + boxIfPrimitive(elem) + "> " + name
                     + " = new java.util.ArrayList<>();";
         }
+        // Si le record component est un type wrapper boxé (Integer, Long, etc.)
+        // OU si @ProtobufField(explicitPresence=true), on initialise à null —
+        // sémantique de proto2/Edition 2023 'EXPLICIT' / oneof.
+        boolean boxedOrExplicit = pf.explicitPresence()
+                || (tm.getKind().name().equals("DECLARED") && isWrapperType(tm));
+        if (boxedOrExplicit) {
+            return javaTypeName(tm) + " " + name + " = null;";
+        }
         return switch (pf.type()) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> "int " + name + " = 0;";
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> "long " + name + " = 0L;";
@@ -262,6 +276,14 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                     + ".values()[0];";
             case MESSAGE -> javaTypeName(tm) + " " + name + " = null;";
         };
+    }
+
+    private static boolean isWrapperType(TypeMirror tm) {
+        String n = tm.toString();
+        return n.equals("java.lang.Integer") || n.equals("java.lang.Long")
+                || n.equals("java.lang.Boolean") || n.equals("java.lang.Float")
+                || n.equals("java.lang.Double") || n.equals("java.lang.Short")
+                || n.equals("java.lang.Byte") || n.equals("java.lang.Character");
     }
 
     private void emitFieldRead(PrintWriter pw, RecordComponentElement rc, ProtobufField pf) {
@@ -309,7 +331,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case BOOL -> "in.readBool()";
             case STRING -> "in.readStringRequireUtf8()";
             case BYTES -> "in.readBytes()";
-            case ENUM -> javaElemType + ".values()[in.readEnum()]";
+            case ENUM -> "lookupEnumOrNull(" + javaElemType + ".values(), in.readEnum())";
             case MESSAGE -> "readNested(" + javaElemType + ".class, in)";
         };
     }

@@ -188,18 +188,24 @@ public final class RuntimeBinding {
 
     private static void writeRepeated(FieldBinding fb, List<?> list, CodedOutputStream out) throws IOException {
         if (list.isEmpty()) return;
+        // Filtre les nulls (unknown enum values stockées en null par le parser lenient).
+        // Proto3 forward-compat : on omet ces valeurs en re-sérialisation.
         if (fb.packed) {
             int payloadSize = 0;
             for (Object item : list) {
+                if (item == null) continue;
                 payloadSize += scalarSize(fb, item);
             }
+            if (payloadSize == 0) return;
             out.writeRawBytes(fb.packedTagBytes, 0, fb.packedTagBytes.length);
             out.writeRawVarint32(payloadSize);
             for (Object item : list) {
+                if (item == null) continue;
                 writeScalarNoTag(fb, item, out);
             }
         } else {
             for (Object item : list) {
+                if (item == null) continue;
                 out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
                 writeScalar(fb, item, out);
             }
@@ -254,12 +260,17 @@ public final class RuntimeBinding {
                 if (list.isEmpty()) continue;
                 if (fb.packed) {
                     int payload = 0;
-                    for (Object item : list) payload += scalarSize(fb, item);
+                    for (Object item : list) {
+                        if (item == null) continue;
+                        payload += scalarSize(fb, item);
+                    }
+                    if (payload == 0) continue;
                     total += fb.packedTagBytes.length
                             + CodedOutputStream.computeRawVarint32Size(payload)
                             + payload;
                 } else {
                     for (Object item : list) {
+                        if (item == null) continue;
                         total += fb.tagBytes.length + scalarSize(fb, item);
                     }
                 }
