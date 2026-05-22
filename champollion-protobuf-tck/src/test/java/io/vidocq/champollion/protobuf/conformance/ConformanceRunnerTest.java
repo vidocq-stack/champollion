@@ -158,15 +158,10 @@ class ConformanceRunnerTest {
 
         @Test
         void known_type_protobuf_roundtrip() throws IOException {
-            // Construit un TestAllTypesProto3 minimal, l'encode, demande au runner
-            // de le re-sérialiser en protobuf — round-trip identité.
-            TestAllTypesProto3 src = new TestAllTypesProto3(
-                    42, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
-                    "hello", new byte[0],
-                    List.of(), List.of(), List.of(), List.of(),
-                    null, null, null, null, null, null, null, null, null,  // wrappers
-                    null, null, null, null);                                // duration/timestamp/fieldmask/any
-            byte[] payload = Protobuf.toByteArray(src);
+            // AllTypes a ~97 champs — on construit le payload en raw wire pour rester concis.
+            // tag 1 (int32 optional_int32 = 42) : 0x08 0x2A
+            // tag 14 (string optional_string = "hello") : 0x72 0x05 'h' 'e' 'l' 'l' 'o'
+            byte[] payload = new byte[] { 0x08, 0x2A, 0x72, 0x05, 'h', 'e', 'l', 'l', 'o' };
 
             ConformanceRequest req = new ConformanceRequest(
                     payload, "", WireFormat.PROTOBUF,
@@ -186,26 +181,18 @@ class ConformanceRunnerTest {
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
             byte[] respBytes = din.readNBytes(readLenLE(din));
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
-            // round-trip wire perd la distinction null/default proto3
             assertEquals("", resp.parse_error(), "parse_error must be empty after wire round-trip");
             assertEquals("", resp.serialize_error(), "serialize_error must be empty");
             assertEquals("", resp.skipped(), "must not be skipped");
-            // Re-parse le payload réponse en TestAllTypesProto3 et vérifie identité.
-            TestAllTypesProto3 back = Protobuf.parser(TestAllTypesProto3.class)
-                    .parseFrom(resp.protobuf_payload());
+            TestAllTypesProto3 back = Protobuf.parser(TestAllTypesProto3.class).parseFrom(resp.protobuf_payload());
             assertEquals(42, back.optional_int32());
             assertEquals("hello", back.optional_string());
         }
 
         @Test
         void known_type_json_output() throws IOException {
-            TestAllTypesProto3 src = new TestAllTypesProto3(
-                    7, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
-                    "", new byte[0],
-                    List.of(), List.of(), List.of(), List.of(),
-                    null, null, null, null, null, null, null, null, null,
-                    null, null, null, null);
-            byte[] payload = Protobuf.toByteArray(src);
+            // optional_int32 = 7
+            byte[] payload = new byte[] { 0x08, 0x07 };
 
             ConformanceRequest req = new ConformanceRequest(
                     payload, "", WireFormat.JSON,

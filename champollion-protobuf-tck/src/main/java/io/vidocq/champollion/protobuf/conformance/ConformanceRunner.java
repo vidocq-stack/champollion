@@ -6,6 +6,7 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceRequest;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceResponse;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
+import io.vidocq.champollion.protobuf.tck.proto3.NestedMessageT;
 import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
 import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
@@ -48,6 +49,7 @@ public final class ConformanceRunner {
     private static final Map<String, Class<?>> KNOWN_TYPES = new HashMap<>();
     static {
         register(TestAllTypesProto3.class);
+        register(NestedMessageT.class);
         // Well-Known Types — testables top-level via la conformance Google
         // ('google.protobuf.Duration' etc. comme message_type direct).
         register(Timestamp.class);

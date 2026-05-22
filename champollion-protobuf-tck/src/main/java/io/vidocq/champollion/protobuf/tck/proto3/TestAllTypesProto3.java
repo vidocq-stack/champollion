@@ -13,12 +13,15 @@ import io.vidocq.champollion.protobuf.wkt.Wrappers;
 import java.util.List;
 
 /**
- * <p><b>M5.5.4 — étendu manuellement.</b> Les champs scalaires 1..15 et
- * repeated 31..34 sont issus de {@code generate-tck-sources.sh}. Les champs
- * WKT 17..29 ont été ajoutés à la main car notre {@code SchemaResolver}
- * ne sait pas encore importer {@code google/protobuf/duration.proto} et
- * mapper {@code google.protobuf.Duration → io.vidocq.champollion.protobuf.wkt.Duration}.
- * À industrialiser en M5.6 (option {@code --external-types} du CLI codegen).</p>
+ * <p><b>M5.5.5 — étendu manuellement.</b> Modèle quasi-complet de
+ * {@code google/protobuf/test_messages_proto3.proto} pour la conformance
+ * Google. Notre {@code SchemaResolver} ne sait pas encore importer
+ * {@code google/protobuf/*.proto} cross-fichier ; les champs WKT et les
+ * messages/enums nested sont écrits à la main. À industrialiser en M5.6.</p>
+ *
+ * <p>{@link NestedMessageT} et {@link NestedEnumT} sont sortis en top-level
+ * pour contourner une limite de l'APT {@code ProtobufStaticProcessor} qui
+ * matérialise les nested type names en sous-packages (collision).</p>
  */
 @ProtobufStatic
 @ProtobufMessage("protobuf_test_messages.proto3.TestAllTypesProto3")
@@ -38,11 +41,62 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 13, type = FieldType.BOOL) boolean optional_bool,
         @ProtobufField(number = 14, type = FieldType.STRING) String optional_string,
         @ProtobufField(number = 15, type = FieldType.BYTES) byte[] optional_bytes,
+        @ProtobufField(number = 18, type = FieldType.MESSAGE) NestedMessageT optional_nested_message,
+        @ProtobufField(number = 21, type = FieldType.ENUM) NestedEnumT optional_nested_enum,
         @ProtobufField(number = 31, type = FieldType.INT32) List<Integer> repeated_int32,
         @ProtobufField(number = 32, type = FieldType.INT64) List<Long> repeated_int64,
-        @ProtobufField(number = 33, type = FieldType.STRING) List<String> repeated_string,
-        @ProtobufField(number = 34, type = FieldType.BYTES) List<byte[]> repeated_bytes,
-        // --- WKT Wrappers (numéros 201..209, conforme Google) ---
+        @ProtobufField(number = 33, type = FieldType.UINT32) List<Integer> repeated_uint32,
+        @ProtobufField(number = 34, type = FieldType.UINT64) List<Long> repeated_uint64,
+        @ProtobufField(number = 35, type = FieldType.SINT32) List<Integer> repeated_sint32,
+        @ProtobufField(number = 36, type = FieldType.SINT64) List<Long> repeated_sint64,
+        @ProtobufField(number = 37, type = FieldType.FIXED32) List<Integer> repeated_fixed32,
+        @ProtobufField(number = 38, type = FieldType.FIXED64) List<Long> repeated_fixed64,
+        @ProtobufField(number = 39, type = FieldType.SFIXED32) List<Integer> repeated_sfixed32,
+        @ProtobufField(number = 40, type = FieldType.SFIXED64) List<Long> repeated_sfixed64,
+        @ProtobufField(number = 41, type = FieldType.FLOAT) List<Float> repeated_float,
+        @ProtobufField(number = 42, type = FieldType.DOUBLE) List<Double> repeated_double,
+        @ProtobufField(number = 43, type = FieldType.BOOL) List<Boolean> repeated_bool,
+        @ProtobufField(number = 44, type = FieldType.STRING) List<String> repeated_string,
+        @ProtobufField(number = 45, type = FieldType.BYTES) List<byte[]> repeated_bytes,
+        @ProtobufField(number = 48, type = FieldType.MESSAGE) List<NestedMessageT> repeated_nested_message,
+        @ProtobufField(number = 51, type = FieldType.ENUM) List<NestedEnumT> repeated_nested_enum,
+        @ProtobufField(number = 75, type = FieldType.INT32) List<Integer> packed_int32,
+        @ProtobufField(number = 76, type = FieldType.INT64) List<Long> packed_int64,
+        @ProtobufField(number = 77, type = FieldType.UINT32) List<Integer> packed_uint32,
+        @ProtobufField(number = 78, type = FieldType.UINT64) List<Long> packed_uint64,
+        @ProtobufField(number = 79, type = FieldType.SINT32) List<Integer> packed_sint32,
+        @ProtobufField(number = 80, type = FieldType.SINT64) List<Long> packed_sint64,
+        @ProtobufField(number = 81, type = FieldType.FIXED32) List<Integer> packed_fixed32,
+        @ProtobufField(number = 82, type = FieldType.FIXED64) List<Long> packed_fixed64,
+        @ProtobufField(number = 83, type = FieldType.SFIXED32) List<Integer> packed_sfixed32,
+        @ProtobufField(number = 84, type = FieldType.SFIXED64) List<Long> packed_sfixed64,
+        @ProtobufField(number = 85, type = FieldType.FLOAT) List<Float> packed_float,
+        @ProtobufField(number = 86, type = FieldType.DOUBLE) List<Double> packed_double,
+        @ProtobufField(number = 87, type = FieldType.BOOL) List<Boolean> packed_bool,
+        @ProtobufField(number = 88, type = FieldType.ENUM) List<NestedEnumT> packed_nested_enum,
+        @ProtobufField(number = 89, type = FieldType.INT32, packed = false) List<Integer> unpacked_int32,
+        @ProtobufField(number = 90, type = FieldType.INT64, packed = false) List<Long> unpacked_int64,
+        @ProtobufField(number = 91, type = FieldType.UINT32, packed = false) List<Integer> unpacked_uint32,
+        @ProtobufField(number = 92, type = FieldType.UINT64, packed = false) List<Long> unpacked_uint64,
+        @ProtobufField(number = 93, type = FieldType.SINT32, packed = false) List<Integer> unpacked_sint32,
+        @ProtobufField(number = 94, type = FieldType.SINT64, packed = false) List<Long> unpacked_sint64,
+        @ProtobufField(number = 95, type = FieldType.FIXED32, packed = false) List<Integer> unpacked_fixed32,
+        @ProtobufField(number = 96, type = FieldType.FIXED64, packed = false) List<Long> unpacked_fixed64,
+        @ProtobufField(number = 97, type = FieldType.SFIXED32, packed = false) List<Integer> unpacked_sfixed32,
+        @ProtobufField(number = 98, type = FieldType.SFIXED64, packed = false) List<Long> unpacked_sfixed64,
+        @ProtobufField(number = 99, type = FieldType.FLOAT, packed = false) List<Float> unpacked_float,
+        @ProtobufField(number = 100, type = FieldType.DOUBLE, packed = false) List<Double> unpacked_double,
+        @ProtobufField(number = 101, type = FieldType.BOOL, packed = false) List<Boolean> unpacked_bool,
+        @ProtobufField(number = 102, type = FieldType.ENUM, packed = false) List<NestedEnumT> unpacked_nested_enum,
+        @ProtobufField(number = 111, type = FieldType.UINT32) Integer oneof_uint32,
+        @ProtobufField(number = 112, type = FieldType.MESSAGE) NestedMessageT oneof_nested_message,
+        @ProtobufField(number = 113, type = FieldType.STRING) String oneof_string,
+        @ProtobufField(number = 114, type = FieldType.BYTES) byte[] oneof_bytes,
+        @ProtobufField(number = 115, type = FieldType.BOOL) Boolean oneof_bool,
+        @ProtobufField(number = 116, type = FieldType.UINT64) Long oneof_uint64,
+        @ProtobufField(number = 117, type = FieldType.FLOAT) Float oneof_float,
+        @ProtobufField(number = 118, type = FieldType.DOUBLE) Double oneof_double,
+        @ProtobufField(number = 119, type = FieldType.ENUM) NestedEnumT oneof_enum,
         @ProtobufField(number = 201, type = FieldType.MESSAGE) Wrappers.BoolValue optional_bool_wrapper,
         @ProtobufField(number = 202, type = FieldType.MESSAGE) Wrappers.Int32Value optional_int32_wrapper,
         @ProtobufField(number = 203, type = FieldType.MESSAGE) Wrappers.Int64Value optional_int64_wrapper,
@@ -52,9 +106,21 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 207, type = FieldType.MESSAGE) Wrappers.DoubleValue optional_double_wrapper,
         @ProtobufField(number = 208, type = FieldType.MESSAGE) Wrappers.StringValue optional_string_wrapper,
         @ProtobufField(number = 209, type = FieldType.MESSAGE) Wrappers.BytesValue optional_bytes_wrapper,
-        // --- WKT singletons (numéros 301..305, conforme Google) ---
+        @ProtobufField(number = 211, type = FieldType.MESSAGE) List<Wrappers.BoolValue> repeated_bool_wrapper,
+        @ProtobufField(number = 212, type = FieldType.MESSAGE) List<Wrappers.Int32Value> repeated_int32_wrapper,
+        @ProtobufField(number = 213, type = FieldType.MESSAGE) List<Wrappers.Int64Value> repeated_int64_wrapper,
+        @ProtobufField(number = 214, type = FieldType.MESSAGE) List<Wrappers.UInt32Value> repeated_uint32_wrapper,
+        @ProtobufField(number = 215, type = FieldType.MESSAGE) List<Wrappers.UInt64Value> repeated_uint64_wrapper,
+        @ProtobufField(number = 216, type = FieldType.MESSAGE) List<Wrappers.FloatValue> repeated_float_wrapper,
+        @ProtobufField(number = 217, type = FieldType.MESSAGE) List<Wrappers.DoubleValue> repeated_double_wrapper,
+        @ProtobufField(number = 218, type = FieldType.MESSAGE) List<Wrappers.StringValue> repeated_string_wrapper,
+        @ProtobufField(number = 219, type = FieldType.MESSAGE) List<Wrappers.BytesValue> repeated_bytes_wrapper,
         @ProtobufField(number = 301, type = FieldType.MESSAGE) Duration optional_duration,
         @ProtobufField(number = 302, type = FieldType.MESSAGE) Timestamp optional_timestamp,
         @ProtobufField(number = 303, type = FieldType.MESSAGE) FieldMask optional_field_mask,
-        @ProtobufField(number = 305, type = FieldType.MESSAGE) Any optional_any
+        @ProtobufField(number = 305, type = FieldType.MESSAGE) Any optional_any,
+        @ProtobufField(number = 311, type = FieldType.MESSAGE) List<Duration> repeated_duration,
+        @ProtobufField(number = 312, type = FieldType.MESSAGE) List<Timestamp> repeated_timestamp,
+        @ProtobufField(number = 313, type = FieldType.MESSAGE) List<FieldMask> repeated_fieldmask,
+        @ProtobufField(number = 315, type = FieldType.MESSAGE) List<Any> repeated_any
 ) implements Message {}
