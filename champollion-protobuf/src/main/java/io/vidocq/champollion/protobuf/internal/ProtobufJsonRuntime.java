@@ -940,16 +940,13 @@ public final class ProtobufJsonRuntime {
                     for (Object c : constants) {
                         if (((Enum<?>) c).name().equals(name)) yield c;
                     }
-                    // Proto3 JSON canonical : enum unknown value est tolérée
-                    // (forward-compat). On retourne null — caller décide.
+                    // Proto3 JSON canonical : enum unknown value est tolérée (forward-compat).
                     yield null;
                 }
                 if (v == JsonParser.Event.VALUE_NUMBER) {
-                    int ord = parser.getInt();
-                    if (ord < 0 || ord >= constants.length) {
-                        yield null;
-                    }
-                    yield constants[ord];
+                    // Spec proto3 JSON : enum can be int value too. Mapping via @ProtoEnumValue.
+                    int protoValue = parser.getInt();
+                    yield EnumValueMap.forClass(fb.elementType).byValue(protoValue);
                 }
                 if (v == JsonParser.Event.VALUE_NULL) yield null;
                 throw new IOException("Expected enum value, got " + v);
@@ -1078,7 +1075,7 @@ public final class ProtobufJsonRuntime {
             case DOUBLE -> ((double) value) == 0.0;
             case STRING -> ((String) value).isEmpty();
             case BYTES -> ((byte[]) value).length == 0;
-            case ENUM -> ((Enum<?>) value).ordinal() == 0;
+            case ENUM -> EnumValueMap.forClass(((Enum<?>) value).getClass()).valueOf((Enum<?>) value) == 0;
             case MESSAGE -> false;
             case MAP -> ((java.util.Map<?, ?>) value).isEmpty();
         };

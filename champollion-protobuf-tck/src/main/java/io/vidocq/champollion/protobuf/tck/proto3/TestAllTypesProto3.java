@@ -42,6 +42,7 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 15, type = FieldType.BYTES) byte[] optional_bytes,
         @ProtobufField(number = 18, type = FieldType.MESSAGE) NestedMessageT optional_nested_message,
         @ProtobufField(number = 21, type = FieldType.ENUM) NestedEnumT optional_nested_enum,
+        @ProtobufField(number = 23, type = FieldType.ENUM) AliasedEnumT optional_aliased_enum,
         @ProtobufField(number = 31, type = FieldType.INT32) List<Integer> repeated_int32,
         @ProtobufField(number = 32, type = FieldType.INT64) List<Long> repeated_int64,
         @ProtobufField(number = 33, type = FieldType.UINT32) List<Integer> repeated_uint32,

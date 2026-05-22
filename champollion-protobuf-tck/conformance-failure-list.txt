@@ -58,14 +58,6 @@ Required.Proto2.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto2.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
 Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
-Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.JsonOutput
-Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.ProtobufOutput
-Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.JsonOutput
-Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.ProtobufOutput
-Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[3].JsonOutput
-Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[3].ProtobufOutput
-Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[4].JsonOutput
-Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[4].ProtobufOutput
 Required.Proto2.ProtobufInput.ValidMessageSetEncoding.OutOfOrderGroupsEntries.ProtobufOutput
 Required.Proto2.ProtobufInput.ValidMessageSetEncoding.ProtobufOutput
 
@@ -88,16 +80,8 @@ Required.Proto3.JsonInput.AnyWithValueForJsonObject.ProtobufOutput
 Required.Proto3.JsonInput.AnyWktRepresentationWithBadType
 Required.Proto3.JsonInput.AnyWktRepresentationWithEmptyTypeAndValue
 
-# === Proto3 — Enum aliasing ===
+# === Proto3 — Enum unknown value validator ===
 Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
-Required.Proto3.JsonInput.EnumFieldWithAlias.JsonOutput
-Required.Proto3.JsonInput.EnumFieldWithAlias.ProtobufOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasDifferentCase.JsonOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasDifferentCase.ProtobufOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasLowerCase.JsonOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasLowerCase.ProtobufOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasUseAlias.JsonOutput
-Required.Proto3.JsonInput.EnumFieldWithAliasUseAlias.ProtobufOutput
 
 # === Proto3 — WKT Struct/Value/ListValue (sealed hierarchy non implémenté) ===
 Required.Proto3.JsonInput.RepeatedListValue.JsonOutput
@@ -133,11 +117,3 @@ Required.Proto3.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
 Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
-Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.JsonOutput
-Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.ProtobufOutput
-Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.JsonOutput
-Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.ProtobufOutput
-Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[3].JsonOutput
-Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[3].ProtobufOutput
-Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[4].JsonOutput
-Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[4].ProtobufOutput

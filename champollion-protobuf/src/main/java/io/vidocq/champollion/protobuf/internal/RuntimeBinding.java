@@ -263,7 +263,7 @@ public final class RuntimeBinding {
             case SINT32 -> out.writeSInt32NoTag((int) value);
             case SINT64 -> out.writeSInt64NoTag((long) value);
             case BOOL -> out.writeBoolNoTag((boolean) value);
-            case ENUM -> out.writeEnumNoTag(((Enum<?>) value).ordinal());
+            case ENUM -> out.writeEnumNoTag(EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value));
             case FIXED32 -> out.writeFixed32NoTag((int) value);
             case SFIXED32 -> out.writeSFixed32NoTag((int) value);
             case FLOAT -> out.writeFloatNoTag((float) value);
@@ -335,7 +335,7 @@ public final class RuntimeBinding {
             case SINT32 -> out.writeSInt32NoTag((int) value);
             case SINT64 -> out.writeSInt64NoTag((long) value);
             case BOOL -> out.writeBoolNoTag((boolean) value);
-            case ENUM -> out.writeEnumNoTag(((Enum<?>) value).ordinal());
+            case ENUM -> out.writeEnumNoTag(EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value));
             case FIXED32 -> out.writeFixed32NoTag((int) value);
             case SFIXED32 -> out.writeSFixed32NoTag((int) value);
             case FLOAT -> out.writeFloatNoTag((float) value);
@@ -365,7 +365,12 @@ public final class RuntimeBinding {
             case SINT32 -> CodedOutputStream.computeRawVarint32Size(CodedOutputStream.encodeZigZag32((int) value));
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
-            case ENUM -> CodedOutputStream.computeRawVarint32Size(((Enum<?>) value).ordinal());
+            case ENUM -> {
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
+            }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
             case STRING -> {
@@ -461,7 +466,12 @@ public final class RuntimeBinding {
             case SINT32 -> CodedOutputStream.computeRawVarint32Size(CodedOutputStream.encodeZigZag32((int) value));
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
-            case ENUM -> CodedOutputStream.computeRawVarint32Size(((Enum<?>) value).ordinal());
+            case ENUM -> {
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
+            }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
             case STRING -> {
@@ -485,7 +495,7 @@ public final class RuntimeBinding {
     private static boolean isDefault(FieldBinding fb, Object value) {
         return switch (fb.type) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32, ENUM -> {
-                if (value instanceof Enum<?> e) yield e.ordinal() == 0;
+                if (value instanceof Enum<?> e) yield EnumValueMap.forClass(e.getClass()).valueOf(e) == 0;
                 yield ((int) value) == 0;
             }
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> ((long) value) == 0L;
@@ -633,19 +643,14 @@ public final class RuntimeBinding {
             case SINT64 -> in.readSInt64();
             case BOOL -> in.readBool();
             case ENUM -> {
-                int ordinal = in.readEnum();
+                int value = in.readEnum();
                 Class<?> ec = fb.elementType;
                 if (!ec.isEnum()) {
                     throw new IOException("ENUM field bound to non-enum class " + ec);
                 }
-                Object[] constants = ec.getEnumConstants();
-                // Proto3 spec : valeurs enum inconnues sont tolérées (forward compat).
-                // On stocke null (≡ unknown) plutôt que de jeter. Le caller decide
-                // de l'omettre lors de la re-sérialisation ou de re-émettre la valeur.
-                if (ordinal < 0 || ordinal >= constants.length) {
-                    yield null;
-                }
-                yield constants[ordinal];
+                // EnumValueMap honore @ProtoEnumValue + fallback ordinal.
+                // null = unknown value (proto3 forward-compat).
+                yield EnumValueMap.forClass(ec).byValue(value);
             }
             case FIXED32 -> in.readFixed32();
             case SFIXED32 -> in.readSFixed32();

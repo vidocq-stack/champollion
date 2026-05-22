@@ -10,5 +10,5 @@ public enum NestedEnumP2 {
     FOO,
     BAR,
     BAZ,
-    NEG
+    @io.vidocq.champollion.protobuf.ProtoEnumValue(-1) NEG
 }
