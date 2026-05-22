@@ -736,6 +736,9 @@ public final class ProtobufJsonRuntime {
     private static Object readMessage(JsonBindingPlan plan, JsonParser parser) throws IOException {
         Object[] slots = new Object[plan.componentCount];
         boolean[] hasValue = new boolean[plan.componentCount];
+        // Tracker oneof : un seul property key par oneofGroup autorisé (spec proto3 JSON §oneof).
+        // Local au readMessage — pas de ThreadLocal, virtual-thread-safe.
+        java.util.HashMap<String, String> seenOneofs = new java.util.HashMap<>();
 
         while (parser.hasNext()) {
             JsonParser.Event e = parser.next();
@@ -752,7 +755,15 @@ public final class ProtobufJsonRuntime {
                 continue;
             }
             if (v == JsonParser.Event.VALUE_NULL) {
-                continue; // canonical : null = absent
+                continue; // canonical : null = absent (et exclu du tracker oneof)
+            }
+            // Reject deux property keys du même oneofGroup
+            if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
+                String already = seenOneofs.put(fb.oneofGroup, key);
+                if (already != null) {
+                    throw new IOException("oneof '" + fb.oneofGroup
+                            + "': '" + key + "' duplicate, '" + already + "' already set");
+                }
             }
             if (fb.repeated) {
                 if (v != JsonParser.Event.START_ARRAY) {
@@ -939,6 +950,11 @@ public final class ProtobufJsonRuntime {
 
     private static Object defaultFor(FieldBinding fb) {
         if (fb.repeated) return List.of();
+        // explicitPresence + type non-primitive : un champ absent reste null
+        // (sémantique oneof / proto2 EXPLICIT). Cohérent avec RuntimeBinding.defaultFor.
+        if (fb.explicitPresence && !fb.elementType.isPrimitive()) {
+            return null;
+        }
         return switch (fb.type) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> 0;
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> 0L;
@@ -994,7 +1010,7 @@ public final class ProtobufJsonRuntime {
             String jsonName = Descriptors.toJsonName(protoName);
             FieldBinding fb = new FieldBinding(
                     pf.number(), pf.type(), repeated, pf.explicitPresence(),
-                    element, i, getter, protoName, jsonName);
+                    pf.oneofGroup(), element, i, getter, protoName, jsonName);
             fields.add(fb);
             byJsonName.put(jsonName, fb);
             byProtoName.put(protoName, fb);
@@ -1034,6 +1050,7 @@ public final class ProtobufJsonRuntime {
         final FieldType type;
         final boolean repeated;
         final boolean explicitPresence;
+        final String oneofGroup;
         final Class<?> elementType;
         final int componentIndex;
         final MethodHandle getter;
@@ -1041,12 +1058,13 @@ public final class ProtobufJsonRuntime {
         final String jsonName;
 
         FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
-                     Class<?> elementType, int componentIndex, MethodHandle getter,
-                     String protoName, String jsonName) {
+                     String oneofGroup, Class<?> elementType, int componentIndex,
+                     MethodHandle getter, String protoName, String jsonName) {
             this.number = number;
             this.type = type;
             this.repeated = repeated;
             this.explicitPresence = explicitPresence;
+            this.oneofGroup = oneofGroup;
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;

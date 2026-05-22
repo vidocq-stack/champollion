@@ -40,4 +40,19 @@ public @interface ProtobufField {
      * {@code absent}, pas l'inverse.</p>
      */
     boolean explicitPresence() default false;
+
+    /**
+     * Nom du groupe {@code oneof} si ce champ en fait partie. Plusieurs champs
+     * avec la même valeur non-vide forment un oneof. Vide par défaut (pas dans
+     * un oneof).
+     *
+     * <p>Effet : le parser JSON ({@code ProtobufJson.fromJson}) rejette
+     * explicitement deux property keys du même groupe (spec proto3 JSON §oneof).
+     * Le wire format n'est pas concerné — il autorise déjà à transporter
+     * plusieurs champs d'un oneof, last-wins (spec proto3 §oneof).</p>
+     *
+     * <p>Les valeurs JSON {@code null} sont exclues du tracker (cohérent avec
+     * "null = absent" §JSON canonical proto3).</p>
+     */
+    String oneofGroup() default "";
 }
