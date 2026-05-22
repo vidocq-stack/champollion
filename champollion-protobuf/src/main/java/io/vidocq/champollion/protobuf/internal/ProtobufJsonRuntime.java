@@ -268,7 +268,69 @@ public final class ProtobufJsonRuntime {
             writeAny(a, gen, null);
             return true;
         }
+        if (message instanceof io.vidocq.champollion.protobuf.wkt.Struct s) {
+            writeStructAsObject(s, gen, null);
+            return true;
+        }
+        if (message instanceof io.vidocq.champollion.protobuf.wkt.ListValue lv) {
+            writeListValueAsArray(lv, gen, null);
+            return true;
+        }
+        if (message instanceof io.vidocq.champollion.protobuf.wkt.Value v) {
+            writeValueDynamic(v, gen, null);
+            return true;
+        }
+        if (message instanceof io.vidocq.champollion.protobuf.wkt.NullValue) {
+            gen.writeNull();
+            return true;
+        }
         return writeWrapperTopLevel(message, gen);
+    }
+
+    private static void writeStructAsObject(io.vidocq.champollion.protobuf.wkt.Struct s,
+                                            JsonGenerator gen, String key) {
+        if (key != null) gen.writeStartObject(key); else gen.writeStartObject();
+        if (s.fields() != null) {
+            for (var entry : s.fields().entrySet()) {
+                writeValueDynamic(entry.getValue(), gen, entry.getKey());
+            }
+        }
+        gen.writeEnd();
+    }
+
+    private static void writeListValueAsArray(io.vidocq.champollion.protobuf.wkt.ListValue lv,
+                                              JsonGenerator gen, String key) {
+        if (key != null) gen.writeStartArray(key); else gen.writeStartArray();
+        if (lv.values() != null) {
+            for (var v : lv.values()) writeValueDynamic(v, gen, null);
+        }
+        gen.writeEnd();
+    }
+
+    /** Émet une Value en respectant son oneof — null si tous les sub-fields sont null. */
+    private static void writeValueDynamic(io.vidocq.champollion.protobuf.wkt.Value v,
+                                          JsonGenerator gen, String key) {
+        if (v == null) {
+            if (key != null) gen.writeNull(key); else gen.writeNull();
+            return;
+        }
+        if (v.nullValue() != null) {
+            if (key != null) gen.writeNull(key); else gen.writeNull();
+        } else if (v.numberValue() != null) {
+            double d = v.numberValue();
+            if (key != null) gen.write(key, d); else gen.write(d);
+        } else if (v.stringValue() != null) {
+            if (key != null) gen.write(key, v.stringValue()); else gen.write(v.stringValue());
+        } else if (v.boolValue() != null) {
+            if (key != null) gen.write(key, v.boolValue()); else gen.write(v.boolValue());
+        } else if (v.structValue() != null) {
+            writeStructAsObject(v.structValue(), gen, key);
+        } else if (v.listValue() != null) {
+            writeListValueAsArray(v.listValue(), gen, key);
+        } else {
+            // Absent de tous les sub-fields → null JSON (sentinelle).
+            if (key != null) gen.writeNull(key); else gen.writeNull();
+        }
     }
 
     private static boolean writeWktAsValue(Object v, JsonGenerator gen, String key) {
@@ -294,6 +356,18 @@ public final class ProtobufJsonRuntime {
         }
         if (v instanceof Any a) {
             writeAny(a, gen, key);
+            return true;
+        }
+        if (v instanceof io.vidocq.champollion.protobuf.wkt.Struct s) {
+            writeStructAsObject(s, gen, key);
+            return true;
+        }
+        if (v instanceof io.vidocq.champollion.protobuf.wkt.ListValue lv) {
+            writeListValueAsArray(lv, gen, key);
+            return true;
+        }
+        if (v instanceof io.vidocq.champollion.protobuf.wkt.Value vv) {
+            writeValueDynamic(vv, gen, key);
             return true;
         }
         return writeWrapperAsValue(v, gen, key);
@@ -709,6 +783,10 @@ public final class ProtobufJsonRuntime {
                 || type == Empty.class
                 || type == FieldMask.class
                 || type == Any.class
+                || type == io.vidocq.champollion.protobuf.wkt.Struct.class
+                || type == io.vidocq.champollion.protobuf.wkt.Value.class
+                || type == io.vidocq.champollion.protobuf.wkt.ListValue.class
+                || type == io.vidocq.champollion.protobuf.wkt.NullValue.class
                 || type == Wrappers.DoubleValue.class
                 || type == Wrappers.FloatValue.class
                 || type == Wrappers.Int64Value.class
@@ -718,6 +796,43 @@ public final class ProtobufJsonRuntime {
                 || type == Wrappers.BoolValue.class
                 || type == Wrappers.StringValue.class
                 || type == Wrappers.BytesValue.class;
+    }
+
+    private static io.vidocq.champollion.protobuf.wkt.Struct readStructFromObject(JsonParser parser) throws IOException {
+        java.util.LinkedHashMap<String, io.vidocq.champollion.protobuf.wkt.Value> fields = new java.util.LinkedHashMap<>();
+        while (parser.hasNext()) {
+            JsonParser.Event e = parser.next();
+            if (e == JsonParser.Event.END_OBJECT) break;
+            if (e != JsonParser.Event.KEY_NAME) throw new IOException("Expected key, got " + e);
+            String key = parser.getString();
+            JsonParser.Event ev = parser.next();
+            fields.put(key, readValueDynamic(parser, ev));
+        }
+        return new io.vidocq.champollion.protobuf.wkt.Struct(fields);
+    }
+
+    private static io.vidocq.champollion.protobuf.wkt.ListValue readListValueFromArray(JsonParser parser) throws IOException {
+        java.util.ArrayList<io.vidocq.champollion.protobuf.wkt.Value> values = new java.util.ArrayList<>();
+        while (parser.hasNext()) {
+            JsonParser.Event e = parser.next();
+            if (e == JsonParser.Event.END_ARRAY) break;
+            values.add(readValueDynamic(parser, e));
+        }
+        return new io.vidocq.champollion.protobuf.wkt.ListValue(values);
+    }
+
+    /** Parse une JSON value en Value (dispatch sur le JSON event type). */
+    private static io.vidocq.champollion.protobuf.wkt.Value readValueDynamic(JsonParser parser, JsonParser.Event v) throws IOException {
+        return switch (v) {
+            case VALUE_NULL -> io.vidocq.champollion.protobuf.wkt.Value.ofNull();
+            case VALUE_TRUE -> io.vidocq.champollion.protobuf.wkt.Value.ofBool(true);
+            case VALUE_FALSE -> io.vidocq.champollion.protobuf.wkt.Value.ofBool(false);
+            case VALUE_STRING -> io.vidocq.champollion.protobuf.wkt.Value.ofString(parser.getString());
+            case VALUE_NUMBER -> io.vidocq.champollion.protobuf.wkt.Value.ofNumber(parser.getBigDecimal().doubleValue());
+            case START_OBJECT -> io.vidocq.champollion.protobuf.wkt.Value.ofStruct(readStructFromObject(parser));
+            case START_ARRAY -> io.vidocq.champollion.protobuf.wkt.Value.ofList(readListValueFromArray(parser));
+            default -> throw new IOException("Unexpected JSON event for Value: " + v);
+        };
     }
 
     private static Object readWktValue(Class<?> type, JsonParser parser, JsonParser.Event v) throws IOException {
@@ -738,6 +853,29 @@ public final class ProtobufJsonRuntime {
         if (type == FieldMask.class) {
             requireString(v, "FieldMask");
             return parseFieldMask(parser.getString());
+        }
+        if (type == io.vidocq.champollion.protobuf.wkt.Struct.class) {
+            if (v != JsonParser.Event.START_OBJECT) {
+                throw new IOException("Expected JSON object for Struct, got " + v);
+            }
+            return readStructFromObject(parser);
+        }
+        if (type == io.vidocq.champollion.protobuf.wkt.ListValue.class) {
+            if (v != JsonParser.Event.START_ARRAY) {
+                throw new IOException("Expected JSON array for ListValue, got " + v);
+            }
+            return readListValueFromArray(parser);
+        }
+        if (type == io.vidocq.champollion.protobuf.wkt.Value.class) {
+            return readValueDynamic(parser, v);
+        }
+        if (type == io.vidocq.champollion.protobuf.wkt.NullValue.class) {
+            // Accept any JSON value (la spec dit que NullValue mappe à JSON null, mais
+            // les autres values sont aussi mapped à NULL_VALUE en cas d'invariant).
+            if (v != JsonParser.Event.VALUE_NULL) {
+                throw new IOException("Expected JSON null for NullValue, got " + v);
+            }
+            return io.vidocq.champollion.protobuf.wkt.NullValue.NULL_VALUE;
         }
         if (type == Wrappers.DoubleValue.class) {
             return new Wrappers.DoubleValue(readFloating(parser, v).doubleValue());
@@ -814,7 +952,13 @@ public final class ProtobufJsonRuntime {
                 continue;
             }
             if (v == JsonParser.Event.VALUE_NULL) {
-                continue; // canonical : null = absent (et exclu du tracker oneof)
+                // Cas spécial WKT Value : null JSON → Value(null_value=NULL_VALUE)
+                // (spec §google.protobuf.Value). Pour les autres types, null = absent.
+                if (fb.elementType == io.vidocq.champollion.protobuf.wkt.Value.class) {
+                    slots[fb.componentIndex] = io.vidocq.champollion.protobuf.wkt.Value.ofNull();
+                    hasValue[fb.componentIndex] = true;
+                }
+                continue;
             }
             // Reject deux property keys du même oneofGroup
             if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {

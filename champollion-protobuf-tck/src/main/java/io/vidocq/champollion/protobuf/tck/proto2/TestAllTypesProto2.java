@@ -81,7 +81,10 @@ public record TestAllTypesProto2(
         @ProtobufField(number = 301, type = FieldType.MESSAGE, explicitPresence = true) Duration optional_duration,
         @ProtobufField(number = 302, type = FieldType.MESSAGE, explicitPresence = true) Timestamp optional_timestamp,
         @ProtobufField(number = 303, type = FieldType.MESSAGE, explicitPresence = true) FieldMask optional_field_mask,
+        @ProtobufField(number = 304, type = FieldType.MESSAGE, explicitPresence = true) io.vidocq.champollion.protobuf.wkt.Struct optional_struct,
         @ProtobufField(number = 305, type = FieldType.MESSAGE, explicitPresence = true) Any optional_any,
+        @ProtobufField(number = 306, type = FieldType.MESSAGE, explicitPresence = true) io.vidocq.champollion.protobuf.wkt.Value optional_value,
+        @ProtobufField(number = 307, type = FieldType.ENUM, explicitPresence = true) io.vidocq.champollion.protobuf.wkt.NullValue optional_null_value,
         // Maps (numéros 56..74, conforme Google test_messages_proto2.proto)
         @ProtobufField(number = 56, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.INT32) Map<Integer, Integer> map_int32_int32,
         @ProtobufField(number = 57, type = FieldType.MAP, mapKey = FieldType.INT64, mapValue = FieldType.INT64) Map<Long, Long> map_int64_int64,

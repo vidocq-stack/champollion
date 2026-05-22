@@ -61,6 +61,10 @@ public final class ConformanceRunner {
         register(Empty.class);
         register(FieldMask.class);
         register(Any.class);
+        register(io.vidocq.champollion.protobuf.wkt.Struct.class);
+        register(io.vidocq.champollion.protobuf.wkt.Value.class);
+        register(io.vidocq.champollion.protobuf.wkt.ListValue.class);
+        // NullValue est un enum sans @ProtobufMessage → ne peut pas être register top-level.
         register(Wrappers.DoubleValue.class);
         register(Wrappers.FloatValue.class);
         register(Wrappers.Int64Value.class);

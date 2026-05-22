@@ -77,30 +77,6 @@ Required.Proto3.JsonInput.AnyWktRepresentationWithEmptyTypeAndValue
 # === Proto3 — Enum unknown value validator ===
 Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
 
-# === Proto3 — WKT Struct/Value/ListValue (sealed hierarchy non implémenté) ===
-Required.Proto3.JsonInput.RepeatedListValue.JsonOutput
-Required.Proto3.JsonInput.RepeatedListValue.ProtobufOutput
-Required.Proto3.JsonInput.RepeatedValue.JsonOutput
-Required.Proto3.JsonInput.RepeatedValue.ProtobufOutput
-Required.Proto3.JsonInput.Struct.JsonOutput
-Required.Proto3.JsonInput.Struct.ProtobufOutput
-Required.Proto3.JsonInput.StructWithEmptyListValue.JsonOutput
-Required.Proto3.JsonInput.StructWithEmptyListValue.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptBool.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptBool.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptFloat.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptFloat.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptInteger.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptInteger.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptList.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptList.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptNull.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptNull.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptObject.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptObject.ProtobufOutput
-Required.Proto3.JsonInput.ValueAcceptString.JsonOutput
-Required.Proto3.JsonInput.ValueAcceptString.ProtobufOutput
-
 # === Proto3 — divers ===
 Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
 Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
