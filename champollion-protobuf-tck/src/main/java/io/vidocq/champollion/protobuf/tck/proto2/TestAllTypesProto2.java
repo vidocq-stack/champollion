@@ -103,6 +103,9 @@ public record TestAllTypesProto2(
         @ProtobufField(number = 70, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.BYTES) Map<String, byte[]> map_string_bytes,
         @ProtobufField(number = 71, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.MESSAGE) Map<String, NestedMessageP2> map_string_nested_message,
         @ProtobufField(number = 73, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.ENUM) Map<String, NestedEnumP2> map_string_nested_enum,
+        // Packed/unpacked repeated scalars (proto2 §packed_option).
+        @ProtobufField(number = 75, type = FieldType.INT32, packed = true) List<Integer> packed_int32,
+        @ProtobufField(number = 89, type = FieldType.INT32, packed = false) List<Integer> unpacked_int32,
         // Field-name-to-JSON-name convention (401..418)
         @ProtobufField(number = 401, type = FieldType.INT32, explicitPresence = true) Integer fieldname1,
         @ProtobufField(number = 402, type = FieldType.INT32, explicitPresence = true) Integer field_name2,

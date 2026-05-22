@@ -8,7 +8,6 @@
 # Cf. docs/adr/0001-jspb-text-format-out-of-scope.md pour la stratégie globale.
 #
 # ────────────────────────────────────────────────────────────────────────────
-# 1. AnyNested.JsonOutput / .ProtobufOutput
 #    Any wrappant un autre Any (Any-in-Any) → récursion fromJsonString
 #    déclenche un timeout JVM. Le path readAny → fromJsonString(Any.class)
 #    re-tokenise via Json.createParser et perd la position du parent.
@@ -29,6 +28,3 @@
 #    enum comme un wrapper (KnownEnum | UnknownIntValue).
 # ────────────────────────────────────────────────────────────────────────────
 
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
-Required.Proto3.JsonInput.AnyNested.JsonOutput
-Required.Proto3.JsonInput.AnyNested.ProtobufOutput
