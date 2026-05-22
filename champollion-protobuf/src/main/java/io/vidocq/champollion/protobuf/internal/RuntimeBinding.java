@@ -514,6 +514,11 @@ public final class RuntimeBinding {
     private static Object readMessage(BindingPlan plan, CodedInputStream in) throws IOException {
         Object[] slots = new Object[plan.componentTypes.length];
         boolean[] hasValue = new boolean[plan.componentTypes.length];
+        // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge :
+        // quand un MESSAGE field arrive plusieurs fois, ses payloads sont concaténés
+        // et le tout est parsé une seule fois à la fin (merge sub-fields).
+        // Map<componentIndex, accumulated bytes>.
+        java.util.Map<Integer, java.io.ByteArrayOutputStream> messageBuffers = null;
 
         while (true) {
             int tag = in.readTag();
@@ -533,10 +538,40 @@ public final class RuntimeBinding {
                     if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
                         slots[other.componentIndex] = null;
                         hasValue[other.componentIndex] = false;
+                        if (messageBuffers != null) messageBuffers.remove(other.componentIndex);
                     }
                 }
             }
+            // Spec proto3 §field-message-merge : si MESSAGE singulier et déjà vu,
+            // on accumule les bytes pour reparse une seule fois en fin de message.
+            if (fb.type == FieldType.MESSAGE && !fb.repeated
+                    && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                if (messageBuffers == null) messageBuffers = new java.util.HashMap<>();
+                int size = in.readRawVarint32();
+                byte[] payload = in.readRawBytes(size);
+                java.io.ByteArrayOutputStream buf = messageBuffers.get(fb.componentIndex);
+                if (buf == null) {
+                    buf = new java.io.ByteArrayOutputStream();
+                    messageBuffers.put(fb.componentIndex, buf);
+                }
+                buf.write(payload, 0, payload.length);
+                hasValue[fb.componentIndex] = true;
+                continue;
+            }
             readInto(fb, wireType, slots, hasValue, in);
+        }
+
+        // Parse les sub-messages merged (proto3 §field-message-merge).
+        if (messageBuffers != null) {
+            for (var entry : messageBuffers.entrySet()) {
+                FieldBinding fb = plan.fields.stream()
+                        .filter(f -> f.componentIndex == entry.getKey())
+                        .findFirst().orElseThrow();
+                byte[] merged = entry.getValue().toByteArray();
+                CodedInputStream nestedIn = CodedInputStream.newInstance(merged);
+                Object nested = readMessage(planFor(fb.elementType), nestedIn);
+                slots[fb.componentIndex] = nested;
+            }
         }
 
         // Compléter les slots vides avec les défauts du record.

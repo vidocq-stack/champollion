@@ -49,15 +49,14 @@
 
 # === Proto2 ===
 Required.Proto2.ProtobufInput.MessageSetEncoding.UnknownExtension.ProtobufOutput
-Required.Proto2.ProtobufInput.RepeatedScalarMessageMerge.JsonOutput
-Required.Proto2.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput
+# Sub-sub MESSAGE merge avec corecursive proto2 — recursion path à vérifier (M6.x)
+Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
+Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
 Required.Proto2.ProtobufInput.UnknownOrdering.ProtobufOutput
 Required.Proto2.ProtobufInput.UnknownVarint.ProtobufOutput
 Required.Proto2.ProtobufInput.UnmatchedEndGroupNestedLen
 Required.Proto2.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto2.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
 Required.Proto2.ProtobufInput.ValidMessageSetEncoding.OutOfOrderGroupsEntries.ProtobufOutput
 Required.Proto2.ProtobufInput.ValidMessageSetEncoding.ProtobufOutput
 
@@ -108,12 +107,8 @@ Required.Proto3.JsonInput.ValueAcceptString.JsonOutput
 Required.Proto3.JsonInput.ValueAcceptString.ProtobufOutput
 
 # === Proto3 — divers ===
-Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.JsonOutput
-Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput
 Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
 Required.Proto3.ProtobufInput.UnknownVarint.ProtobufOutput
 Required.Proto3.ProtobufInput.UnmatchedEndGroupNestedLen
 Required.Proto3.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
-Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
-Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
