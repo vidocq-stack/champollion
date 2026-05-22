@@ -89,6 +89,17 @@ public final class ProtobufJsonRuntime {
                 throw new RuntimeException(t);
             }
             if (value == null) continue;
+            if (fb.type == FieldType.MAP) {
+                Map<?, ?> map = (Map<?, ?>) value;
+                if (map.isEmpty()) continue; // proto3 implicit presence
+                gen.writeStartObject(fb.jsonName);
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    String k = mapKeyAsString(fb.mapKeyType, e.getKey());
+                    writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
+                }
+                gen.writeEnd();
+                continue;
+            }
             if (fb.repeated) {
                 List<?> list = (List<?>) value;
                 if (list.isEmpty()) continue; // proto3 canonical : omet [] vide
@@ -105,6 +116,54 @@ public final class ProtobufJsonRuntime {
             }
         }
         gen.writeEnd();
+    }
+
+    /** Convertit une key de map en string JSON (spec proto3 JSON §maps). */
+    private static String mapKeyAsString(FieldType type, Object key) {
+        if (key == null) {
+            return switch (type) {
+                case BOOL -> "false";
+                case STRING -> "";
+                default -> "0";
+            };
+        }
+        return switch (type) {
+            case BOOL -> Boolean.toString((boolean) key);
+            case STRING -> (String) key;
+            case INT32, SINT32, SFIXED32 -> Integer.toString((int) key);
+            case UINT32, FIXED32 -> Long.toString(Integer.toUnsignedLong((int) key));
+            case INT64, SINT64, SFIXED64 -> Long.toString((long) key);
+            case UINT64, FIXED64 -> Long.toUnsignedString((long) key);
+            default -> String.valueOf(key);
+        };
+    }
+
+    /** Écrit une value de map selon son FieldType. Réutilise writeScalar du runtime. */
+    private static void writeMapValue(FieldType type, Class<?> messageClass, Object value,
+                                      JsonGenerator gen, String key) {
+        if (value == null) {
+            gen.writeNull(key);
+            return;
+        }
+        switch (type) {
+            case BOOL -> gen.write(key, (boolean) value);
+            case INT32, SINT32, SFIXED32 -> gen.write(key, (int) value);
+            case UINT32, FIXED32 -> gen.write(key, Integer.toUnsignedLong((int) value));
+            case INT64, SINT64, SFIXED64 -> gen.write(key, Long.toString((long) value));
+            case UINT64, FIXED64 -> gen.write(key, Long.toUnsignedString((long) value));
+            case FLOAT -> gen.write(key, (float) value);
+            case DOUBLE -> gen.write(key, (double) value);
+            case STRING -> gen.write(key, (String) value);
+            case BYTES -> gen.write(key, java.util.Base64.getEncoder().encodeToString((byte[]) value));
+            case ENUM -> gen.write(key, ((Enum<?>) value).name());
+            case MESSAGE -> {
+                if (writeWktAsValue(value, gen, key)) return;
+                gen.writeStartObject(key);
+                writeMessageBody(planFor(value.getClass()), value, gen);
+                gen.writeEnd();
+            }
+            case MAP -> throw new IllegalStateException("Nested MAP is forbidden");
+        }
     }
 
     private static void writeScalar(FieldBinding fb, Object value, JsonGenerator gen, String key) {
@@ -765,6 +824,27 @@ public final class ProtobufJsonRuntime {
                             + "': '" + key + "' duplicate, '" + already + "' already set");
                 }
             }
+            if (fb.type == FieldType.MAP) {
+                if (v != JsonParser.Event.START_OBJECT) {
+                    throw new IOException("Expected object for map field " + key);
+                }
+                java.util.LinkedHashMap<Object, Object> map = new java.util.LinkedHashMap<>();
+                slots[fb.componentIndex] = map;
+                hasValue[fb.componentIndex] = true;
+                while (parser.hasNext()) {
+                    JsonParser.Event ek = parser.next();
+                    if (ek == JsonParser.Event.END_OBJECT) break;
+                    if (ek != JsonParser.Event.KEY_NAME) {
+                        throw new IOException("Expected map key, got " + ek);
+                    }
+                    String rawKey = parser.getString();
+                    Object mk = parseMapKey(fb.mapKeyType, rawKey);
+                    JsonParser.Event ev = parser.next();
+                    Object mv = readMapValue(fb.mapValueType, fb.mapValueClass, parser, ev);
+                    map.put(mk, mv);
+                }
+                continue;
+            }
             if (fb.repeated) {
                 if (v != JsonParser.Event.START_ARRAY) {
                     throw new IOException("Expected array for repeated field " + key);
@@ -1001,8 +1081,22 @@ public final class ProtobufJsonRuntime {
             componentTypes[i] = rc.getType();
             ProtobufField pf = rc.getAnnotation(ProtobufField.class);
             if (pf == null) continue;
-            boolean repeated = List.class.isAssignableFrom(rc.getType());
-            Class<?> element = repeated ? resolveListElement(rc) : rc.getType();
+            boolean isMap = pf.type() == FieldType.MAP;
+            boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
+            Class<?> element;
+            FieldType mapKeyType = null;
+            FieldType mapValueType = null;
+            Class<?> mapValueClass = null;
+            if (isMap) {
+                mapKeyType = pf.mapKey();
+                mapValueType = pf.mapValue();
+                mapValueClass = resolveMapValue(rc);
+                element = java.util.Map.class;
+            } else if (repeated) {
+                element = resolveListElement(rc);
+            } else {
+                element = rc.getType();
+            }
             MethodHandle getter;
             try {
                 getter = lookup.unreflect(rc.getAccessor());
@@ -1013,7 +1107,8 @@ public final class ProtobufJsonRuntime {
             String jsonName = Descriptors.toJsonName(protoName);
             FieldBinding fb = new FieldBinding(
                     pf.number(), pf.type(), repeated, pf.explicitPresence(),
-                    pf.oneofGroup(), element, i, getter, protoName, jsonName);
+                    pf.oneofGroup(), element, i, getter, protoName, jsonName,
+                    mapKeyType, mapValueType, mapValueClass);
             fields.add(fb);
             byJsonName.put(jsonName, fb);
             byProtoName.put(protoName, fb);
@@ -1030,6 +1125,78 @@ public final class ProtobufJsonRuntime {
 
         return new JsonBindingPlan(type, fields, byJsonName, byProtoName, byComponentIndex,
                 constructor, components.length);
+    }
+
+    /** Parse une key JSON string en typed key selon mapKeyType. */
+    private static Object parseMapKey(FieldType type, String s) throws IOException {
+        return switch (type) {
+            case BOOL -> Boolean.parseBoolean(s);
+            case STRING -> s;
+            case INT32, SINT32, SFIXED32 -> Integer.parseInt(s);
+            case UINT32, FIXED32 -> {
+                long raw = Long.parseLong(s);
+                if (raw < 0L || raw > 0xFFFFFFFFL) throw new IOException("uint32 key out of range: " + s);
+                yield (int) raw;
+            }
+            case INT64, SINT64, SFIXED64 -> Long.parseLong(s);
+            case UINT64, FIXED64 -> Long.parseUnsignedLong(s);
+            default -> throw new IOException("Unsupported map key type: " + type);
+        };
+    }
+
+    /** Lit la value JSON selon mapValueType. */
+    private static Object readMapValue(FieldType type, Class<?> messageClass,
+                                       JsonParser parser, JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_NULL) return null;
+        return switch (type) {
+            case BOOL -> v == JsonParser.Event.VALUE_TRUE;
+            case INT32, SINT32, SFIXED32 -> parser.getInt();
+            case UINT32, FIXED32 -> {
+                long raw = v == JsonParser.Event.VALUE_STRING
+                        ? Long.parseLong(parser.getString()) : parser.getLong();
+                if (raw < 0L || raw > 0xFFFFFFFFL) throw new IOException("uint32 value out of range");
+                yield (int) raw;
+            }
+            case INT64, SINT64, SFIXED64 -> {
+                if (v == JsonParser.Event.VALUE_STRING) yield Long.parseLong(parser.getString());
+                yield parser.getLong();
+            }
+            case UINT64, FIXED64 -> {
+                if (v == JsonParser.Event.VALUE_STRING) yield Long.parseUnsignedLong(parser.getString());
+                yield Long.parseUnsignedLong(parser.getValue().toString());
+            }
+            case FLOAT -> parser.getBigDecimal().floatValue();
+            case DOUBLE -> parser.getBigDecimal().doubleValue();
+            case STRING -> parser.getString();
+            case BYTES -> java.util.Base64.getDecoder().decode(parser.getString());
+            case ENUM -> {
+                if (v == JsonParser.Event.VALUE_STRING) {
+                    String name = parser.getString();
+                    if (messageClass != null && messageClass.isEnum()) {
+                        for (Object c : messageClass.getEnumConstants()) {
+                            if (((Enum<?>) c).name().equals(name)) yield c;
+                        }
+                    }
+                    yield null;
+                }
+                yield null;
+            }
+            case MESSAGE -> {
+                if (messageClass == null) throw new IOException("Map value MESSAGE without class");
+                if (v != JsonParser.Event.START_OBJECT) throw new IOException("Expected message object");
+                yield readMessage(planFor(messageClass), parser);
+            }
+            case MAP -> throw new IOException("Nested MAP is forbidden");
+        };
+    }
+
+    private static Class<?> resolveMapValue(RecordComponent rc) {
+        Type generic = rc.getGenericType();
+        if (generic instanceof ParameterizedType pt) {
+            Type[] args = pt.getActualTypeArguments();
+            if (args.length >= 2 && args[1] instanceof Class<?> c) return c;
+        }
+        return Object.class;
     }
 
     private static Class<?> resolveListElement(RecordComponent rc) {
@@ -1059,10 +1226,21 @@ public final class ProtobufJsonRuntime {
         final MethodHandle getter;
         final String protoName;
         final String jsonName;
+        final FieldType mapKeyType;
+        final FieldType mapValueType;
+        final Class<?> mapValueClass;
 
         FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
                      String oneofGroup, Class<?> elementType, int componentIndex,
                      MethodHandle getter, String protoName, String jsonName) {
+            this(number, type, repeated, explicitPresence, oneofGroup, elementType,
+                 componentIndex, getter, protoName, jsonName, null, null, null);
+        }
+
+        FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
+                     String oneofGroup, Class<?> elementType, int componentIndex,
+                     MethodHandle getter, String protoName, String jsonName,
+                     FieldType mapKeyType, FieldType mapValueType, Class<?> mapValueClass) {
             this.number = number;
             this.type = type;
             this.repeated = repeated;
@@ -1073,6 +1251,9 @@ public final class ProtobufJsonRuntime {
             this.getter = getter;
             this.protoName = protoName;
             this.jsonName = jsonName;
+            this.mapKeyType = mapKeyType;
+            this.mapValueType = mapValueType;
+            this.mapValueClass = mapValueClass;
         }
     }
 }
