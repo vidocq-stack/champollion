@@ -1018,15 +1018,27 @@ public final class ProtobufJsonRuntime {
 
     private static java.math.BigDecimal readBigDecimal(JsonParser parser, JsonParser.Event v,
                                                        String typeName) throws IOException {
-        if (v == JsonParser.Event.VALUE_NUMBER) return parser.getBigDecimal();
-        if (v == JsonParser.Event.VALUE_STRING) {
+        java.math.BigDecimal bd;
+        if (v == JsonParser.Event.VALUE_NUMBER) {
+            bd = parser.getBigDecimal();
+        } else if (v == JsonParser.Event.VALUE_STRING) {
             try {
-                return new java.math.BigDecimal(parser.getString());
+                bd = new java.math.BigDecimal(parser.getString());
             } catch (NumberFormatException e) {
                 throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
             }
+        } else {
+            throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
         }
-        throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
+        // Early-reject : un BigDecimal avec une partie entière > 20 digits ne peut
+        // jamais représenter un uint64 (max 18446744073709551615, 20 digits).
+        // Évite que toBigIntegerExact() matérialise un nombre astronomique
+        // (ex. "1e536870000") et timeout la JVM.
+        int integerDigits = bd.precision() - bd.scale();
+        if (integerDigits > 20) {
+            throw new IOException(typeName + " value out of range (integerDigits=" + integerDigits + ")");
+        }
+        return bd;
     }
 
     private static Number readFloating(JsonParser parser, JsonParser.Event v) throws IOException {
