@@ -101,9 +101,16 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
             return 0;
         }
         int tag = readRawVarint32();
-        if (WireFormat.getTagFieldNumber(tag) == 0) {
+        int fieldNumber = WireFormat.getTagFieldNumber(tag);
+        if (fieldNumber == 0) {
             throw new MalformedProtobufException(
                     "Protocol message contained an invalid tag (zero field number).");
+        }
+        // Spec encoding : field numbers ∈ [1, 2^29-1] (cf. WireFormat.MAX_FIELD_NUMBER).
+        if (fieldNumber > WireFormat.MAX_FIELD_NUMBER) {
+            throw new MalformedProtobufException(
+                    "Protocol message contained an invalid field number: " + fieldNumber
+                            + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
         }
         lastTag = tag;
         return tag;

@@ -511,8 +511,28 @@ public final class ProtobufJsonRuntime {
     }
 
     private static Timestamp parseTimestamp(String s) {
+        // RFC 3339 strict : majuscule T, suffixe Z (ou offset numérique).
+        // ISO_INSTANT de Java accepte lowercase via parseFlexible — on rejette explicitement.
+        if (s.indexOf('t') >= 0) {
+            throw new IllegalArgumentException("Timestamp T must be uppercase: " + s);
+        }
+        // Suffixe Z accepté en majuscule uniquement (RFC 3339 §5.6 dit 'Z' or '±hh:mm').
+        // Pas de minuscule 'z'.
+        if (s.indexOf('z') >= 0) {
+            throw new IllegalArgumentException("Timestamp Z must be uppercase: " + s);
+        }
+        // Le caractère 'T' doit être présent quelque part (RFC 3339 §5.6 date-time).
+        if (s.indexOf('T') < 0) {
+            throw new IllegalArgumentException("Timestamp missing T separator: " + s);
+        }
         Instant instant = DateTimeFormatter.ISO_INSTANT.parse(s, Instant::from);
-        return Timestamp.from(instant);
+        Timestamp t = Timestamp.from(instant);
+        // Valide les bornes (même que la sérialisation).
+        if (t.seconds() < TIMESTAMP_SECONDS_MIN || t.seconds() > TIMESTAMP_SECONDS_MAX) {
+            throw new IllegalArgumentException(
+                    "Timestamp out of range: " + s);
+        }
+        return t;
     }
 
     private static Duration parseDuration(String s) {
@@ -536,6 +556,10 @@ public final class ProtobufJsonRuntime {
             nanos = Integer.parseInt(frac);
         }
         if (negative) { sec = -sec; nanos = -nanos; }
+        // Valide les bornes ±315_576_000_000.
+        if (sec < DURATION_SECONDS_MIN || sec > DURATION_SECONDS_MAX) {
+            throw new IllegalArgumentException("Duration out of range: " + s);
+        }
         return new Duration(sec, nanos);
     }
 
@@ -796,8 +820,25 @@ public final class ProtobufJsonRuntime {
                 if (v == JsonParser.Event.VALUE_FALSE) yield false;
                 throw new IOException("Expected boolean, got " + v);
             }
-            case FLOAT -> readFloating(parser, v).floatValue();
-            case DOUBLE -> readFloating(parser, v).doubleValue();
+            case FLOAT -> {
+                Number n = readFloating(parser, v);
+                float f = n.floatValue();
+                // Une valeur non-special qui passe à l'infini lors du cast = out of range.
+                if (Float.isInfinite(f) && !Double.isInfinite(n.doubleValue())) {
+                    throw new IOException("float JSON value out of range: " + n);
+                }
+                yield f;
+            }
+            case DOUBLE -> {
+                Number n = readFloating(parser, v);
+                double d = n.doubleValue();
+                // Un BigDecimal hors-range double → Double.NEGATIVE/POSITIVE_INFINITY.
+                // On ne rejette que si l'input n'était pas explicitement "Infinity"/"-Infinity".
+                if (Double.isInfinite(d) && n instanceof java.math.BigDecimal) {
+                    throw new IOException("double JSON value out of range: " + n);
+                }
+                yield d;
+            }
             case STRING -> {
                 if (v != JsonParser.Event.VALUE_STRING) {
                     throw new IOException("Expected string, got " + v);
