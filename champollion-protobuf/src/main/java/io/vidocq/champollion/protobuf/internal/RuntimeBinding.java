@@ -99,8 +99,31 @@ public final class RuntimeBinding {
                         "Record component " + type.getSimpleName() + "." + rc.getName()
                                 + " is missing @ProtobufField");
             }
-            boolean repeated = List.class.isAssignableFrom(rc.getType());
-            Class<?> elementType = repeated ? resolveListElementType(rc) : rc.getType();
+            boolean isMap = pf.type() == FieldType.MAP;
+            boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
+            Class<?> elementType;
+            FieldType mapKeyType = null;
+            FieldType mapValueType = null;
+            Class<?> mapValueClass = null;
+            byte[] mapKeyTag = null;
+            byte[] mapValueTag = null;
+            if (isMap) {
+                if (!Map.class.isAssignableFrom(rc.getType())) {
+                    throw new IllegalArgumentException(
+                            "@ProtobufField(type=MAP) requires Java type Map<K,V> for "
+                                    + rc.getName());
+                }
+                mapKeyType = pf.mapKey();
+                mapValueType = pf.mapValue();
+                mapValueClass = resolveMapValueClass(rc);
+                mapKeyTag = encodeTagBytes(1, mapKeyType.wireType());
+                mapValueTag = encodeTagBytes(2, mapValueType.wireType());
+                elementType = Map.class;
+            } else if (repeated) {
+                elementType = resolveListElementType(rc);
+            } else {
+                elementType = rc.getType();
+            }
             boolean packed = repeated && pf.packed() && pf.type().packable();
             MethodHandle getter;
             try {
@@ -121,7 +144,8 @@ public final class RuntimeBinding {
                     i,
                     getter,
                     encodeTagBytes(pf.number(), pf.type().wireType()),
-                    encodeTagBytes(pf.number(), WireFormat.WIRETYPE_LENGTH_DELIMITED)));
+                    encodeTagBytes(pf.number(), WireFormat.WIRETYPE_LENGTH_DELIMITED),
+                    mapKeyType, mapValueType, mapValueClass, mapKeyTag, mapValueTag));
         }
         fields.sort(Comparator.comparingInt(f -> f.number));
         MethodHandle constructor;
@@ -146,6 +170,17 @@ public final class RuntimeBinding {
         if (arg instanceof Class<?> c) return c;
         throw new IllegalArgumentException(
                 "Cannot resolve List element type for " + rc.getName() + " (got " + arg + ")");
+    }
+
+    /** Extrait V de Map<K,V>. Utilisé pour MAP avec mapValue=MESSAGE. */
+    private static Class<?> resolveMapValueClass(RecordComponent rc) {
+        Type generic = rc.getGenericType();
+        if (!(generic instanceof ParameterizedType pt)) return Object.class;
+        Type[] args = pt.getActualTypeArguments();
+        if (args.length < 2) return Object.class;
+        Type v = args[1];
+        if (v instanceof Class<?> c) return c;
+        return Object.class;
     }
 
     private static byte[] encodeTagBytes(int fieldNumber, int wireType) {
@@ -173,7 +208,9 @@ public final class RuntimeBinding {
                         + "#" + fb.number, t);
             }
             if (value == null) continue;
-            if (fb.repeated) {
+            if (fb.type == FieldType.MAP) {
+                writeMap(fb, (Map<?, ?>) value, out);
+            } else if (fb.repeated) {
                 writeRepeated(fb, (List<?>) value, out);
             } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 // Proto3 implicit presence : on omet les valeurs par défaut sur la wire.
@@ -240,7 +277,100 @@ public final class RuntimeBinding {
                 out.writeRawVarint32(size);
                 writeMessage(nested, value, out);
             }
+            case MAP -> throw new IllegalStateException(
+                    "MAP type should be handled via writeMap, not writeScalarNoTag");
         }
+    }
+
+    private static void writeMap(FieldBinding fb, Map<?, ?> map, CodedOutputStream out) throws IOException {
+        if (map.isEmpty()) return;
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            Object k = e.getKey();
+            Object v = e.getValue();
+            // proto3 §maps : key absent = default ; value absent = default
+            if (k == null) k = defaultForMapType(fb.mapKeyType, null);
+            if (v == null) v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+            int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
+                          + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
+            out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
+            out.writeRawVarint32(entrySize);
+            out.writeRawBytes(fb.mapKeyTag, 0, fb.mapKeyTag.length);
+            writeScalarTyped(fb.mapKeyType, k, out);
+            out.writeRawBytes(fb.mapValueTag, 0, fb.mapValueTag.length);
+            writeScalarTyped(fb.mapValueType, v, out);
+        }
+    }
+
+    private static Object defaultForMapType(FieldType t, Class<?> messageClass) {
+        return switch (t) {
+            case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> 0;
+            case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> 0L;
+            case BOOL -> false;
+            case FLOAT -> 0.0f;
+            case DOUBLE -> 0.0;
+            case STRING -> "";
+            case BYTES -> new byte[0];
+            case ENUM, MESSAGE, MAP -> null;
+        };
+    }
+
+    private static void writeScalarTyped(FieldType type, Object value, CodedOutputStream out) throws IOException {
+        switch (type) {
+            case INT32 -> out.writeInt32NoTag((int) value);
+            case INT64 -> out.writeInt64NoTag((long) value);
+            case UINT32 -> out.writeUInt32NoTag((int) value);
+            case UINT64 -> out.writeUInt64NoTag((long) value);
+            case SINT32 -> out.writeSInt32NoTag((int) value);
+            case SINT64 -> out.writeSInt64NoTag((long) value);
+            case BOOL -> out.writeBoolNoTag((boolean) value);
+            case ENUM -> out.writeEnumNoTag(((Enum<?>) value).ordinal());
+            case FIXED32 -> out.writeFixed32NoTag((int) value);
+            case SFIXED32 -> out.writeSFixed32NoTag((int) value);
+            case FLOAT -> out.writeFloatNoTag((float) value);
+            case FIXED64 -> out.writeFixed64NoTag((long) value);
+            case SFIXED64 -> out.writeSFixed64NoTag((long) value);
+            case DOUBLE -> out.writeDoubleNoTag((double) value);
+            case STRING -> out.writeStringNoTag((String) value);
+            case BYTES -> out.writeBytesNoTag((byte[]) value);
+            case MESSAGE -> {
+                BindingPlan nested = planFor(value.getClass());
+                int size = computeMessageSize(nested, value);
+                out.writeRawVarint32(size);
+                writeMessage(nested, value, out);
+            }
+            case MAP -> throw new IllegalStateException("Nested MAP is forbidden by proto3 §maps");
+        }
+    }
+
+    private static int scalarSizeTyped(FieldType type, Object value) {
+        return switch (type) {
+            case INT32, INT64 -> {
+                long v = (type == FieldType.INT32) ? (int) value : (long) value;
+                yield CodedOutputStream.computeRawVarint64Size(v);
+            }
+            case UINT32 -> CodedOutputStream.computeRawVarint32Size((int) value);
+            case UINT64 -> CodedOutputStream.computeRawVarint64Size((long) value);
+            case SINT32 -> CodedOutputStream.computeRawVarint32Size(CodedOutputStream.encodeZigZag32((int) value));
+            case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
+            case BOOL -> 1;
+            case ENUM -> CodedOutputStream.computeRawVarint32Size(((Enum<?>) value).ordinal());
+            case FIXED32, SFIXED32, FLOAT -> 4;
+            case FIXED64, SFIXED64, DOUBLE -> 8;
+            case STRING -> {
+                int utf8 = ((String) value).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                yield CodedOutputStream.computeRawVarint32Size(utf8) + utf8;
+            }
+            case BYTES -> {
+                int n = ((byte[]) value).length;
+                yield CodedOutputStream.computeRawVarint32Size(n) + n;
+            }
+            case MESSAGE -> {
+                BindingPlan nested = planFor(value.getClass());
+                int s = computeMessageSize(nested, value);
+                yield CodedOutputStream.computeRawVarint32Size(s) + s;
+            }
+            case MAP -> throw new IllegalStateException("Nested MAP is forbidden");
+        };
     }
 
     // ================================================================== Size
@@ -255,6 +385,21 @@ public final class RuntimeBinding {
                 throw new RuntimeException(t);
             }
             if (value == null) continue;
+            if (fb.type == FieldType.MAP) {
+                Map<?, ?> map = (Map<?, ?>) value;
+                if (map.isEmpty()) continue;
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    Object k = e.getKey();
+                    Object v = e.getValue();
+                    if (k == null) k = defaultForMapType(fb.mapKeyType, null);
+                    if (v == null) v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+                    int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
+                                  + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
+                    total += fb.tagBytes.length
+                           + CodedOutputStream.computeRawVarint32Size(entrySize) + entrySize;
+                }
+                continue;
+            }
             if (fb.repeated) {
                 List<?> list = (List<?>) value;
                 if (list.isEmpty()) continue;
@@ -310,6 +455,8 @@ public final class RuntimeBinding {
                 int n = computeMessageSize(nested, value);
                 yield CodedOutputStream.computeRawVarint32Size(n) + n;
             }
+            case MAP -> throw new IllegalStateException(
+                    "MAP type should be handled via writeMap, not scalarSize");
         };
     }
 
@@ -326,6 +473,7 @@ public final class RuntimeBinding {
             case STRING -> ((String) value).isEmpty();
             case BYTES -> ((byte[]) value).length == 0;
             case MESSAGE -> false; // un message embarqué non-null est jamais "default"
+            case MAP -> ((Map<?, ?>) value).isEmpty();
         };
     }
 
@@ -374,6 +522,36 @@ public final class RuntimeBinding {
     private static void readInto(FieldBinding fb, int wireType, Object[] slots, boolean[] hasValue,
                                  CodedInputStream in) throws IOException {
         int idx = fb.componentIndex;
+        if (fb.type == FieldType.MAP) {
+            if (wireType != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                throw MalformedProtobufException.invalidWireType(wireType);
+            }
+            @SuppressWarnings("unchecked")
+            Map<Object, Object> map = (Map<Object, Object>) slots[idx];
+            if (map == null) {
+                map = new java.util.LinkedHashMap<>();
+                slots[idx] = map;
+                hasValue[idx] = true;
+            }
+            int sz = in.readRawVarint32();
+            int ol = in.pushLimit(sz);
+            Object k = defaultForMapType(fb.mapKeyType, null);
+            Object v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+            while (!in.isAtEnd()) {
+                int t = in.readTag();
+                int fn = WireFormat.getTagFieldNumber(t);
+                if (fn == 1) {
+                    k = readScalarTyped(fb.mapKeyType, fb.mapValueClass, in);
+                } else if (fn == 2) {
+                    v = readScalarTyped(fb.mapValueType, fb.mapValueClass, in);
+                } else {
+                    in.skipField(t);
+                }
+            }
+            in.popLimit(ol);
+            map.put(k, v);
+            return;
+        }
         if (fb.repeated) {
             List list = (List) slots[idx];
             if (list == null) {
@@ -453,6 +631,41 @@ public final class RuntimeBinding {
                 in.popLimit(oldLimit);
                 yield nested;
             }
+            case MAP -> throw new IllegalStateException(
+                    "MAP type should be handled via readInto MAP branch");
+        };
+    }
+
+    /** Lit une valeur scalaire ou message d'une map entry. */
+    private static Object readScalarTyped(FieldType type, Class<?> messageClass,
+                                          CodedInputStream in) throws IOException {
+        return switch (type) {
+            case INT32 -> in.readInt32();
+            case INT64 -> in.readInt64();
+            case UINT32 -> in.readUInt32();
+            case UINT64 -> in.readUInt64();
+            case SINT32 -> in.readSInt32();
+            case SINT64 -> in.readSInt64();
+            case BOOL -> in.readBool();
+            case ENUM -> in.readEnum(); // Map<K,Enum> stocké en int — pas trivial sans elementType
+            case FIXED32 -> in.readFixed32();
+            case SFIXED32 -> in.readSFixed32();
+            case FLOAT -> in.readFloat();
+            case FIXED64 -> in.readFixed64();
+            case SFIXED64 -> in.readSFixed64();
+            case DOUBLE -> in.readDouble();
+            case STRING -> in.readStringRequireUtf8();
+            case BYTES -> in.readBytes();
+            case MESSAGE -> {
+                int size = in.readRawVarint32();
+                int oldLimit = in.pushLimit(size);
+                in.incrementRecursionDepth();
+                Object nested = readMessage(planFor(messageClass), in);
+                in.decrementRecursionDepth();
+                in.popLimit(oldLimit);
+                yield nested;
+            }
+            case MAP -> throw new IllegalStateException("Nested MAP is forbidden");
         };
     }
 
@@ -476,6 +689,7 @@ public final class RuntimeBinding {
             case BYTES -> new byte[0];
             case ENUM -> fb.elementType.getEnumConstants()[0];
             case MESSAGE -> null;
+            case MAP -> new java.util.LinkedHashMap<>();
         };
     }
 
@@ -498,11 +712,28 @@ public final class RuntimeBinding {
         final MethodHandle getter;
         final byte[] tagBytes;
         final byte[] packedTagBytes;
+        // FieldType.MAP only — null pour les autres types
+        final FieldType mapKeyType;
+        final FieldType mapValueType;
+        final Class<?> mapValueClass;
+        final byte[] mapKeyTag;
+        final byte[] mapValueTag;
 
         FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
                      boolean explicitPresence,
                      Class<?> elementType, int componentIndex, MethodHandle getter,
                      byte[] tagBytes, byte[] packedTagBytes) {
+            this(number, type, repeated, packed, explicitPresence, elementType,
+                 componentIndex, getter, tagBytes, packedTagBytes,
+                 null, null, null, null, null);
+        }
+
+        FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
+                     boolean explicitPresence,
+                     Class<?> elementType, int componentIndex, MethodHandle getter,
+                     byte[] tagBytes, byte[] packedTagBytes,
+                     FieldType mapKeyType, FieldType mapValueType,
+                     Class<?> mapValueClass, byte[] mapKeyTag, byte[] mapValueTag) {
             this.number = number;
             this.type = type;
             this.repeated = repeated;
@@ -513,6 +744,11 @@ public final class RuntimeBinding {
             this.getter = getter;
             this.tagBytes = tagBytes;
             this.packedTagBytes = packedTagBytes;
+            this.mapKeyType = mapKeyType;
+            this.mapValueType = mapValueType;
+            this.mapValueClass = mapValueClass;
+            this.mapKeyTag = mapKeyTag;
+            this.mapValueTag = mapValueTag;
         }
     }
 }

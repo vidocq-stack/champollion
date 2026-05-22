@@ -4,13 +4,13 @@ import io.vidocq.champollion.protobuf.FieldType;
 import io.vidocq.champollion.protobuf.Message;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
-import io.vidocq.champollion.protobuf.ProtobufStatic;
 import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
 import io.vidocq.champollion.protobuf.wkt.FieldMask;
 import io.vidocq.champollion.protobuf.wkt.Timestamp;
 import io.vidocq.champollion.protobuf.wkt.Wrappers;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p><b>M5.5.5 — étendu manuellement.</b> Modèle quasi-complet de
@@ -23,7 +23,6 @@ import java.util.List;
  * pour contourner une limite de l'APT {@code ProtobufStaticProcessor} qui
  * matérialise les nested type names en sous-packages (collision).</p>
  */
-@ProtobufStatic
 @ProtobufMessage("protobuf_test_messages.proto3.TestAllTypesProto3")
 public record TestAllTypesProto3(
         @ProtobufField(number = 1, type = FieldType.INT32) int optional_int32,
@@ -122,5 +121,23 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 311, type = FieldType.MESSAGE) List<Duration> repeated_duration,
         @ProtobufField(number = 312, type = FieldType.MESSAGE) List<Timestamp> repeated_timestamp,
         @ProtobufField(number = 313, type = FieldType.MESSAGE) List<FieldMask> repeated_fieldmask,
-        @ProtobufField(number = 315, type = FieldType.MESSAGE) List<Any> repeated_any
+        @ProtobufField(number = 315, type = FieldType.MESSAGE) List<Any> repeated_any,
+        // Maps (numéros 56..74, conforme Google test_messages_proto3.proto §maps).
+        @ProtobufField(number = 56, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.INT32) Map<Integer, Integer> map_int32_int32,
+        @ProtobufField(number = 57, type = FieldType.MAP, mapKey = FieldType.INT64, mapValue = FieldType.INT64) Map<Long, Long> map_int64_int64,
+        @ProtobufField(number = 58, type = FieldType.MAP, mapKey = FieldType.UINT32, mapValue = FieldType.UINT32) Map<Integer, Integer> map_uint32_uint32,
+        @ProtobufField(number = 59, type = FieldType.MAP, mapKey = FieldType.UINT64, mapValue = FieldType.UINT64) Map<Long, Long> map_uint64_uint64,
+        @ProtobufField(number = 60, type = FieldType.MAP, mapKey = FieldType.SINT32, mapValue = FieldType.SINT32) Map<Integer, Integer> map_sint32_sint32,
+        @ProtobufField(number = 61, type = FieldType.MAP, mapKey = FieldType.SINT64, mapValue = FieldType.SINT64) Map<Long, Long> map_sint64_sint64,
+        @ProtobufField(number = 62, type = FieldType.MAP, mapKey = FieldType.FIXED32, mapValue = FieldType.FIXED32) Map<Integer, Integer> map_fixed32_fixed32,
+        @ProtobufField(number = 63, type = FieldType.MAP, mapKey = FieldType.FIXED64, mapValue = FieldType.FIXED64) Map<Long, Long> map_fixed64_fixed64,
+        @ProtobufField(number = 64, type = FieldType.MAP, mapKey = FieldType.SFIXED32, mapValue = FieldType.SFIXED32) Map<Integer, Integer> map_sfixed32_sfixed32,
+        @ProtobufField(number = 65, type = FieldType.MAP, mapKey = FieldType.SFIXED64, mapValue = FieldType.SFIXED64) Map<Long, Long> map_sfixed64_sfixed64,
+        @ProtobufField(number = 66, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.FLOAT) Map<Integer, Float> map_int32_float,
+        @ProtobufField(number = 67, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.DOUBLE) Map<Integer, Double> map_int32_double,
+        @ProtobufField(number = 68, type = FieldType.MAP, mapKey = FieldType.BOOL, mapValue = FieldType.BOOL) Map<Boolean, Boolean> map_bool_bool,
+        @ProtobufField(number = 69, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.STRING) Map<String, String> map_string_string,
+        @ProtobufField(number = 70, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.BYTES) Map<String, byte[]> map_string_bytes,
+        @ProtobufField(number = 71, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.MESSAGE) Map<String, NestedMessageT> map_string_nested_message,
+        @ProtobufField(number = 73, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.ENUM) Map<String, NestedEnumT> map_string_nested_enum
 ) implements Message {}

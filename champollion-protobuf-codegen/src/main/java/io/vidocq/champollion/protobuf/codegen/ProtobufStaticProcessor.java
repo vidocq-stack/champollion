@@ -275,6 +275,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case ENUM -> javaTypeName(tm) + " " + name + " = " + javaTypeName(tm)
                     + ".values()[0];";
             case MESSAGE -> javaTypeName(tm) + " " + name + " = null;";
+            case MAP -> "java.util.Map<Object,Object> " + name + " = new java.util.LinkedHashMap<>();";
         };
     }
 
@@ -333,6 +334,8 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case BYTES -> "in.readBytes()";
             case ENUM -> "lookupEnumOrNull(" + javaElemType + ".values(), in.readEnum())";
             case MESSAGE -> "readNested(" + javaElemType + ".class, in)";
+            // MAP non supporté en static codegen — le runtime reflectif gère ces fields.
+            case MAP -> "/* MAP handled by runtime */null";
         };
     }
 

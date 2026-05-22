@@ -201,6 +201,7 @@ public final class JavaEmitter {
             case BYTES -> "byte[]";
             case ENUM -> f.enumTypeName() == null ? "Enum<?>" : simpleNameForReference(f.enumTypeName());
             case MESSAGE -> f.messageTypeName() == null ? "Object" : simpleNameForReference(f.messageTypeName());
+            case MAP -> "java.util.Map<Object,Object>";
         };
     }
 

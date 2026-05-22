@@ -55,4 +55,20 @@ public @interface ProtobufField {
      * "null = absent" §JSON canonical proto3).</p>
      */
     String oneofGroup() default "";
+
+    /**
+     * Type de la clé pour {@link FieldType#MAP}. Ignoré sinon.
+     * <p>Lève l'ambiguïté pour les types numériques Java (Integer →
+     * INT32/UINT32/SINT32/FIXED32/SFIXED32). Cf. spec proto3 §maps —
+     * {@code map<K,V>} : K ∈ {int32, int64, uint32, uint64, sint32, sint64,
+     * fixed32, fixed64, sfixed32, sfixed64, bool, string}.</p>
+     */
+    FieldType mapKey() default FieldType.STRING;
+
+    /**
+     * Type de la valeur pour {@link FieldType#MAP}. Ignoré sinon.
+     * <p>{@code map<K,V>} : V ∈ tous les FieldType, sauf {@link FieldType#MAP}
+     * (pas de map de map en proto3).</p>
+     */
+    FieldType mapValue() default FieldType.STRING;
 }

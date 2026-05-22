@@ -903,6 +903,7 @@ public final class ProtobufJsonRuntime {
                 }
                 yield readMessage(planFor(fb.elementType), parser);
             }
+            case MAP -> throw new IOException("MAP type not yet implemented in JSON read scalar branch");
         };
     }
 
@@ -945,6 +946,7 @@ public final class ProtobufJsonRuntime {
             case BYTES -> ((byte[]) value).length == 0;
             case ENUM -> ((Enum<?>) value).ordinal() == 0;
             case MESSAGE -> false;
+            case MAP -> ((java.util.Map<?, ?>) value).isEmpty();
         };
     }
 
@@ -965,6 +967,7 @@ public final class ProtobufJsonRuntime {
             case BYTES -> new byte[0];
             case ENUM -> fb.elementType.getEnumConstants()[0];
             case MESSAGE -> null;
+            case MAP -> new java.util.LinkedHashMap<>();
         };
     }
 

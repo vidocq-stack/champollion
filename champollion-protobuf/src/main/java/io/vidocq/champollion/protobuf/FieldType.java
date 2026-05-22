@@ -33,7 +33,13 @@ public enum FieldType {
     /** Octets bruts. Non packable. */
     BYTES(WireFormat.WIRETYPE_LENGTH_DELIMITED, false),
     /** Embedded message (record annoté @ProtobufMessage). Non packable. */
-    MESSAGE(WireFormat.WIRETYPE_LENGTH_DELIMITED, false);
+    MESSAGE(WireFormat.WIRETYPE_LENGTH_DELIMITED, false),
+    /**
+     * {@code map<K,V>} — encodé comme {@code repeated Entry { K key = 1; V value = 2; }}.
+     * Cf. <a href="https://protobuf.dev/programming-guides/encoding/#maps">Encoding §maps</a>.
+     * Non packable. Type Java attendu : {@code Map<K,V>}.
+     */
+    MAP(WireFormat.WIRETYPE_LENGTH_DELIMITED, false);
 
     private final int wireType;
     private final boolean packable;
