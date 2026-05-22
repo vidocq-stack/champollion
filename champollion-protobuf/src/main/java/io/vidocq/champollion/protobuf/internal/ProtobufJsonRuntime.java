@@ -436,7 +436,10 @@ public final class ProtobufJsonRuntime {
      * pouvoir lire {@code @type} avant le reste — JSON est non-ordonné.
      */
     private static Any readAny(JsonParser parser) throws java.io.IOException {
-        JsonObject obj = parser.getObject();
+        return readAnyFromObject(parser.getObject());
+    }
+
+    private static Any readAnyFromObject(JsonObject obj) throws java.io.IOException {
         // Spec : Any vide {} = Any default (type_url="", value=byte[0]).
         if (obj.isEmpty()) return new Any("", new byte[0]);
         if (!obj.containsKey("@type")) {
@@ -479,6 +482,11 @@ public final class ProtobufJsonRuntime {
                 } else {
                     throw new java.io.IOException("Any/" + fullName + " missing required 'value'");
                 }
+            } else if (type == Any.class && v instanceof JsonObject jo) {
+                // Cas spécial : Any wrappant Any. Récurse en DOM pour éviter
+                // un re-tokenize via fromJsonString (qui peut boucler en streaming).
+                Any nested = readAnyFromObject(jo);
+                valueBytes = Protobuf.toByteArray(nested);
             } else {
                 String wktJson = jsonValueToString(v);
                 Object wrapped = fromJsonString(type, wktJson);

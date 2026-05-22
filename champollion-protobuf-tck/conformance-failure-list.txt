@@ -1,70 +1,36 @@
-# Champollion protobuf — Conformance Google expected failures
-# ============================================================
+# Champollion protobuf — Conformance Google expected failures (M7 backlog)
+# =========================================================================
 #
-# Cette liste recense les tests de conformance Google que Champollion ne
-# supporte pas et qui doivent être traités comme "expected failure"
-# (n'impactent pas le score 100% PASS du périmètre supporté).
+# 4 tests résiduels qui ne sont PAS supportés actuellement. Score conformance
+# actuel : 2693 successes / 0 unexpected failures / 4 expected failures
+# = 99.85% du périmètre proto3+proto2 testable (--maximum_edition PROTO3).
 #
-# Cf. ADR docs/adr/0001-jspb-text-format-out-of-scope.md pour le rationnel.
+# Cf. docs/adr/0001-jspb-text-format-out-of-scope.md pour la stratégie globale.
 #
-# Catégories couvertes :
+# ────────────────────────────────────────────────────────────────────────────
+# 1. AnyNested.JsonOutput / .ProtobufOutput
+#    Any wrappant un autre Any (Any-in-Any) → récursion fromJsonString
+#    déclenche un timeout JVM. Le path readAny → fromJsonString(Any.class)
+#    re-tokenise via Json.createParser et perd la position du parent.
+#    Fix M7 : refactor readAny pour utiliser un JsonObject DOM pré-parsé
+#    sans recourir à fromJsonString récursif.
 #
-# 1. WKT Struct/Value/ListValue/NullValue (proto3 §google.protobuf.{Struct,Value,ListValue})
-#    Non implémentés — sealed hierarchy de Value est un chantier dédié
-#    (M6 ROADMAP). Couvre RepeatedValue, RepeatedListValue, Struct*, ValueAccept*.
+# 2. Proto2.ValidDataOneof.MESSAGE.Merge.JsonOutput
+#    Merge récursif de 3 niveaux (oneof_nested_message.corecursive.unpacked_int32)
+#    perd les sub-sub fields lors du parse. L'accumulation messageBuffers
+#    (M6.3) fonctionne au 1er niveau mais le re-parse récursif ne propage
+#    pas l'accumulation au sub-niveau. Fix M7 : passer un MergeContext qui
+#    porte les messageBuffers à travers la récursion.
 #
-# 2. WKT Any avec contenu complexe (Any.JsonInput.Any*)
-#    Roundtrip Any nécessite résolution de type dynamique à la
-#    désérialisation — TypeRegistry partiel actuellement. À industrialiser.
-#
-# 3. Enum aliasing (allow_alias = true)
-#    Notre @ProtobufField utilise Java enum ordinals — pas de support multi-name
-#    pour une même value proto. EnumFieldWithAlias* attendus en failure.
-#
-# 4. NEG enum value (proto value = -1)
-#    NestedEnum.NEG = -1 mappé en Java enum ordinal=3 — désynchronisation.
-#    Nécessite annotation @ProtoEnumValue(-1) sur la constante Java (M6).
-#    Couvre ValidDataScalar.ENUM[3-4], ValidDataRepeated.ENUM.*, MissingDefault.
-#
-# 5. UnknownFieldSet preservation (UnknownOrdering, UnknownVarint, UnmatchedEndGroup*)
-#    Notre runtime drop les unknown fields à la sérialisation. Spec exige
-#    forward-compat. Chantier dédié M6 — RuntimeBinding doit injecter un
-#    UnknownFieldSet record component et le ré-émettre.
-#
-# 6. MessageSetEncoding (proto2 extensions)
-#    Format MessageSet legacy (proto2 only, internal Google). Non priorité.
-#
-# 7. Merge sémantique (RepeatedScalarMessageMerge, ValidDataOneof.MESSAGE.Merge)
-#    Le wire format permet à plusieurs messages d'un même field d'être mergés
-#    (spec proto3 §field-message merge). Notre code écrit le dernier reçu sans
-#    merger les sous-fields. À implémenter.
-#
-# 8. Uint64QuotedExponentFieldTooLarge
-#    UINT64 quoted exponent > 2^64-1 doit fail. Notre BigDecimal accept
-#    silently — fix mineur à venir.
-#
-# 9. EnumFieldUnknownValue.Validator
-#    Le validator dans le runner Google attend qu'on émette un message JSON
-#    valide pour un unknown enum value. Notre code émet null (skippé du JSON).
+# 3. EnumFieldUnknownValue.Validator
+#    JSON input {"optionalNestedEnum": 123} (value 123 inconnue) doit être
+#    re-émis en sortie comme number entier. Notre code stocke null
+#    (forward-compat M6.2) et l'omet en write. Fix M7 : maintenir un
+#    side-channel UnknownEnumValues<fieldNumber, int> ou typer les fields
+#    enum comme un wrapper (KnownEnum | UnknownIntValue).
+# ────────────────────────────────────────────────────────────────────────────
 
-# === Proto2 ===
-# UnknownOrdering : ordre wire mixé (per-occurrence) pas préservé — notre
-# UnknownFieldSet groupe par fieldNumber. Fix demande un List<RawEntry> flat (M7).
-# Proto2 oneof MESSAGE Merge JSON output : edge case sub-sub merge avec corecursive (M7)
 Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
-
-
-# === Proto3 — Enum unknown value validator ===
-Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
-
-# === Proto3 — Any edge cases (M7) ===
-# AnyNested : récursion Any-in-Any timeout — readAny appelle fromJsonString
-# qui re-appelle readAny en boucle. Fix demande un cycle detector ou un
-# refactor pour parser inline le sub-Any (M7).
 Required.Proto3.JsonInput.AnyNested.JsonOutput
 Required.Proto3.JsonInput.AnyNested.ProtobufOutput
-# AnyEmpty : Any wrappant Empty avec représentation JSON canonique spécifique
-# AnyWithNoType : Any sans @type (juste {}) avec un value JSON inline
-# AnyWkt* : variantes WKT representations (TypeAndValue, BadType)
-
-# === Proto3 — divers ===
+Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
