@@ -421,7 +421,32 @@ public final class ProtobufJsonRuntime {
         else { if (key != null) gen.write(key, v); else gen.write(v); }
     }
 
+    /**
+     * Spec : {@code google.protobuf.Timestamp.proto} — Restricted to dates
+     * between 0001-01-01T00:00:00Z and 9999-12-31T23:59:59.999999999Z.
+     */
+    private static final long TIMESTAMP_SECONDS_MIN = -62135596800L;
+    private static final long TIMESTAMP_SECONDS_MAX = 253402300799L;
+    /**
+     * Spec : {@code google.protobuf.Duration.proto} — Range approximately
+     * ±10,000 years.
+     */
+    private static final long DURATION_SECONDS_MIN = -315_576_000_000L;
+    private static final long DURATION_SECONDS_MAX = 315_576_000_000L;
+    private static final int NANOS_MAX = 999_999_999;
+
     private static String formatTimestamp(Timestamp t) {
+        long sec = t.seconds();
+        int nanos = t.nanos();
+        if (sec < TIMESTAMP_SECONDS_MIN || sec > TIMESTAMP_SECONDS_MAX) {
+            throw new IllegalArgumentException(
+                    "Timestamp seconds out of range [" + TIMESTAMP_SECONDS_MIN
+                            + ", " + TIMESTAMP_SECONDS_MAX + "]: " + sec);
+        }
+        if (nanos < 0 || nanos > NANOS_MAX) {
+            throw new IllegalArgumentException(
+                    "Timestamp nanos out of range [0, " + NANOS_MAX + "]: " + nanos);
+        }
         Instant instant = t.toInstant();
         // RFC 3339 / ISO-8601 — fraction nanoseconde optionnelle, toujours suffixe Z.
         return DateTimeFormatter.ISO_INSTANT.format(instant);
@@ -430,6 +455,22 @@ public final class ProtobufJsonRuntime {
     private static String formatDuration(Duration d) {
         long sec = d.seconds();
         int nanos = d.nanos();
+        if (sec < DURATION_SECONDS_MIN || sec > DURATION_SECONDS_MAX) {
+            throw new IllegalArgumentException(
+                    "Duration seconds out of range [" + DURATION_SECONDS_MIN
+                            + ", " + DURATION_SECONDS_MAX + "]: " + sec);
+        }
+        if (nanos < -NANOS_MAX || nanos > NANOS_MAX) {
+            throw new IllegalArgumentException(
+                    "Duration nanos out of range [-" + NANOS_MAX + ", "
+                            + NANOS_MAX + "]: " + nanos);
+        }
+        // Le signe de nanos doit matcher celui de seconds (sauf si l'un est 0).
+        if (sec != 0 && nanos != 0 && (sec > 0) != (nanos > 0)) {
+            throw new IllegalArgumentException(
+                    "Duration seconds and nanos must have the same sign: "
+                            + sec + "s " + nanos + "ns");
+        }
         StringBuilder sb = new StringBuilder();
         // Représentation négative : signe sur seconds OU nanos (proto garantit même signe).
         boolean negative = sec < 0 || nanos < 0;

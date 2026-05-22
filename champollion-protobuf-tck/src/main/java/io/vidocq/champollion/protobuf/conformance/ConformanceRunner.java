@@ -7,6 +7,12 @@ import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.Conformanc
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceResponse;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
 import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
+import io.vidocq.champollion.protobuf.wkt.Any;
+import io.vidocq.champollion.protobuf.wkt.Duration;
+import io.vidocq.champollion.protobuf.wkt.Empty;
+import io.vidocq.champollion.protobuf.wkt.FieldMask;
+import io.vidocq.champollion.protobuf.wkt.Timestamp;
+import io.vidocq.champollion.protobuf.wkt.Wrappers;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,6 +48,22 @@ public final class ConformanceRunner {
     private static final Map<String, Class<?>> KNOWN_TYPES = new HashMap<>();
     static {
         register(TestAllTypesProto3.class);
+        // Well-Known Types — testables top-level via la conformance Google
+        // ('google.protobuf.Duration' etc. comme message_type direct).
+        register(Timestamp.class);
+        register(Duration.class);
+        register(Empty.class);
+        register(FieldMask.class);
+        register(Any.class);
+        register(Wrappers.DoubleValue.class);
+        register(Wrappers.FloatValue.class);
+        register(Wrappers.Int64Value.class);
+        register(Wrappers.UInt64Value.class);
+        register(Wrappers.Int32Value.class);
+        register(Wrappers.UInt32Value.class);
+        register(Wrappers.BoolValue.class);
+        register(Wrappers.StringValue.class);
+        register(Wrappers.BytesValue.class);
     }
 
     private static void register(Class<?> type) {
