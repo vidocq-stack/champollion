@@ -227,6 +227,16 @@ jobs:
           # bump upstream a eu lieu.
           key: conformance-test-runner-protobuf-v35.0
 
+      - name: Install build tools for conformance_test_runner
+        if: steps.cache-conformance-runner.outputs.cache-hit != 'true'
+        # Le runner Forgejo (act_runner image minimaliste Debian/Ubuntu) n'a
+        # pas cmake/g++ par défaut. On les installe seulement si le cache
+        # actions/cache est froid (build initial ou bump PROTOBUF_VERSION).
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+              cmake g++ make git ca-certificates
+
       - name: Build conformance_test_runner (CMake)
         if: steps.cache-conformance-runner.outputs.cache-hit != 'true'
         run: |
