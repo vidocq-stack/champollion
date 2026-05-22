@@ -81,6 +81,12 @@ public final class ProtobufJsonRuntime {
         // Well-Known Types : encodage canonical spécifique (non objet JSON).
         if (writeWktTopLevel(message, gen)) return;
         gen.writeStartObject();
+
+        // M6.9 : récupérer le UnknownFieldSet pour ré-émettre les unknown enum values
+        // (spec proto3 JSON §enum : préservation + ré-émission en numeric).
+        io.vidocq.champollion.protobuf.UnknownFieldSet unknownFields =
+                readUnknownFieldSet(plan, message);
+
         for (FieldBinding fb : plan.fields) {
             Object value;
             try {
@@ -88,7 +94,14 @@ public final class ProtobufJsonRuntime {
             } catch (Throwable t) {
                 throw new RuntimeException(t);
             }
-            if (value == null) continue;
+
+            // M6.9 : collecter les unknown enum values pour ce field number.
+            java.util.List<Long> unknownEnumVarints =
+                    fb.type == FieldType.ENUM ? unknownVarintsFor(unknownFields, fb.number) : null;
+
+            // Skip total : aucune valeur connue ET aucune unknown enum à émettre.
+            if (value == null && unknownEnumVarints == null) continue;
+
             if (fb.type == FieldType.MAP) {
                 Map<?, ?> map = (Map<?, ?>) value;
                 if (map.isEmpty()) continue; // proto3 implicit presence
@@ -102,13 +115,27 @@ public final class ProtobufJsonRuntime {
             }
             if (fb.repeated) {
                 List<?> list = (List<?>) value;
-                if (list.isEmpty()) continue; // proto3 canonical : omet [] vide
+                boolean emptyKnown = list == null || list.isEmpty();
+                if (emptyKnown && unknownEnumVarints == null) continue; // proto3 canonical : omet [] vide
                 gen.writeStartArray(fb.jsonName);
-                for (Object item : list) {
-                    if (item == null) continue; // unknown enum forward-compat
-                    writeScalar(fb, item, gen, null);
+                if (list != null) {
+                    for (Object item : list) {
+                        if (item == null) continue; // unknown enum forward-compat
+                        writeScalar(fb, item, gen, null);
+                    }
+                }
+                if (unknownEnumVarints != null) {
+                    // M6.9 : append les unknown enum values numeric à l'array.
+                    for (Long v : unknownEnumVarints) gen.write(v.intValue());
                 }
                 gen.writeEnd();
+            } else if (fb.type == FieldType.ENUM && unknownEnumVarints != null) {
+                // M6.9 : unknown enum value — la valeur a bien été set côté wire/JSON,
+                // juste non-mappable à un constant Java de l'enum local. Elle prime
+                // sur le default proto3 et doit être ré-émise numeric (last-wins si
+                // plusieurs occurrences wire).
+                gen.write(fb.jsonName,
+                        unknownEnumVarints.get(unknownEnumVarints.size() - 1).intValue());
             } else if (!fb.explicitPresence && isDefault(fb, value)) {
                 continue; // proto3 implicit presence
             } else {
@@ -116,6 +143,27 @@ public final class ProtobufJsonRuntime {
             }
         }
         gen.writeEnd();
+    }
+
+    /** M6.9 : récupère le {@code UnknownFieldSet} du record si le composant existe. */
+    private static io.vidocq.champollion.protobuf.UnknownFieldSet readUnknownFieldSet(
+            JsonBindingPlan plan, Object message) {
+        if (plan.unknownFieldsIndex < 0 || plan.unknownFieldsGetter == null) return null;
+        try {
+            return (io.vidocq.champollion.protobuf.UnknownFieldSet)
+                    plan.unknownFieldsGetter.invoke(message);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    /** M6.9 : varints (unknown enum values) pour un field number donné, ou {@code null}. */
+    private static java.util.List<Long> unknownVarintsFor(
+            io.vidocq.champollion.protobuf.UnknownFieldSet ufs, int fieldNumber) {
+        if (ufs == null || ufs.isEmpty()) return null;
+        io.vidocq.champollion.protobuf.UnknownFieldSet.Field f = ufs.get(fieldNumber);
+        if (f == null || f.varints().isEmpty()) return null;
+        return f.varints();
     }
 
     /** Convertit une key de map en string JSON (spec proto3 JSON §maps). */
@@ -773,6 +821,37 @@ public final class ProtobufJsonRuntime {
                 writeScalar(fb, value, gen, fb.jsonName);
             }
         }
+        // Émet les unknown enum values stockées dans UnknownFieldSet (spec proto3 JSON §enum :
+        // forward-compat numeric preservation).
+        if (plan.unknownFieldsIndex >= 0) {
+            try {
+                io.vidocq.champollion.protobuf.UnknownFieldSet ufs =
+                        (io.vidocq.champollion.protobuf.UnknownFieldSet)
+                                plan.unknownFieldsGetter.invoke(message);
+                if (ufs != null && !ufs.isEmpty()) {
+                    for (var entry : ufs.asMap().entrySet()) {
+                        int fn = entry.getKey();
+                        FieldBinding fb = null;
+                        for (FieldBinding f : plan.fields) {
+                            if (f.number == fn) { fb = f; break; }
+                        }
+                        if (fb == null || fb.type != FieldType.ENUM) continue;
+                        var varints = entry.getValue().varints();
+                        if (varints.isEmpty()) continue;
+                        if (fb.repeated) {
+                            gen.writeStartArray(fb.jsonName);
+                            for (long v : varints) gen.write((int) v);
+                            gen.writeEnd();
+                        } else {
+                            // last-wins pour singular ENUM
+                            gen.write(fb.jsonName, (int) (long) varints.get(varints.size() - 1));
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
     }
 
     // ============================================================ Read
@@ -959,9 +1038,13 @@ public final class ProtobufJsonRuntime {
     private static Object readMessage(JsonBindingPlan plan, JsonParser parser) throws IOException {
         Object[] slots = new Object[plan.componentCount];
         boolean[] hasValue = new boolean[plan.componentCount];
-        // Tracker oneof : un seul property key par oneofGroup autorisé (spec proto3 JSON §oneof).
-        // Local au readMessage — pas de ThreadLocal, virtual-thread-safe.
         java.util.HashMap<String, String> seenOneofs = new java.util.HashMap<>();
+        // Side-channel pour preserver les unknown enum values (proto3 JSON §enum :
+        // les valeurs entières non mappées sont préservées et ré-émises numeric).
+        io.vidocq.champollion.protobuf.UnknownFieldSet.Builder unknownFieldsBuilder =
+                plan.unknownFieldsIndex >= 0
+                        ? io.vidocq.champollion.protobuf.UnknownFieldSet.newBuilder()
+                        : null;
 
         while (parser.hasNext()) {
             JsonParser.Event e = parser.next();
@@ -1025,17 +1108,41 @@ public final class ProtobufJsonRuntime {
                 while (true) {
                     JsonParser.Event next = parser.next();
                     if (next == JsonParser.Event.END_ARRAY) break;
-                    list.add(readScalar(fb, parser, next));
+                    Object scalar = readScalar(fb, parser, next);
+                    if (scalar instanceof UnknownEnumInt uei) {
+                        if (unknownFieldsBuilder != null) {
+                            unknownFieldsBuilder.recordVarint(fb.number, uei.value());
+                        }
+                        // Pas d'ajout dans la list — Java enum ne peut pas porter une
+                        // value inconnue. Le côté wire/JSON ré-émet via UnknownFieldSet.
+                    } else {
+                        list.add(scalar);
+                    }
                 }
             } else {
-                slots[fb.componentIndex] = readScalar(fb, parser, v);
-                hasValue[fb.componentIndex] = true;
+                Object scalar = readScalar(fb, parser, v);
+                if (scalar instanceof UnknownEnumInt uei) {
+                    if (unknownFieldsBuilder != null) {
+                        unknownFieldsBuilder.recordVarint(fb.number, uei.value());
+                    }
+                    // slots[idx] reste à null — sera défaulted ci-dessous.
+                } else {
+                    slots[fb.componentIndex] = scalar;
+                    hasValue[fb.componentIndex] = true;
+                }
             }
         }
 
+        // Slot UnknownFieldSet : injecte le builder s'il existe (preserve unknown enum + futures unknowns).
+        if (plan.unknownFieldsIndex >= 0) {
+            slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
+                    ? unknownFieldsBuilder.build()
+                    : io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY;
+        }
         // Compléter les défauts proto3.
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
+            if (i == plan.unknownFieldsIndex) continue;
             FieldBinding fb = plan.byComponentIndex[i];
             if (fb == null) {
                 // Composant sans @ProtobufField (ex. UnknownFieldSet). Default selon type.
@@ -1055,6 +1162,9 @@ public final class ProtobufJsonRuntime {
             throw new IOException("Cannot invoke constructor of " + plan.recordType, t);
         }
     }
+
+    /** Sentinelle interne pour porter un enum value entier dont la mapping est inconnue. */
+    private record UnknownEnumInt(int value) {}
 
     private static Object readScalar(FieldBinding fb, JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (fb.type) {
@@ -1124,9 +1234,14 @@ public final class ProtobufJsonRuntime {
                     yield null;
                 }
                 if (v == JsonParser.Event.VALUE_NUMBER) {
-                    // Spec proto3 JSON : enum can be int value too. Mapping via @ProtoEnumValue.
+                    // Spec proto3 JSON §enum : value entière acceptée + unknown
+                    // value préservée numeric en re-sérialisation. Si EnumValueMap
+                    // ne mappe pas → retourne UnknownEnumInt(value), que le caller
+                    // store dans UnknownFieldSet pour ré-émission.
                     int protoValue = parser.getInt();
-                    yield EnumValueMap.forClass(fb.elementType).byValue(protoValue);
+                    Object mapped = EnumValueMap.forClass(fb.elementType).byValue(protoValue);
+                    if (mapped != null) yield mapped;
+                    yield new UnknownEnumInt(protoValue);
                 }
                 if (v == JsonParser.Event.VALUE_NULL) yield null;
                 throw new IOException("Expected enum value, got " + v);
@@ -1306,10 +1421,22 @@ public final class ProtobufJsonRuntime {
         Map<String, FieldBinding> byJsonName = new HashMap<>();
         Map<String, FieldBinding> byProtoName = new HashMap<>();
         FieldBinding[] byComponentIndex = new FieldBinding[components.length];
+        int unknownFieldsIndex = -1;
+        MethodHandle unknownFieldsGetter = null;
 
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
+            if (rc.getType() == io.vidocq.champollion.protobuf.UnknownFieldSet.class
+                    && "unknownFields".equals(rc.getName())) {
+                unknownFieldsIndex = i;
+                try {
+                    unknownFieldsGetter = lookup.unreflect(rc.getAccessor());
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+                continue;
+            }
             ProtobufField pf = rc.getAnnotation(ProtobufField.class);
             if (pf == null) continue;
             boolean isMap = pf.type() == FieldType.MAP;
@@ -1355,7 +1482,7 @@ public final class ProtobufJsonRuntime {
         }
 
         return new JsonBindingPlan(type, fields, byJsonName, byProtoName, byComponentIndex,
-                constructor, components.length);
+                constructor, components.length, unknownFieldsIndex, unknownFieldsGetter);
     }
 
     /** Parse une key JSON string en typed key selon mapKeyType. */
@@ -1444,7 +1571,9 @@ public final class ProtobufJsonRuntime {
                            Map<String, FieldBinding> byProtoName,
                            FieldBinding[] byComponentIndex,
                            MethodHandle constructor,
-                           int componentCount) {}
+                           int componentCount,
+                           int unknownFieldsIndex,
+                           MethodHandle unknownFieldsGetter) {}
 
     static final class FieldBinding {
         final int number;
