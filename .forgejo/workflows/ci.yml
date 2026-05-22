@@ -162,6 +162,10 @@ jobs:
   tck-protobuf:
     runs-on: ubuntu-latest
     needs: build
+    # Version protobuf upstream pinned. À bumper ici ET dans la key actions/cache
+    # ci-dessous quand le step `Detect upstream protobuf staleness` émet un warning.
+    env:
+      PROTOBUF_VERSION: v35.0
 
     steps:
       - uses: actions/checkout@v4
@@ -179,18 +183,55 @@ jobs:
           tar -xzf apache-maven-4.0.0-rc-5-bin.tar.gz -C /opt
           echo "/opt/apache-maven-4.0.0-rc-5/bin" >> "$GITHUB_PATH"
 
+      - name: Detect upstream protobuf staleness
+        # Best-effort : si l'API GitHub est down ou rate-limited, on log puis
+        # continue sans bloquer le CI (la conformance reste fonctionnelle).
+        continue-on-error: true
+        run: |
+          set -e
+          LATEST=$(curl -fsSL --max-time 10 \
+              https://api.github.com/repos/protocolbuffers/protobuf/releases/latest \
+              | grep -oE '"tag_name": *"[^"]+"' \
+              | head -1 \
+              | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$LATEST" ]; then
+              echo "::notice::Impossible de récupérer la dernière version protobuf (API rate-limit ou network). Skip check."
+              exit 0
+          fi
+          echo "Latest upstream protobuf : $LATEST"
+          echo "Pinned dans champollion : $PROTOBUF_VERSION"
+          if [ "$LATEST" != "$PROTOBUF_VERSION" ]; then
+              cat >&2 <<EOF
+          ::warning title=conformance_test_runner stale::
+          Une nouvelle version protobuf upstream est disponible.
+            Pinned (champollion CI) : $PROTOBUF_VERSION
+            Latest (upstream)        : $LATEST
+          Pour bumper :
+            1. Édite .forgejo/workflows/ci.yml — PROTOBUF_VERSION en haut du job tck-protobuf.
+            2. Met à jour la key actions/cache (conformance-test-runner-protobuf-$LATEST).
+            3. Re-pousse — le premier run va re-builder le runner (~5 min puis cache).
+            4. Si des tests deviennent unexpected failures, ajuste
+               champollion-protobuf-tck/conformance-failure-list.txt ou fixe le code.
+          EOF
+          else
+              echo "::notice::pinned version === latest, OK"
+          fi
+
       - name: Cache conformance_test_runner Google
         id: cache-conformance-runner
         uses: actions/cache@v4
         with:
           path: /opt/conformance_test_runner
+          # ⚠ Cette clé doit être maintenue manuellement en phase avec PROTOBUF_VERSION
+          # ci-dessus. Le step `Detect upstream protobuf staleness` warn si un
+          # bump upstream a eu lieu.
           key: conformance-test-runner-protobuf-v35.0
 
-      - name: Build conformance_test_runner (CMake, protobuf v35.0)
+      - name: Build conformance_test_runner (CMake)
         if: steps.cache-conformance-runner.outputs.cache-hit != 'true'
         run: |
-          # Shallow clone branch tag v35.0 — pas besoin de l'historique.
-          git clone --depth=1 --branch=v35.0 \
+          # Shallow clone tag PROTOBUF_VERSION — pas besoin de l'historique.
+          git clone --depth=1 --branch="$PROTOBUF_VERSION" \
               https://github.com/protocolbuffers/protobuf.git /tmp/protobuf-src
           cd /tmp/protobuf-src && mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release \
