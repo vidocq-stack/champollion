@@ -6,6 +6,8 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceRequest;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.ConformanceResponse;
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
+import io.vidocq.champollion.protobuf.tck.proto2.NestedMessageP2;
+import io.vidocq.champollion.protobuf.tck.proto2.TestAllTypesProto2;
 import io.vidocq.champollion.protobuf.tck.proto3.NestedMessageT;
 import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
 import io.vidocq.champollion.protobuf.wkt.Any;
@@ -50,6 +52,8 @@ public final class ConformanceRunner {
     static {
         register(TestAllTypesProto3.class);
         register(NestedMessageT.class);
+        register(TestAllTypesProto2.class);
+        register(NestedMessageP2.class);
         // Well-Known Types — testables top-level via la conformance Google
         // ('google.protobuf.Duration' etc. comme message_type direct).
         register(Timestamp.class);
