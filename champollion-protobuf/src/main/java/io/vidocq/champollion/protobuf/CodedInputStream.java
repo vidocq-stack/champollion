@@ -100,20 +100,41 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
             lastTag = 0;
             return 0;
         }
-        int tag = readRawVarint32();
-        int fieldNumber = WireFormat.getTagFieldNumber(tag);
-        if (fieldNumber == 0) {
-            throw new MalformedProtobufException(
-                    "Protocol message contained an invalid tag (zero field number).");
+        // Tag varint strict : max 5 octets (un tag = (field<<3)|wireType ∈ [0, 0xFFFFFFFF]).
+        // Au-delà = overlong → MalformedProtobufException (spec encoding §tag).
+        int tag = 0;
+        int shift = 0;
+        for (int i = 0; i < 5; i++) {
+            byte b = readRawByte();
+            tag |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) {
+                // Fin du varint avant 5 octets. Validation tag.
+                if (tag == 0) {
+                    throw new MalformedProtobufException(
+                            "Protocol message contained an invalid tag (zero).");
+                }
+                int fieldNumber = WireFormat.getTagFieldNumber(tag);
+                if (fieldNumber == 0) {
+                    throw new MalformedProtobufException(
+                            "Protocol message contained an invalid tag (zero field number).");
+                }
+                if (fieldNumber > WireFormat.MAX_FIELD_NUMBER) {
+                    throw new MalformedProtobufException(
+                            "Protocol message contained an invalid field number: " + fieldNumber
+                                    + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
+                }
+                int wireType = WireFormat.getTagWireType(tag);
+                // Wire types 6 et 7 sont réservés, jamais émis (spec encoding §wire-types).
+                if (wireType == 6 || wireType == 7) {
+                    throw MalformedProtobufException.invalidWireType(wireType);
+                }
+                lastTag = tag;
+                return tag;
+            }
+            shift += 7;
         }
-        // Spec encoding : field numbers ∈ [1, 2^29-1] (cf. WireFormat.MAX_FIELD_NUMBER).
-        if (fieldNumber > WireFormat.MAX_FIELD_NUMBER) {
-            throw new MalformedProtobufException(
-                    "Protocol message contained an invalid field number: " + fieldNumber
-                            + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
-        }
-        lastTag = tag;
-        return tag;
+        // 5 octets lus, MSB encore à 1 → overlong tag varint.
+        throw MalformedProtobufException.malformedVarint();
     }
 
     /**
