@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-parent</artifactId>
+    </parent>
+
+    <artifactId>champollion-protobuf-codegen</artifactId>
+    <name>Champollion :: Protobuf Codegen (APT + .proto parser)</name>
+    <description>Annotation Processor @ProtobufStatic + parseur .proto + emitter Class-File API — squelette M1, implémentation M2/M3</description>
+
+    <dependencies>
+        <!--
+            Dépendance build-time vers champollion-protobuf : l'APT importe
+            les annotations @ProtobufField/@ProtobufMessage et les classes
+            CodedInput/OutputStream pour produire les bindings.
+        -->
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

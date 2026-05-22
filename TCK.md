@@ -374,3 +374,69 @@ ils le sont, mais l'exit 78 du script en absence du TCK reste un skip propre.
 
 Pour activer les jobs en production, installer les TCK officiels sur le runner CI
 (ajout à `actions/setup-java` ou pre-step Maven).
+
+---
+
+# Google Protobuf Conformance (M5)
+
+Suit le **conformance_test_runner** Google
+(<https://github.com/protocolbuffers/protobuf/blob/main/conformance/README.md>),
+non distribué en binaire — à builder via Bazel.
+
+## Méta
+
+- **Module** : `champollion-protobuf-tck` (HORS reactor, POM Model 4.0.0).
+- **Script** : `./run-official-conformance-protobuf.sh [smoke|all|--editions]`.
+- **Wrapper Java** : `io.vidocq.champollion.protobuf.conformance.ConformanceRunner`.
+- **Contrat** : 100% PASS sur le subset déclaré ci-dessous avant tout merge
+  structurel sur `champollion-protobuf`.
+
+## Régénération des types pour conformance
+
+`champollion-protobuf-tck/src/main/proto/test_messages_proto3.proto` contient un
+subset de `google/protobuf/test_messages_proto3.proto`. Régénérer après modif :
+
+```bash
+cd champollion
+mvn -ntp -pl champollion-protobuf,champollion-protobuf-codegen install -DskipTests
+champollion-protobuf-tck/generate-tck-sources.sh
+```
+
+Le proto fullName reste canonique (`protobuf_test_messages.proto3.TestAllTypesProto3`)
+attendu par le runner Google ; le package Java forcé à
+`io.vidocq.champollion.protobuf.tck.proto3`. APT `@ProtobufStatic` active
+automatiquement pour générer un parser sans réflexion.
+
+## Capacités couvertes
+
+| Capacité | Statut | Notes |
+|---|---|---|
+| Pipe stdin/stdout protocol | ✅ M1.6 | 3 tests JUnit Pipe verts |
+| Dispatch par `message_type` | ✅ M5.2 | `KNOWN_TYPES` registry sur `@ProtobufMessage(value)` |
+| `TestAllTypesProto3` scalaires + repeated | ✅ M5.1 | Subset .proto codegen |
+| Wire PROTOBUF in/out | ✅ M5.2 | runtime + static parser |
+| Wire JSON canonical in/out | ✅ M5.2 | `ProtobufJson.fromJson` / `toJson` |
+| Wire JSPB / TEXT_FORMAT | ❌ | Skipped |
+| `utf8_validation = VERIFY` | ✅ M4.3.1–3 | Read + write strict |
+| `field_presence = EXPLICIT` | ✅ M4.3.4–5 | `@ProtobufField(explicitPresence)` |
+| Nested messages | ❌ | Backlog M5.4 |
+| `map<K,V>` | ❌ | Backlog M5.5 |
+| `oneof` | ❌ | Backlog M5.6 |
+| `MessageEncoding.DELIMITED` (Edition 2023) | ❌ | Backlog runtime |
+
+## Procédure de release
+
+Pas de PR `champollion-protobuf` mergée tant que :
+
+1. Reactor 11/11 BUILD SUCCESS.
+2. `champollion-protobuf` JUnit 100% verts.
+3. `champollion-protobuf-tck` JUnit 100% verts (7 tests actuellement).
+4. `conformance_test_runner` Google PASS sur le subset déclaré ci-dessus.
+   Tout FAIL doit être documenté ici avec citation spec et plan de réactivation.
+
+## FAIL connus / challenges
+
+_(aucun — la suite officielle n'a pas encore été exécutée contre notre runner ;
+le binaire `conformance_test_runner` Google n'est pas installé sur le poste de
+dev courant. Mode dégradé `./run-official-conformance-protobuf.sh smoke` valide
+le wrapper Java avec EOF naturel sur stdin.)_
