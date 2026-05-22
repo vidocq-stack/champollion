@@ -4,6 +4,7 @@ import io.vidocq.champollion.protobuf.FieldType;
 import io.vidocq.champollion.protobuf.Message;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
+import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
 import io.vidocq.champollion.protobuf.wkt.FieldMask;
@@ -117,5 +118,6 @@ public record TestAllTypesProto2(
         @ProtobufField(number = 415, type = FieldType.INT32, explicitPresence = true) Integer field__name15,
         @ProtobufField(number = 416, type = FieldType.INT32, explicitPresence = true) Integer field__Name16,
         @ProtobufField(number = 417, type = FieldType.INT32, explicitPresence = true) Integer field_name17__,
-        @ProtobufField(number = 418, type = FieldType.INT32, explicitPresence = true) Integer Field_name18__
+        @ProtobufField(number = 418, type = FieldType.INT32, explicitPresence = true) Integer Field_name18__,
+        UnknownFieldSet unknownFields
 ) implements Message {}

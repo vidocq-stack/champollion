@@ -48,17 +48,12 @@
 #    valide pour un unknown enum value. Notre code émet null (skippé du JSON).
 
 # === Proto2 ===
-Required.Proto2.ProtobufInput.MessageSetEncoding.UnknownExtension.ProtobufOutput
-# Sub-sub MESSAGE merge avec corecursive proto2 — recursion path à vérifier (M6.x)
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
+# UnknownOrdering : ordre wire mixé (per-occurrence) pas préservé — notre
+# UnknownFieldSet groupe par fieldNumber. Fix demande un List<RawEntry> flat (M7).
 Required.Proto2.ProtobufInput.UnknownOrdering.ProtobufOutput
-Required.Proto2.ProtobufInput.UnknownVarint.ProtobufOutput
-Required.Proto2.ProtobufInput.UnmatchedEndGroupNestedLen
-Required.Proto2.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto2.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
-Required.Proto2.ProtobufInput.ValidMessageSetEncoding.OutOfOrderGroupsEntries.ProtobufOutput
-Required.Proto2.ProtobufInput.ValidMessageSetEncoding.ProtobufOutput
+# Proto2 oneof MESSAGE Merge JSON output : edge case sub-sub merge avec corecursive (M7)
+Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 
 # === Proto3 — Any ===
 Required.Proto3.JsonInput.Any.JsonOutput
@@ -108,7 +103,4 @@ Required.Proto3.JsonInput.ValueAcceptString.ProtobufOutput
 
 # === Proto3 — divers ===
 Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
-Required.Proto3.ProtobufInput.UnknownVarint.ProtobufOutput
-Required.Proto3.ProtobufInput.UnmatchedEndGroupNestedLen
-Required.Proto3.ProtobufInput.UnmatchedEndGroupUnknown
 Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput

@@ -7,6 +7,7 @@ import io.vidocq.champollion.protobuf.MalformedProtobufException;
 import io.vidocq.champollion.protobuf.Parser;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
+import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.WireFormat;
 
 import java.io.IOException;
@@ -90,9 +91,24 @@ public final class RuntimeBinding {
             // accessors sont publics par construction.
             lookup = MethodHandles.publicLookup();
         }
+        int unknownFieldsIndex = -1;
+        MethodHandle unknownFieldsGetter = null;
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
+            // Détecter le composant UnknownFieldSet : doit s'appeler "unknownFields"
+            // (par convention) et avoir le type UnknownFieldSet. Pas annoté
+            // @ProtobufField.
+            if (rc.getType() == UnknownFieldSet.class
+                    && "unknownFields".equals(rc.getName())) {
+                unknownFieldsIndex = i;
+                try {
+                    unknownFieldsGetter = lookup.unreflect(rc.getAccessor());
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+                continue;
+            }
             ProtobufField pf = rc.getAnnotation(ProtobufField.class);
             if (pf == null) {
                 throw new IllegalArgumentException(
@@ -158,7 +174,8 @@ public final class RuntimeBinding {
         }
         Map<Integer, FieldBinding> byNumber = new HashMap<>(fields.size() * 2);
         for (FieldBinding fb : fields) byNumber.put(fb.number, fb);
-        return new BindingPlan(type, fields, byNumber, constructor, componentTypes);
+        return new BindingPlan(type, fields, byNumber, constructor, componentTypes,
+                unknownFieldsIndex, unknownFieldsGetter);
     }
 
     private static Class<?> resolveListElementType(RecordComponent rc) {
@@ -220,6 +237,17 @@ public final class RuntimeBinding {
             } else {
                 out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
                 writeScalar(fb, value, out);
+            }
+        }
+        // Ré-émet les unknown fields à la fin du message (forward-compat).
+        if (plan.unknownFieldsIndex >= 0) {
+            try {
+                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
+                if (ufs != null && !ufs.isEmpty()) ufs.writeTo(out);
+            } catch (IOException e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new IOException("Failed to read unknownFields", t);
             }
         }
     }
@@ -452,6 +480,15 @@ public final class RuntimeBinding {
                 total += fb.tagBytes.length + scalarSize(fb, value);
             }
         }
+        // UnknownFieldSet : ajouter sa taille pour le buffer de sortie.
+        if (plan.unknownFieldsIndex >= 0) {
+            try {
+                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
+                if (ufs != null) total += ufs.getSerializedSize();
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
         return total;
     }
 
@@ -514,11 +551,12 @@ public final class RuntimeBinding {
     private static Object readMessage(BindingPlan plan, CodedInputStream in) throws IOException {
         Object[] slots = new Object[plan.componentTypes.length];
         boolean[] hasValue = new boolean[plan.componentTypes.length];
-        // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge :
-        // quand un MESSAGE field arrive plusieurs fois, ses payloads sont concaténés
-        // et le tout est parsé une seule fois à la fin (merge sub-fields).
-        // Map<componentIndex, accumulated bytes>.
+        // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge.
         java.util.Map<Integer, java.io.ByteArrayOutputStream> messageBuffers = null;
+        // UnknownFieldSet : si le record a un composant `unknownFields`, on collecte
+        // les fields inconnus pour les ré-émettre à la sérialisation (forward-compat).
+        UnknownFieldSet.Builder unknownFieldsBuilder =
+                plan.unknownFieldsIndex >= 0 ? UnknownFieldSet.newBuilder() : null;
 
         while (true) {
             int tag = in.readTag();
@@ -527,7 +565,7 @@ public final class RuntimeBinding {
             int wireType = WireFormat.getTagWireType(tag);
             FieldBinding fb = plan.byNumber.get(fieldNumber);
             if (fb == null) {
-                in.skipField(tag);
+                in.skipField(tag, unknownFieldsBuilder);
                 continue;
             }
             // Spec proto3 §oneof : si plusieurs champs d'un même oneof arrivent sur
@@ -574,11 +612,24 @@ public final class RuntimeBinding {
             }
         }
 
-        // Compléter les slots vides avec les défauts du record.
+        // Compléter les slots vides avec les défauts du record. Le composant
+        // unknownFields (s'il existe) reçoit UnknownFieldSet.EMPTY ou le build du Builder.
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
+            if (i == plan.unknownFieldsIndex) {
+                slots[i] = unknownFieldsBuilder != null
+                        ? unknownFieldsBuilder.build()
+                        : UnknownFieldSet.EMPTY;
+                continue;
+            }
             FieldBinding fb = plan.fields.get(indexOfComponent(plan, i));
             slots[i] = defaultFor(fb);
+        }
+        // Le slot unknownFields doit toujours être set (le record l'attend non-null).
+        if (plan.unknownFieldsIndex >= 0 && slots[plan.unknownFieldsIndex] == null) {
+            slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
+                    ? unknownFieldsBuilder.build()
+                    : UnknownFieldSet.EMPTY;
         }
 
         try {
@@ -778,7 +829,17 @@ public final class RuntimeBinding {
                        List<FieldBinding> fields,
                        Map<Integer, FieldBinding> byNumber,
                        MethodHandle constructor,
-                       Class<?>[] componentTypes) {}
+                       Class<?>[] componentTypes,
+                       int unknownFieldsIndex,
+                       MethodHandle unknownFieldsGetter) {
+
+        /** Compat ctor pour les call-sites anciens (sans support UnknownFieldSet). */
+        BindingPlan(Class<?> recordType, List<FieldBinding> fields,
+                    Map<Integer, FieldBinding> byNumber, MethodHandle constructor,
+                    Class<?>[] componentTypes) {
+            this(recordType, fields, byNumber, constructor, componentTypes, -1, null);
+        }
+    }
 
     static final class FieldBinding {
         final int number;

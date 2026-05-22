@@ -867,6 +867,16 @@ public final class ProtobufJsonRuntime {
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
             FieldBinding fb = plan.byComponentIndex[i];
+            if (fb == null) {
+                // Composant sans @ProtobufField (ex. UnknownFieldSet). Default selon type.
+                Class<?> ct = plan.recordType.getRecordComponents()[i].getType();
+                if (ct == io.vidocq.champollion.protobuf.UnknownFieldSet.class) {
+                    slots[i] = io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY;
+                } else {
+                    slots[i] = null;
+                }
+                continue;
+            }
             slots[i] = defaultFor(fb);
         }
         try {

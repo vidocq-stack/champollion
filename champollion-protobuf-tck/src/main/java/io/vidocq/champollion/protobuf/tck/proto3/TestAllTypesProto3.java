@@ -4,6 +4,7 @@ import io.vidocq.champollion.protobuf.FieldType;
 import io.vidocq.champollion.protobuf.Message;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
+import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.wkt.Any;
 import io.vidocq.champollion.protobuf.wkt.Duration;
 import io.vidocq.champollion.protobuf.wkt.FieldMask;
@@ -159,5 +160,8 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 415, type = FieldType.INT32) int field__name15,
         @ProtobufField(number = 416, type = FieldType.INT32) int field__Name16,
         @ProtobufField(number = 417, type = FieldType.INT32) int field_name17__,
-        @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__
+        @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__,
+        // Composant spécial : collecte les fields inconnus pour ré-émission (forward-compat).
+        // Détecté par RuntimeBinding via le type UnknownFieldSet + le nom 'unknownFields'.
+        UnknownFieldSet unknownFields
 ) implements Message {}
