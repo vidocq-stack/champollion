@@ -287,9 +287,20 @@ public final class RuntimeBinding {
         for (Map.Entry<?, ?> e : map.entrySet()) {
             Object k = e.getKey();
             Object v = e.getValue();
-            // proto3 §maps : key absent = default ; value absent = default
             if (k == null) k = defaultForMapType(fb.mapKeyType, null);
-            if (v == null) v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+            if (v == null) {
+                Object dflt = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+                if (dflt == null) {
+                    // ENUM unknown / MESSAGE null → encode entry avec key + value absente
+                    int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k);
+                    out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
+                    out.writeRawVarint32(entrySize);
+                    out.writeRawBytes(fb.mapKeyTag, 0, fb.mapKeyTag.length);
+                    writeScalarTyped(fb.mapKeyType, k, out);
+                    continue;
+                }
+                v = dflt;
+            }
             int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
                           + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
             out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
@@ -392,9 +403,19 @@ public final class RuntimeBinding {
                     Object k = e.getKey();
                     Object v = e.getValue();
                     if (k == null) k = defaultForMapType(fb.mapKeyType, null);
-                    if (v == null) v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
-                    int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
+                    int entrySize;
+                    if (v == null) {
+                        Object dflt = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+                        if (dflt == null) {
+                            entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k);
+                        } else {
+                            entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
+                                      + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, dflt);
+                        }
+                    } else {
+                        entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
                                   + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
+                    }
                     total += fb.tagBytes.length
                            + CodedOutputStream.computeRawVarint32Size(entrySize) + entrySize;
                 }
@@ -647,7 +668,13 @@ public final class RuntimeBinding {
             case SINT32 -> in.readSInt32();
             case SINT64 -> in.readSInt64();
             case BOOL -> in.readBool();
-            case ENUM -> in.readEnum(); // Map<K,Enum> stocké en int — pas trivial sans elementType
+            case ENUM -> {
+                int ord = in.readEnum();
+                if (messageClass == null || !messageClass.isEnum()) yield null;
+                Object[] constants = messageClass.getEnumConstants();
+                if (ord < 0 || ord >= constants.length) yield null;
+                yield constants[ord];
+            }
             case FIXED32 -> in.readFixed32();
             case SFIXED32 -> in.readSFixed32();
             case FLOAT -> in.readFloat();
