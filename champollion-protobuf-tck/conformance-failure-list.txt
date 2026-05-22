@@ -29,6 +29,5 @@
 #    enum comme un wrapper (KnownEnum | UnknownIntValue).
 # ────────────────────────────────────────────────────────────────────────────
 
-Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 Required.Proto3.JsonInput.AnyNested.JsonOutput
 Required.Proto3.JsonInput.AnyNested.ProtobufOutput
