@@ -878,47 +878,24 @@ public final class ProtobufJsonRuntime {
 
     private static Object readScalar(FieldBinding fb, JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (fb.type) {
-            case INT32, SINT32, SFIXED32 -> {
-                if (v == JsonParser.Event.VALUE_NUMBER) {
-                    if (!parser.isIntegralNumber()) throw new IOException("int32 expects integer, got fractional");
-                    yield parser.getInt();
-                }
-                if (v == JsonParser.Event.VALUE_STRING) yield Integer.parseInt(parser.getString());
-                throw new IOException("Expected int32-compatible JSON value, got " + v);
-            }
+            case INT32, SINT32, SFIXED32 -> readInt32Range(parser, v);
             case UINT32, FIXED32 -> {
-                long raw;
-                if (v == JsonParser.Event.VALUE_NUMBER) {
-                    if (!parser.isIntegralNumber()) throw new IOException("uint32 expects integer, got fractional");
-                    raw = parser.getLong();
-                } else if (v == JsonParser.Event.VALUE_STRING) {
-                    raw = Long.parseLong(parser.getString());
-                } else throw new IOException("Expected uint32-compatible JSON value, got " + v);
-                if (raw < 0L || raw > 0xFFFFFFFFL) {
-                    throw new IOException("uint32 out of range: " + raw);
-                }
+                long raw = readUInt32Range(parser, v);
                 yield (int) raw;
             }
-            case INT64, SINT64, SFIXED64 -> {
-                if (v == JsonParser.Event.VALUE_STRING) yield Long.parseLong(parser.getString());
-                if (v == JsonParser.Event.VALUE_NUMBER) {
-                    if (!parser.isIntegralNumber()) throw new IOException("int64 expects integer, got fractional");
-                    yield parser.getLong();
-                }
-                throw new IOException("Expected int64-compatible JSON value, got " + v);
-            }
+            case INT64, SINT64, SFIXED64 -> readInt64Range(parser, v);
             case UINT64, FIXED64 -> {
-                // Accepte les valeurs [0, 2^64-1] et stocke en long signed (bit-preserving).
-                if (v == JsonParser.Event.VALUE_STRING) {
-                    yield Long.parseUnsignedLong(parser.getString());
+                java.math.BigDecimal bd = readBigDecimal(parser, v, "uint64");
+                try {
+                    java.math.BigInteger bi = bd.toBigIntegerExact();
+                    java.math.BigInteger max = new java.math.BigInteger("FFFFFFFFFFFFFFFF", 16);
+                    if (bi.signum() < 0 || bi.compareTo(max) > 0) {
+                        throw new IOException("uint64 out of range: " + bd);
+                    }
+                    yield bi.longValue(); // bit-preserving
+                } catch (ArithmeticException e) {
+                    throw new IOException("uint64 expects integer-valued JSON, got " + bd);
                 }
-                if (v == JsonParser.Event.VALUE_NUMBER) {
-                    // JsonNumber peut représenter de gros entiers via BigInteger,
-                    // mais getLong() saturera/throw selon impl. On passe par la string.
-                    String s = parser.getValue().toString();
-                    yield Long.parseUnsignedLong(s);
-                }
-                throw new IOException("Expected uint64-compatible JSON value, got " + v);
             }
             case BOOL -> {
                 if (v == JsonParser.Event.VALUE_TRUE) yield true;
@@ -993,6 +970,63 @@ public final class ProtobufJsonRuntime {
             }
             case MAP -> throw new IOException("MAP type not yet implemented in JSON read scalar branch");
         };
+    }
+
+    /** Accepte {@code 1}, {@code 1.0}, {@code 1e5}, {@code "1"} etc.
+     * Rejette les fractions réelles et hors-range INT32. */
+    private static int readInt32Range(JsonParser parser, JsonParser.Event v) throws IOException {
+        java.math.BigDecimal bd = readBigDecimal(parser, v, "int32");
+        try {
+            java.math.BigInteger bi = bd.toBigIntegerExact();
+            if (bi.compareTo(java.math.BigInteger.valueOf(Integer.MIN_VALUE)) < 0
+                || bi.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+                throw new IOException("int32 out of range: " + bd);
+            }
+            return bi.intValue();
+        } catch (ArithmeticException e) {
+            throw new IOException("int32 expects integer-valued JSON, got " + bd);
+        }
+    }
+
+    private static long readUInt32Range(JsonParser parser, JsonParser.Event v) throws IOException {
+        java.math.BigDecimal bd = readBigDecimal(parser, v, "uint32");
+        try {
+            java.math.BigInteger bi = bd.toBigIntegerExact();
+            if (bi.signum() < 0
+                || bi.compareTo(java.math.BigInteger.valueOf(0xFFFFFFFFL)) > 0) {
+                throw new IOException("uint32 out of range: " + bd);
+            }
+            return bi.longValue();
+        } catch (ArithmeticException e) {
+            throw new IOException("uint32 expects integer-valued JSON, got " + bd);
+        }
+    }
+
+    private static long readInt64Range(JsonParser parser, JsonParser.Event v) throws IOException {
+        java.math.BigDecimal bd = readBigDecimal(parser, v, "int64");
+        try {
+            java.math.BigInteger bi = bd.toBigIntegerExact();
+            if (bi.compareTo(java.math.BigInteger.valueOf(Long.MIN_VALUE)) < 0
+                || bi.compareTo(java.math.BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+                throw new IOException("int64 out of range: " + bd);
+            }
+            return bi.longValue();
+        } catch (ArithmeticException e) {
+            throw new IOException("int64 expects integer-valued JSON, got " + bd);
+        }
+    }
+
+    private static java.math.BigDecimal readBigDecimal(JsonParser parser, JsonParser.Event v,
+                                                       String typeName) throws IOException {
+        if (v == JsonParser.Event.VALUE_NUMBER) return parser.getBigDecimal();
+        if (v == JsonParser.Event.VALUE_STRING) {
+            try {
+                return new java.math.BigDecimal(parser.getString());
+            } catch (NumberFormatException e) {
+                throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
+            }
+        }
+        throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
     }
 
     private static Number readFloating(JsonParser parser, JsonParser.Event v) throws IOException {
