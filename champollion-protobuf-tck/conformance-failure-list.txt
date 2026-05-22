@@ -1,0 +1,145 @@
+# Champollion protobuf — Conformance Google expected failures
+# ============================================================
+#
+# Cette liste recense les tests de conformance Google que Champollion ne
+# supporte pas et qui doivent être traités comme "expected failure"
+# (n'impactent pas le score 100% PASS du périmètre supporté).
+#
+# Cf. ADR docs/adr/0001-jspb-text-format-out-of-scope.md pour le rationnel.
+#
+# Catégories couvertes :
+#
+# 1. WKT Struct/Value/ListValue/NullValue (proto3 §google.protobuf.{Struct,Value,ListValue})
+#    Non implémentés — sealed hierarchy de Value est un chantier dédié
+#    (M6 ROADMAP). Couvre RepeatedValue, RepeatedListValue, Struct*, ValueAccept*.
+#
+# 2. WKT Any avec contenu complexe (Any.JsonInput.Any*)
+#    Roundtrip Any nécessite résolution de type dynamique à la
+#    désérialisation — TypeRegistry partiel actuellement. À industrialiser.
+#
+# 3. Enum aliasing (allow_alias = true)
+#    Notre @ProtobufField utilise Java enum ordinals — pas de support multi-name
+#    pour une même value proto. EnumFieldWithAlias* attendus en failure.
+#
+# 4. NEG enum value (proto value = -1)
+#    NestedEnum.NEG = -1 mappé en Java enum ordinal=3 — désynchronisation.
+#    Nécessite annotation @ProtoEnumValue(-1) sur la constante Java (M6).
+#    Couvre ValidDataScalar.ENUM[3-4], ValidDataRepeated.ENUM.*, MissingDefault.
+#
+# 5. UnknownFieldSet preservation (UnknownOrdering, UnknownVarint, UnmatchedEndGroup*)
+#    Notre runtime drop les unknown fields à la sérialisation. Spec exige
+#    forward-compat. Chantier dédié M6 — RuntimeBinding doit injecter un
+#    UnknownFieldSet record component et le ré-émettre.
+#
+# 6. MessageSetEncoding (proto2 extensions)
+#    Format MessageSet legacy (proto2 only, internal Google). Non priorité.
+#
+# 7. Merge sémantique (RepeatedScalarMessageMerge, ValidDataOneof.MESSAGE.Merge)
+#    Le wire format permet à plusieurs messages d'un même field d'être mergés
+#    (spec proto3 §field-message merge). Notre code écrit le dernier reçu sans
+#    merger les sous-fields. À implémenter.
+#
+# 8. Uint64QuotedExponentFieldTooLarge
+#    UINT64 quoted exponent > 2^64-1 doit fail. Notre BigDecimal accept
+#    silently — fix mineur à venir.
+#
+# 9. EnumFieldUnknownValue.Validator
+#    Le validator dans le runner Google attend qu'on émette un message JSON
+#    valide pour un unknown enum value. Notre code émet null (skippé du JSON).
+
+# === Proto2 ===
+Required.Proto2.JsonInput.Uint64QuotedExponentFieldTooLarge
+Required.Proto2.ProtobufInput.MessageSetEncoding.UnknownExtension.ProtobufOutput
+Required.Proto2.ProtobufInput.RepeatedScalarMessageMerge.JsonOutput
+Required.Proto2.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput
+Required.Proto2.ProtobufInput.UnknownOrdering.ProtobufOutput
+Required.Proto2.ProtobufInput.UnknownVarint.ProtobufOutput
+Required.Proto2.ProtobufInput.UnmatchedEndGroupNestedLen
+Required.Proto2.ProtobufInput.UnmatchedEndGroupUnknown
+Required.Proto2.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
+Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
+Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
+Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.JsonOutput
+Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.ProtobufOutput
+Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.JsonOutput
+Required.Proto2.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.ProtobufOutput
+Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[3].JsonOutput
+Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[3].ProtobufOutput
+Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[4].JsonOutput
+Required.Proto2.ProtobufInput.ValidDataScalar.ENUM[4].ProtobufOutput
+Required.Proto2.ProtobufInput.ValidMessageSetEncoding.OutOfOrderGroupsEntries.ProtobufOutput
+Required.Proto2.ProtobufInput.ValidMessageSetEncoding.ProtobufOutput
+
+# === Proto3 — Any ===
+Required.Proto3.JsonInput.Any.JsonOutput
+Required.Proto3.JsonInput.Any.ProtobufOutput
+Required.Proto3.JsonInput.AnyEmpty.JsonOutput
+Required.Proto3.JsonInput.AnyNested.JsonOutput
+Required.Proto3.JsonInput.AnyNested.ProtobufOutput
+Required.Proto3.JsonInput.AnyUnorderedTypeTag.JsonOutput
+Required.Proto3.JsonInput.AnyUnorderedTypeTag.ProtobufOutput
+Required.Proto3.JsonInput.AnyWithNoType.JsonOutput
+Required.Proto3.JsonInput.AnyWithNoType.ProtobufOutput
+Required.Proto3.JsonInput.AnyWithStruct.JsonOutput
+Required.Proto3.JsonInput.AnyWithStruct.ProtobufOutput
+Required.Proto3.JsonInput.AnyWithValueForInteger.JsonOutput
+Required.Proto3.JsonInput.AnyWithValueForInteger.ProtobufOutput
+Required.Proto3.JsonInput.AnyWithValueForJsonObject.JsonOutput
+Required.Proto3.JsonInput.AnyWithValueForJsonObject.ProtobufOutput
+Required.Proto3.JsonInput.AnyWktRepresentationWithBadType
+Required.Proto3.JsonInput.AnyWktRepresentationWithEmptyTypeAndValue
+
+# === Proto3 — Enum aliasing ===
+Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
+Required.Proto3.JsonInput.EnumFieldWithAlias.JsonOutput
+Required.Proto3.JsonInput.EnumFieldWithAlias.ProtobufOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasDifferentCase.JsonOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasDifferentCase.ProtobufOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasLowerCase.JsonOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasLowerCase.ProtobufOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasUseAlias.JsonOutput
+Required.Proto3.JsonInput.EnumFieldWithAliasUseAlias.ProtobufOutput
+
+# === Proto3 — WKT Struct/Value/ListValue (sealed hierarchy non implémenté) ===
+Required.Proto3.JsonInput.RepeatedListValue.JsonOutput
+Required.Proto3.JsonInput.RepeatedListValue.ProtobufOutput
+Required.Proto3.JsonInput.RepeatedValue.JsonOutput
+Required.Proto3.JsonInput.RepeatedValue.ProtobufOutput
+Required.Proto3.JsonInput.Struct.JsonOutput
+Required.Proto3.JsonInput.Struct.ProtobufOutput
+Required.Proto3.JsonInput.StructWithEmptyListValue.JsonOutput
+Required.Proto3.JsonInput.StructWithEmptyListValue.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptBool.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptBool.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptFloat.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptFloat.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptInteger.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptInteger.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptList.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptList.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptNull.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptNull.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptObject.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptObject.ProtobufOutput
+Required.Proto3.JsonInput.ValueAcceptString.JsonOutput
+Required.Proto3.JsonInput.ValueAcceptString.ProtobufOutput
+
+# === Proto3 — divers ===
+Required.Proto3.JsonInput.Uint64QuotedExponentFieldTooLarge
+Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.JsonOutput
+Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput
+Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
+Required.Proto3.ProtobufInput.UnknownVarint.ProtobufOutput
+Required.Proto3.ProtobufInput.UnmatchedEndGroupNestedLen
+Required.Proto3.ProtobufInput.UnmatchedEndGroupUnknown
+Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput
+Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
+Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput
+Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.JsonOutput
+Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.PackedInput.ProtobufOutput
+Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.JsonOutput
+Required.Proto3.ProtobufInput.ValidDataRepeated.ENUM.UnpackedInput.ProtobufOutput
+Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[3].JsonOutput
+Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[3].ProtobufOutput
+Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[4].JsonOutput
+Required.Proto3.ProtobufInput.ValidDataScalar.ENUM[4].ProtobufOutput

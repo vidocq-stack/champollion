@@ -106,6 +106,12 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         int shift = 0;
         for (int i = 0; i < 5; i++) {
             byte b = readRawByte();
+            // 5e octet : seulement les 4 bits du bas peuvent être utilisés pour rester
+            // dans la plage int32 (32 - 28 = 4 bits). Au-delà = field_number too high.
+            if (i == 4 && (b & 0xF0) != 0) {
+                throw new MalformedProtobufException(
+                        "Protocol message contained a tag varint > 32 bits.");
+            }
             tag |= (b & 0x7F) << shift;
             if ((b & 0x80) == 0) {
                 // Fin du varint avant 5 octets. Validation tag.

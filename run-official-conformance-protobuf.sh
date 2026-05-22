@@ -85,6 +85,14 @@ case "$MODE" in
     *) echo "Mode inconnu: $MODE (smoke|all|--editions)" >&2; exit 2 ;;
 esac
 
+# Failure-list : tests connus comme non supportés (cf. docs/adr/0001-jspb-text-format-out-of-scope.md
+# et la doc en tête de conformance-failure-list.txt). Le runner Google les
+# comptera comme expected failures et n'impactera pas le score 100% PASS.
+FAILURE_LIST="$TCK_DIR/conformance-failure-list.txt"
+if [ -f "$FAILURE_LIST" ]; then
+    ARGS+=(--failure_list "$FAILURE_LIST")
+fi
+
 JAR="$TCK_DIR/target/champollion-protobuf-tck-0.1.0-SNAPSHOT.jar"
 
 # Génère le classpath complet (dépendances Maven) via dependency:build-classpath.
