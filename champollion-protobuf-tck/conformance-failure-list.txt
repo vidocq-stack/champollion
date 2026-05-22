@@ -66,7 +66,6 @@ Required.Proto3.JsonInput.AnyNested.JsonOutput
 Required.Proto3.JsonInput.AnyNested.ProtobufOutput
 # AnyEmpty : Any wrappant Empty avec représentation JSON canonique spécifique
 # AnyWithNoType : Any sans @type (juste {}) avec un value JSON inline
-Required.Proto3.JsonInput.AnyWithNoType.JsonOutput
 # AnyWkt* : variantes WKT representations (TypeAndValue, BadType)
 
 # === Proto3 — divers ===

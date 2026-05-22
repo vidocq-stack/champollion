@@ -388,6 +388,12 @@ public final class ProtobufJsonRuntime {
      */
     private static void writeAny(Any any, JsonGenerator gen, String key) {
         String typeUrl = any.type_url();
+        // Spec proto3 §any : Any default (typeUrl="" et value vide) → JSON object vide.
+        if (typeUrl.isEmpty() && (any.value() == null || any.value().length == 0)) {
+            if (key != null) gen.writeStartObject(key).writeEnd();
+            else gen.writeStartObject().writeEnd();
+            return;
+        }
         String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
         Class<?> type = TypeRegistry.lookup(fullName);
 
