@@ -414,8 +414,7 @@ public final class ProtobufJsonRuntime {
             // WKT : un seul champ "value" avec le format canonical du WKT.
             writeWktAsValue(wrapped, gen, "value");
         } else if (type == Empty.class) {
-            // Empty wrappé : un seul champ "value": {}
-            gen.writeStartObject("value").writeEnd();
+            // Spec proto3 §any : Any wrappant Empty n'émet PAS de "value" — juste @type.
         } else {
             // Message ordinaire : aplatir les champs au même niveau que @type.
             JsonBindingPlan plan = planFor(type);
@@ -438,6 +437,17 @@ public final class ProtobufJsonRuntime {
             throw new java.io.IOException("Any object must contain @type");
         }
         String typeUrl = obj.getString("@type");
+        // Spec proto3 §any : @type doit être de la forme '<base>/<full.name>'
+        // (typiquement type.googleapis.com/<full.name>). Pas de slash = invalide.
+        // Aussi : @type vide avec d'autres fields présents = invalide (un Any
+        // partial est ambigu).
+        if (typeUrl.indexOf('/') < 0) {
+            if (typeUrl.isEmpty() && obj.size() == 1) {
+                // {"@type": ""} seul = Any default.
+                return new Any("", new byte[0]);
+            }
+            throw new java.io.IOException("Any.@type invalid: '" + typeUrl + "' (expected base/full.name)");
+        }
         String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
         Class<?> type = TypeRegistry.lookup(fullName);
 

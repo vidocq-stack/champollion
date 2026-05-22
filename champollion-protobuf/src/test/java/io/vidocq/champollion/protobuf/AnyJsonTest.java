@@ -73,10 +73,16 @@ class AnyJsonTest {
         }
 
         @Test
-        void any_with_empty_uses_empty_value_object() {
+        void any_with_empty_omits_value_field() {
+            // Spec proto3 §any : Any wrappant Empty n'émet PAS le champ "value" —
+            // juste @type. (Le test M6.7 conformance AnyEmpty.JsonOutput).
             Any any = Any.pack(Empty.INSTANCE);
             String json = ProtobufJson.toJson(any);
-            assertTrue(json.contains("\"value\":{}"), json);
+            assertEquals(
+                    "\"type.googleapis.com/google.protobuf.Empty\"",
+                    json.split("\"@type\":")[1].split("[},]")[0].replaceAll("\\s", ""),
+                    json);
+            assertTrue(!json.contains("\"value\""), "Empty Any must not have value field: " + json);
         }
 
         @Test

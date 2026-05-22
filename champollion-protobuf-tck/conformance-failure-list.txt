@@ -65,12 +65,9 @@ Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
 Required.Proto3.JsonInput.AnyNested.JsonOutput
 Required.Proto3.JsonInput.AnyNested.ProtobufOutput
 # AnyEmpty : Any wrappant Empty avec représentation JSON canonique spécifique
-Required.Proto3.JsonInput.AnyEmpty.JsonOutput
 # AnyWithNoType : Any sans @type (juste {}) avec un value JSON inline
 Required.Proto3.JsonInput.AnyWithNoType.JsonOutput
 # AnyWkt* : variantes WKT representations (TypeAndValue, BadType)
-Required.Proto3.JsonInput.AnyWktRepresentationWithBadType
-Required.Proto3.JsonInput.AnyWktRepresentationWithEmptyTypeAndValue
 
 # === Proto3 — divers ===
 Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
