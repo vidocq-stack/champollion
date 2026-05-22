@@ -407,36 +407,83 @@ attendu par le runner Google ; le package Java forcé à
 `io.vidocq.champollion.protobuf.tck.proto3`. APT `@ProtobufStatic` active
 automatiquement pour générer un parser sans réflexion.
 
+## Score actuel — `CONFORMANCE SUITE PASSED` 🎯
+
+Dernier run (2026-05-22, branche `pr/ybl/protobuf`) :
+
+```
+CONFORMANCE SUITE PASSED: 2585 successes, 0 skipped,
+                          87 expected failures, 0 unexpected failures.
+```
+
+- **2585 tests PASS** sur le périmètre `--maximum_edition PROTO3` (proto2 + proto3).
+- **87 expected failures** déclarés dans
+  `champollion-protobuf-tck/conformance-failure-list.txt` (cf. `docs/adr/0001-…`
+  pour la justification de chaque catégorie).
+- **0 unexpected failures** → exit code 0.
+
 ## Capacités couvertes
 
 | Capacité | Statut | Notes |
 |---|---|---|
-| Pipe stdin/stdout protocol | ✅ M1.6 | 3 tests JUnit Pipe verts |
-| Dispatch par `message_type` | ✅ M5.2 | `KNOWN_TYPES` registry sur `@ProtobufMessage(value)` |
-| `TestAllTypesProto3` scalaires + repeated | ✅ M5.1 | Subset .proto codegen |
-| Wire PROTOBUF in/out | ✅ M5.2 | runtime + static parser |
+| Pipe stdin/stdout protocol | ✅ M1.6 | length-prefix LITTLE-endian (cf. `docs/adr/0004-…`) |
+| Dispatch par `message_type` | ✅ M5.2 | `KNOWN_TYPES` registry — TestAllTypesProto2 + Proto3 + 16 WKT |
+| Scalaires + repeated (15 + 15 + 14 packed + 14 unpacked) | ✅ M5.5 | int32/int64/uint32/.../float/double/bool/string/bytes |
+| Wire PROTOBUF in/out | ✅ M5.2 | runtime reflectif (présence-aware) |
 | Wire JSON canonical in/out | ✅ M5.2 | `ProtobufJson.fromJson` / `toJson` |
-| Wire JSPB / TEXT_FORMAT | ❌ | Skipped |
+| Wire JSPB / TEXT_FORMAT | ❌ | hors scope ADR-0001 |
 | `utf8_validation = VERIFY` | ✅ M4.3.1–3 | Read + write strict |
 | `field_presence = EXPLICIT` | ✅ M4.3.4–5 | `@ProtobufField(explicitPresence)` |
-| Nested messages | ❌ | Backlog M5.4 |
-| `map<K,V>` | ❌ | Backlog M5.5 |
-| `oneof` | ❌ | Backlog M5.6 |
-| `MessageEncoding.DELIMITED` (Edition 2023) | ❌ | Backlog runtime |
+| Nested messages (récursifs) | ✅ M5.5 | NestedMessageT/P2 top-level (collision package APT) |
+| `map<K,V>` (16 combinaisons) | ✅ M5.9 | `FieldType.MAP` + `mapKey/mapValue` (cf. `docs/adr/0002-…`) |
+| `oneof` JSON tracker + wire last-wins | ✅ M5.6 + M5.10 | `oneofGroup` annotation (cf. `docs/adr/0003-…`) |
+| WKT Wrappers / Timestamp / Duration / FieldMask / Any (top-level) | ✅ M4.3.5 + M5.5 | range validation + JSON canonical |
+| Field name to JSON name (18 variations) | ✅ M5.10 | `_field_name3`, `FIELD_NAME11`, etc. |
+| Int range strict + BigDecimal exponent | ✅ M5.10 | `0.5`, `1e5`, `TooLarge`, `TooSmall` |
+| BadTag wire 6/7 + overlong + field# > 2^29-1 | ✅ M5.6.2 + M5.10 | 5e octet limité à 4 bits (overflow int32) |
+| `MessageEncoding.DELIMITED` (Edition 2023) | ❌ | Backlog M6 (cf. `docs/adr/0005-…`) |
+| WKT Struct/Value/ListValue/NullValue sealed | ❌ | Backlog M6 — expected failure |
+| Any contenu complexe (nested WKT) | ❌ | Backlog M6 — expected failure |
+| EnumFieldWithAlias (allow_alias=true) | ❌ | Java enum ne supporte pas — M6 via `@ProtoEnumValue` |
+| NEG enum (proto value = -1) | ❌ | Backlog M6 — annotation requise |
+| UnknownFieldSet preservation | ❌ | Backlog M6 — composant record dédié |
+| RepeatedScalarMessageMerge sémantique | ❌ | Backlog M6 |
+| MessageSetEncoding proto2 | ❌ | Legacy internal Google, peut rester en failure-list |
 
 ## Procédure de release
 
 Pas de PR `champollion-protobuf` mergée tant que :
 
-1. Reactor 11/11 BUILD SUCCESS.
-2. `champollion-protobuf` JUnit 100% verts.
-3. `champollion-protobuf-tck` JUnit 100% verts (7 tests actuellement).
-4. `conformance_test_runner` Google PASS sur le subset déclaré ci-dessus.
-   Tout FAIL doit être documenté ici avec citation spec et plan de réactivation.
+1. Reactor 11/11 `BUILD SUCCESS`.
+2. `champollion-protobuf` JUnit 100% verts (actuellement **228 tests**).
+3. `champollion-protobuf-tck` JUnit 100% verts (actuellement **8 tests**).
+4. `./run-official-conformance-protobuf.sh smoke` retourne `CONFORMANCE SUITE PASSED`
+   avec `0 unexpected failures`. Tout nouveau FAIL inattendu doit être :
+   - soit corrigé,
+   - soit ajouté à `conformance-failure-list.txt` avec citation ADR justifiant
+     (review explicite via `git diff` à la PR).
 
-## FAIL connus / challenges
+## FAIL connus / expected failures
 
-_(aucun — la suite officielle n'a pas encore été exécutée contre notre runner ;
-le binaire `conformance_test_runner` Google n'est pas installé sur le poste de
-dev courant. Mode dégradé `./run-official-conformance-protobuf.sh smoke` valide
-le wrapper Java avec EOF naturel sur stdin.)_
+Les **87 expected failures** sont catégorisés dans
+`champollion-protobuf-tck/conformance-failure-list.txt`. Lire ce fichier pour
+le détail. Catégories principales :
+
+- **WKT Struct/Value/ListValue/NullValue** (~23 tests) — sealed hierarchy
+  non implémentée. M6.
+- **WKT Any avec contenu complexe** (~17 tests) — `TypeRegistry` partiel,
+  roundtrip wkt-in-any à industrialiser. M6.
+- **Enum aliasing** (~9 tests) — `allow_alias=true` proto3 nécessite que
+  plusieurs constantes Java pointent vers la même value proto. Pas supporté
+  par les enums Java. M6 via annotation `@ProtoEnumValue`.
+- **NEG enum value** (~8 tests) — proto value `-1` désynchronisée avec
+  Java enum ordinal. M6 même annotation.
+- **UnknownFieldSet preservation** (~9 tests) — drop actuel à la
+  sérialisation. M6 composant record dédié.
+- **RepeatedScalarMessageMerge + ValidDataOneof.MESSAGE.Merge** (~20 tests)
+  — merge sémantique proto3 §field-message-merge. M6.
+- **MessageSetEncoding proto2** (~2 tests) — legacy Google internal. Peut
+  rester définitivement en failure-list.
+- **Uint64QuotedExponentFieldTooLarge** (~2 tests) — edge case BigDecimal.
+  Fix mineur à venir.
+- **EnumFieldUnknownValue.Validator** (~1 test) — corollaire enum aliasing.
