@@ -432,6 +432,8 @@ public final class ProtobufJsonRuntime {
      */
     private static Any readAny(JsonParser parser) throws java.io.IOException {
         JsonObject obj = parser.getObject();
+        // Spec : Any vide {} = Any default (type_url="", value=byte[0]).
+        if (obj.isEmpty()) return new Any("", new byte[0]);
         if (!obj.containsKey("@type")) {
             throw new java.io.IOException("Any object must contain @type");
         }

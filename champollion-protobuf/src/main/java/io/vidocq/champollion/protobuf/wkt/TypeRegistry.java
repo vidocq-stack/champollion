@@ -33,6 +33,9 @@ public final class TypeRegistry {
         register(Duration.class);
         register(Empty.class);
         register(FieldMask.class);
+        register(Struct.class);
+        register(Value.class);
+        register(ListValue.class);
         register(Wrappers.DoubleValue.class);
         register(Wrappers.FloatValue.class);
         register(Wrappers.Int64Value.class);
