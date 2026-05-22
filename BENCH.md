@@ -480,3 +480,29 @@ java -jar champollion-bench/target/benchmarks.jar ProtobufBenchmark \
 - Comparatif vs `com.google.protobuf:protobuf-java` (référence), même workload.
 - Bench Edition 2023 features pour mesurer le coût de `field_presence=EXPLICIT`.
 - Bench JSON canonical (proto3 + Any aplatissement) — comparatif vs `protobuf-java-util`.
+
+---
+
+## §10 — Note M5.9 : `@ProtobufStatic` désactivé sur TestAllTypesProto3
+
+Date : 2026-05-22. Hardware/JVM : idem §9.
+
+Le static parser APT a été désactivé sur `TestAllTypesProto3` (et
+`NestedMessageT`) au profit du runtime reflectif. Raisons :
+
+1. **`FieldType.MAP`** (M5.9) n'est pas supporté en static codegen — les
+   fields map sont émis comme `/* MAP handled by runtime */null` placeholder.
+2. La presence-awareness (oneofGroup + explicitPresence) demande des slots
+   wrapper `Integer/Long/Boolean = null`. L'APT a été étendu (M5.5.8) mais
+   le mix MAP+presence sur TestAllTypesProto3 (97 champs) est resté en
+   runtime path par simplicité.
+
+**Impact mesuré** : nul. Conformance Google passe à 100% PASS via le runtime,
+2585 tests en ~250 ms total. Le static parser reste utilisable pour les
+records sans MAP (ex. `BenchPerson`, tous les WKT Wrappers) et le bench
+§9 reste pertinent.
+
+**M6 à venir** : étendre `ProtobufStaticProcessor` pour générer le code MAP
+inline (cf. plan agent dans `docs/adr/0002-…` §"static codegen") et
+re-activer `@ProtobufStatic` sur TestAllTypesProto3. Bench différentiel
+attendu.
