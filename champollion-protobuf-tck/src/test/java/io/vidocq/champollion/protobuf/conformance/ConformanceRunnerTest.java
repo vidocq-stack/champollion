@@ -163,7 +163,9 @@ class ConformanceRunnerTest {
             TestAllTypesProto3 src = new TestAllTypesProto3(
                     42, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
                     "hello", new byte[0],
-                    List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(),
+                    null, null, null, null, null, null, null, null, null,  // wrappers
+                    null, null, null, null);                                // duration/timestamp/fieldmask/any
             byte[] payload = Protobuf.toByteArray(src);
 
             ConformanceRequest req = new ConformanceRequest(
@@ -200,7 +202,9 @@ class ConformanceRunnerTest {
             TestAllTypesProto3 src = new TestAllTypesProto3(
                     7, 0L, 0, 0L, 0, 0L, 0, 0L, 0, 0L, 0.0f, 0.0d, false,
                     "", new byte[0],
-                    List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(),
+                    null, null, null, null, null, null, null, null, null,
+                    null, null, null, null);
             byte[] payload = Protobuf.toByteArray(src);
 
             ConformanceRequest req = new ConformanceRequest(

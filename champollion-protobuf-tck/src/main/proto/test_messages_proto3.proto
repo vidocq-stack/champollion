@@ -33,4 +33,16 @@ message TestAllTypesProto3 {
   repeated int64 repeated_int64 = 32;
   repeated string repeated_string = 33;
   repeated bytes repeated_bytes = 34;
+
+  // Well-known type wrappers (M5.5.4)
+  // google.protobuf.* — pas encore résolus par notre SchemaResolver,
+  // donc l'émetteur Java cible directement io.vidocq.champollion.protobuf.wkt.*
+  // (édition manuelle du record généré, cf. M5.5.4 note dans TestAllTypesProto3.java).
+  // google.protobuf.BoolValue optional_bool_wrapper = 201;
+  // google.protobuf.Int32Value optional_int32_wrapper = 202;
+  // ... 203..209
+  // google.protobuf.Duration optional_duration = 301;
+  // google.protobuf.Timestamp optional_timestamp = 302;
+  // google.protobuf.FieldMask optional_field_mask = 303;
+  // google.protobuf.Any optional_any = 305;
 }

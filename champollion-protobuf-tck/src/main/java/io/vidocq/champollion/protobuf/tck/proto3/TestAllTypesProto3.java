@@ -5,8 +5,21 @@ import io.vidocq.champollion.protobuf.Message;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.ProtobufStatic;
+import io.vidocq.champollion.protobuf.wkt.Any;
+import io.vidocq.champollion.protobuf.wkt.Duration;
+import io.vidocq.champollion.protobuf.wkt.FieldMask;
+import io.vidocq.champollion.protobuf.wkt.Timestamp;
+import io.vidocq.champollion.protobuf.wkt.Wrappers;
 import java.util.List;
 
+/**
+ * <p><b>M5.5.4 — étendu manuellement.</b> Les champs scalaires 1..15 et
+ * repeated 31..34 sont issus de {@code generate-tck-sources.sh}. Les champs
+ * WKT 17..29 ont été ajoutés à la main car notre {@code SchemaResolver}
+ * ne sait pas encore importer {@code google/protobuf/duration.proto} et
+ * mapper {@code google.protobuf.Duration → io.vidocq.champollion.protobuf.wkt.Duration}.
+ * À industrialiser en M5.6 (option {@code --external-types} du CLI codegen).</p>
+ */
 @ProtobufStatic
 @ProtobufMessage("protobuf_test_messages.proto3.TestAllTypesProto3")
 public record TestAllTypesProto3(
@@ -28,5 +41,20 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 31, type = FieldType.INT32) List<Integer> repeated_int32,
         @ProtobufField(number = 32, type = FieldType.INT64) List<Long> repeated_int64,
         @ProtobufField(number = 33, type = FieldType.STRING) List<String> repeated_string,
-        @ProtobufField(number = 34, type = FieldType.BYTES) List<byte[]> repeated_bytes
+        @ProtobufField(number = 34, type = FieldType.BYTES) List<byte[]> repeated_bytes,
+        // --- WKT Wrappers (numéros 201..209, conforme Google) ---
+        @ProtobufField(number = 201, type = FieldType.MESSAGE) Wrappers.BoolValue optional_bool_wrapper,
+        @ProtobufField(number = 202, type = FieldType.MESSAGE) Wrappers.Int32Value optional_int32_wrapper,
+        @ProtobufField(number = 203, type = FieldType.MESSAGE) Wrappers.Int64Value optional_int64_wrapper,
+        @ProtobufField(number = 204, type = FieldType.MESSAGE) Wrappers.UInt32Value optional_uint32_wrapper,
+        @ProtobufField(number = 205, type = FieldType.MESSAGE) Wrappers.UInt64Value optional_uint64_wrapper,
+        @ProtobufField(number = 206, type = FieldType.MESSAGE) Wrappers.FloatValue optional_float_wrapper,
+        @ProtobufField(number = 207, type = FieldType.MESSAGE) Wrappers.DoubleValue optional_double_wrapper,
+        @ProtobufField(number = 208, type = FieldType.MESSAGE) Wrappers.StringValue optional_string_wrapper,
+        @ProtobufField(number = 209, type = FieldType.MESSAGE) Wrappers.BytesValue optional_bytes_wrapper,
+        // --- WKT singletons (numéros 301..305, conforme Google) ---
+        @ProtobufField(number = 301, type = FieldType.MESSAGE) Duration optional_duration,
+        @ProtobufField(number = 302, type = FieldType.MESSAGE) Timestamp optional_timestamp,
+        @ProtobufField(number = 303, type = FieldType.MESSAGE) FieldMask optional_field_mask,
+        @ProtobufField(number = 305, type = FieldType.MESSAGE) Any optional_any
 ) implements Message {}
