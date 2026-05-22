@@ -22,7 +22,6 @@
 #    pas l'accumulation au sub-niveau. Fix M7 : passer un MergeContext qui
 #    porte les messageBuffers à travers la récursion.
 #
-# 3. EnumFieldUnknownValue.Validator
 #    JSON input {"optionalNestedEnum": 123} (value 123 inconnue) doit être
 #    re-émis en sortie comme number entier. Notre code stocke null
 #    (forward-compat M6.2) et l'omet en write. Fix M7 : maintenir un
@@ -33,4 +32,3 @@
 Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 Required.Proto3.JsonInput.AnyNested.JsonOutput
 Required.Proto3.JsonInput.AnyNested.ProtobufOutput
-Required.Proto3.JsonInput.EnumFieldUnknownValue.Validator
