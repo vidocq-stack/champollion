@@ -21,12 +21,20 @@ import java.util.Map;
  */
 public final class UnknownFieldSet {
 
-    public static final UnknownFieldSet EMPTY = new UnknownFieldSet(Map.of());
+    public static final UnknownFieldSet EMPTY = new UnknownFieldSet(Map.of(), List.of());
 
     private final Map<Integer, Field> fields;
+    /**
+     * Liste flat des occurrences dans l'ordre exact où elles ont été lues du wire.
+     * Permet de re-émettre {@link #writeTo(CodedOutputStream)} en préservant
+     * l'ordre per-occurrence (exigé par {@code UnknownOrdering} de la conformance
+     * Google).
+     */
+    private final List<RawEntry> orderedEntries;
 
-    private UnknownFieldSet(Map<Integer, Field> fields) {
+    private UnknownFieldSet(Map<Integer, Field> fields, List<RawEntry> orderedEntries) {
         this.fields = fields;
+        this.orderedEntries = orderedEntries;
     }
 
     public boolean isEmpty() {
@@ -42,20 +50,20 @@ public final class UnknownFieldSet {
     }
 
     /**
-     * Réémet tous les champs inconnus stockés. L'ordre préservé est celui de
-     * la première insertion par numéro de champ (LinkedHashMap).
+     * Réémet tous les champs inconnus stockés. L'ordre préservé est l'ordre
+     * <b>per-occurrence</b> exact d'origine sur la wire (cf. {@link #orderedEntries}).
      */
     public void writeTo(CodedOutputStream out) throws IOException {
-        for (Map.Entry<Integer, Field> entry : fields.entrySet()) {
-            entry.getValue().writeTo(entry.getKey(), out);
+        for (RawEntry e : orderedEntries) {
+            e.writeTo(out);
         }
     }
 
     /** Taille en octets nécessaire pour réémettre les champs inconnus. */
     public int getSerializedSize() {
         int total = 0;
-        for (Map.Entry<Integer, Field> entry : fields.entrySet()) {
-            total += entry.getValue().getSerializedSize(entry.getKey());
+        for (RawEntry e : orderedEntries) {
+            total += e.getSerializedSize();
         }
         return total;
     }
@@ -169,25 +177,30 @@ public final class UnknownFieldSet {
      */
     public static final class Builder implements CodedInputStream.UnknownFieldRecorder {
         private final Map<Integer, FieldBuilder> fields = new LinkedHashMap<>();
+        private final List<RawEntry> entries = new ArrayList<>();
 
         @Override
         public void recordVarint(int fieldNumber, long value) {
             fieldFor(fieldNumber).varints.add(value);
+            entries.add(RawEntry.varint(fieldNumber, value));
         }
 
         @Override
         public void recordFixed64(int fieldNumber, long value) {
             fieldFor(fieldNumber).fixed64s.add(value);
+            entries.add(RawEntry.fixed64(fieldNumber, value));
         }
 
         @Override
         public void recordLengthDelimited(int fieldNumber, byte[] value) {
             fieldFor(fieldNumber).lengthDelimited.add(value);
+            entries.add(RawEntry.lengthDelimited(fieldNumber, value));
         }
 
         @Override
         public void recordFixed32(int fieldNumber, int value) {
             fieldFor(fieldNumber).fixed32s.add(value);
+            entries.add(RawEntry.fixed32(fieldNumber, value));
         }
 
         private FieldBuilder fieldFor(int fieldNumber) {
@@ -200,7 +213,60 @@ public final class UnknownFieldSet {
             for (Map.Entry<Integer, FieldBuilder> e : fields.entrySet()) {
                 snapshot.put(e.getKey(), e.getValue().toField());
             }
-            return new UnknownFieldSet(Collections.unmodifiableMap(snapshot));
+            return new UnknownFieldSet(
+                    Collections.unmodifiableMap(snapshot),
+                    List.copyOf(entries));
+        }
+    }
+
+    /** Une seule occurrence wire d'un field inconnu, dans son ordre d'arrivée. */
+    private record RawEntry(int fieldNumber, int wireType,
+                            long varintOrFixed64, int fixed32,
+                            byte[] lengthDelimited) {
+
+        static RawEntry varint(int fn, long v) {
+            return new RawEntry(fn, WireFormat.WIRETYPE_VARINT, v, 0, null);
+        }
+
+        static RawEntry fixed64(int fn, long v) {
+            return new RawEntry(fn, WireFormat.WIRETYPE_FIXED64, v, 0, null);
+        }
+
+        static RawEntry fixed32(int fn, int v) {
+            return new RawEntry(fn, WireFormat.WIRETYPE_FIXED32, 0L, v, null);
+        }
+
+        static RawEntry lengthDelimited(int fn, byte[] v) {
+            return new RawEntry(fn, WireFormat.WIRETYPE_LENGTH_DELIMITED, 0L, 0, v);
+        }
+
+        void writeTo(CodedOutputStream out) throws IOException {
+            out.writeTag(fieldNumber, wireType);
+            switch (wireType) {
+                case WireFormat.WIRETYPE_VARINT -> out.writeRawVarint64(varintOrFixed64);
+                case WireFormat.WIRETYPE_FIXED64 -> out.writeRawLittleEndian64(varintOrFixed64);
+                case WireFormat.WIRETYPE_FIXED32 -> out.writeRawLittleEndian32(fixed32);
+                case WireFormat.WIRETYPE_LENGTH_DELIMITED -> {
+                    out.writeRawVarint32(lengthDelimited.length);
+                    out.writeRawBytes(lengthDelimited, 0, lengthDelimited.length);
+                }
+                default -> throw new IOException("Invalid wire type for unknown field: " + wireType);
+            }
+        }
+
+        int getSerializedSize() {
+            int tagSize = CodedOutputStream.computeRawVarint32Size(
+                    WireFormat.makeTag(fieldNumber, wireType));
+            return switch (wireType) {
+                case WireFormat.WIRETYPE_VARINT ->
+                        tagSize + CodedOutputStream.computeRawVarint64Size(varintOrFixed64);
+                case WireFormat.WIRETYPE_FIXED64 -> tagSize + 8;
+                case WireFormat.WIRETYPE_FIXED32 -> tagSize + 4;
+                case WireFormat.WIRETYPE_LENGTH_DELIMITED -> tagSize
+                        + CodedOutputStream.computeRawVarint32Size(lengthDelimited.length)
+                        + lengthDelimited.length;
+                default -> 0;
+            };
         }
     }
 

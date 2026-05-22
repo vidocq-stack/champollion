@@ -50,7 +50,6 @@
 # === Proto2 ===
 # UnknownOrdering : ordre wire mixé (per-occurrence) pas préservé — notre
 # UnknownFieldSet groupe par fieldNumber. Fix demande un List<RawEntry> flat (M7).
-Required.Proto2.ProtobufInput.UnknownOrdering.ProtobufOutput
 # Proto2 oneof MESSAGE Merge JSON output : edge case sub-sub merge avec corecursive (M7)
 Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput
 
@@ -69,4 +68,3 @@ Required.Proto3.JsonInput.AnyNested.ProtobufOutput
 # AnyWkt* : variantes WKT representations (TypeAndValue, BadType)
 
 # === Proto3 — divers ===
-Required.Proto3.ProtobufInput.UnknownOrdering.ProtobufOutput
