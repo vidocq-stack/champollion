@@ -33,6 +33,7 @@ public final class TypeRegistry {
         register(Duration.class);
         register(Empty.class);
         register(FieldMask.class);
+        register(Any.class);
         register(Struct.class);
         register(Value.class);
         register(ListValue.class);
