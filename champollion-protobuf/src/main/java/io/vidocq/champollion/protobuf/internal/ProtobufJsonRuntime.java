@@ -879,16 +879,21 @@ public final class ProtobufJsonRuntime {
     private static Object readScalar(FieldBinding fb, JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (fb.type) {
             case INT32, SINT32, SFIXED32 -> {
-                if (v == JsonParser.Event.VALUE_NUMBER) yield parser.getInt();
+                if (v == JsonParser.Event.VALUE_NUMBER) {
+                    if (!parser.isIntegralNumber()) throw new IOException("int32 expects integer, got fractional");
+                    yield parser.getInt();
+                }
                 if (v == JsonParser.Event.VALUE_STRING) yield Integer.parseInt(parser.getString());
                 throw new IOException("Expected int32-compatible JSON value, got " + v);
             }
             case UINT32, FIXED32 -> {
-                // Accepte les valeurs [0, 2^32-1] et stocke en int signed (bit-preserving).
                 long raw;
-                if (v == JsonParser.Event.VALUE_NUMBER) raw = parser.getLong();
-                else if (v == JsonParser.Event.VALUE_STRING) raw = Long.parseLong(parser.getString());
-                else throw new IOException("Expected uint32-compatible JSON value, got " + v);
+                if (v == JsonParser.Event.VALUE_NUMBER) {
+                    if (!parser.isIntegralNumber()) throw new IOException("uint32 expects integer, got fractional");
+                    raw = parser.getLong();
+                } else if (v == JsonParser.Event.VALUE_STRING) {
+                    raw = Long.parseLong(parser.getString());
+                } else throw new IOException("Expected uint32-compatible JSON value, got " + v);
                 if (raw < 0L || raw > 0xFFFFFFFFL) {
                     throw new IOException("uint32 out of range: " + raw);
                 }
@@ -896,7 +901,10 @@ public final class ProtobufJsonRuntime {
             }
             case INT64, SINT64, SFIXED64 -> {
                 if (v == JsonParser.Event.VALUE_STRING) yield Long.parseLong(parser.getString());
-                if (v == JsonParser.Event.VALUE_NUMBER) yield parser.getLong();
+                if (v == JsonParser.Event.VALUE_NUMBER) {
+                    if (!parser.isIntegralNumber()) throw new IOException("int64 expects integer, got fractional");
+                    yield parser.getLong();
+                }
                 throw new IOException("Expected int64-compatible JSON value, got " + v);
             }
             case UINT64, FIXED64 -> {

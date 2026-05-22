@@ -140,6 +140,7 @@ public final class RuntimeBinding {
                     repeated,
                     packed,
                     pf.explicitPresence(),
+                    pf.oneofGroup(),
                     elementType,
                     i,
                     getter,
@@ -514,6 +515,17 @@ public final class RuntimeBinding {
                 in.skipField(tag);
                 continue;
             }
+            // Spec proto3 §oneof : si plusieurs champs d'un même oneof arrivent sur
+            // la wire, seul le dernier est conservé. On clear les autres slots du
+            // même oneofGroup avant d'écrire le nouveau.
+            if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
+                for (FieldBinding other : plan.fields) {
+                    if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
+                        slots[other.componentIndex] = null;
+                        hasValue[other.componentIndex] = false;
+                    }
+                }
+            }
             readInto(fb, wireType, slots, hasValue, in);
         }
 
@@ -734,6 +746,7 @@ public final class RuntimeBinding {
         final boolean repeated;
         final boolean packed;
         final boolean explicitPresence;
+        final String oneofGroup;
         final Class<?> elementType;
         final int componentIndex;
         final MethodHandle getter;
@@ -750,13 +763,13 @@ public final class RuntimeBinding {
                      boolean explicitPresence,
                      Class<?> elementType, int componentIndex, MethodHandle getter,
                      byte[] tagBytes, byte[] packedTagBytes) {
-            this(number, type, repeated, packed, explicitPresence, elementType,
+            this(number, type, repeated, packed, explicitPresence, "", elementType,
                  componentIndex, getter, tagBytes, packedTagBytes,
                  null, null, null, null, null);
         }
 
         FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
-                     boolean explicitPresence,
+                     boolean explicitPresence, String oneofGroup,
                      Class<?> elementType, int componentIndex, MethodHandle getter,
                      byte[] tagBytes, byte[] packedTagBytes,
                      FieldType mapKeyType, FieldType mapValueType,
@@ -766,6 +779,7 @@ public final class RuntimeBinding {
             this.repeated = repeated;
             this.packed = packed;
             this.explicitPresence = explicitPresence;
+            this.oneofGroup = oneofGroup;
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;
