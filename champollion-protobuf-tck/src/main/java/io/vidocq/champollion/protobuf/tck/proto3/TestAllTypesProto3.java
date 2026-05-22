@@ -139,5 +139,24 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 69, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.STRING) Map<String, String> map_string_string,
         @ProtobufField(number = 70, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.BYTES) Map<String, byte[]> map_string_bytes,
         @ProtobufField(number = 71, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.MESSAGE) Map<String, NestedMessageT> map_string_nested_message,
-        @ProtobufField(number = 73, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.ENUM) Map<String, NestedEnumT> map_string_nested_enum
+        @ProtobufField(number = 73, type = FieldType.MAP, mapKey = FieldType.STRING, mapValue = FieldType.ENUM) Map<String, NestedEnumT> map_string_nested_enum,
+        // Field-name-to-JSON-name convention (401..418)
+        @ProtobufField(number = 401, type = FieldType.INT32) int fieldname1,
+        @ProtobufField(number = 402, type = FieldType.INT32) int field_name2,
+        @ProtobufField(number = 403, type = FieldType.INT32) int _field_name3,
+        @ProtobufField(number = 404, type = FieldType.INT32) int field__name4_,
+        @ProtobufField(number = 405, type = FieldType.INT32) int field0name5,
+        @ProtobufField(number = 406, type = FieldType.INT32) int field_0_name6,
+        @ProtobufField(number = 407, type = FieldType.INT32) int fieldName7,
+        @ProtobufField(number = 408, type = FieldType.INT32) int FieldName8,
+        @ProtobufField(number = 409, type = FieldType.INT32) int field_Name9,
+        @ProtobufField(number = 410, type = FieldType.INT32) int Field_Name10,
+        @ProtobufField(number = 411, type = FieldType.INT32) int FIELD_NAME11,
+        @ProtobufField(number = 412, type = FieldType.INT32) int FIELD_name12,
+        @ProtobufField(number = 413, type = FieldType.INT32) int __field_name13,
+        @ProtobufField(number = 414, type = FieldType.INT32) int __Field_name14,
+        @ProtobufField(number = 415, type = FieldType.INT32) int field__name15,
+        @ProtobufField(number = 416, type = FieldType.INT32) int field__Name16,
+        @ProtobufField(number = 417, type = FieldType.INT32) int field_name17__,
+        @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__
 ) implements Message {}
