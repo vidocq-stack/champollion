@@ -350,7 +350,15 @@ public final class RuntimeBinding {
             case DOUBLE -> 0.0;
             case STRING -> "";
             case BYTES -> new byte[0];
-            case ENUM, MESSAGE, MAP -> null;
+            case ENUM -> {
+                // Default proto3 §enum : la première constante déclarée (value=0).
+                // En cas d'enum unknown reçu sur wire, le caller distingue via byValue→null.
+                if (messageClass != null && messageClass.isEnum()) {
+                    yield messageClass.getEnumConstants()[0];
+                }
+                yield null;
+            }
+            case MESSAGE, MAP -> null;
         };
     }
 
