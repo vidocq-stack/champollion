@@ -370,7 +370,10 @@ public final class RuntimeBinding {
                 slots[idx] = list;
                 hasValue[idx] = true;
             }
-            if (fb.packed && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED && fb.type.packable()) {
+            // Le lecteur doit accepter PACKED et UNPACKED pour un même champ
+            // (proto3 / Edition 2023 spec), peu importe la valeur de fb.packed
+            // côté binding — c'est juste l'hint d'écriture.
+            if (wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED && fb.type.packable()) {
                 int size = in.readRawVarint32();
                 int oldLimit = in.pushLimit(size);
                 while (!in.isAtEnd()) {
@@ -414,8 +417,11 @@ public final class RuntimeBinding {
                     throw new IOException("ENUM field bound to non-enum class " + ec);
                 }
                 Object[] constants = ec.getEnumConstants();
+                // Proto3 spec : valeurs enum inconnues sont tolérées (forward compat).
+                // On stocke null (≡ unknown) plutôt que de jeter. Le caller decide
+                // de l'omettre lors de la re-sérialisation ou de re-émettre la valeur.
                 if (ordinal < 0 || ordinal >= constants.length) {
-                    throw new IOException("Unknown enum ordinal " + ordinal + " for " + ec);
+                    yield null;
                 }
                 yield constants[ordinal];
             }
@@ -441,6 +447,14 @@ public final class RuntimeBinding {
 
     private static Object defaultFor(FieldBinding fb) {
         if (fb.repeated) return List.of();
+        // explicitPresence (oneof / proto2 / Edition 2023 EXPLICIT) : un champ
+        // absent du wire reste null en Java pour distinguer "absent" de "présent
+        // avec valeur default". Le caller utilise null pour ne pas écrire le champ.
+        // Requiert que le elementType ne soit pas une primitive — c'est garanti
+        // pour les oneof (Integer/Long/etc. wrapper types).
+        if (fb.explicitPresence && !fb.elementType.isPrimitive()) {
+            return null;
+        }
         return switch (fb.type) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> 0;
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> 0L;

@@ -858,15 +858,18 @@ public final class ProtobufJsonRuntime {
                     for (Object c : constants) {
                         if (((Enum<?>) c).name().equals(name)) yield c;
                     }
-                    throw new IOException("Unknown enum constant '" + name + "' for " + fb.elementType);
+                    // Proto3 JSON canonical : enum unknown value est tolérée
+                    // (forward-compat). On retourne null — caller décide.
+                    yield null;
                 }
                 if (v == JsonParser.Event.VALUE_NUMBER) {
                     int ord = parser.getInt();
                     if (ord < 0 || ord >= constants.length) {
-                        throw new IOException("Unknown enum ordinal " + ord + " for " + fb.elementType);
+                        yield null;
                     }
                     yield constants[ord];
                 }
+                if (v == JsonParser.Event.VALUE_NULL) yield null;
                 throw new IOException("Expected enum value, got " + v);
             }
             case MESSAGE -> {
