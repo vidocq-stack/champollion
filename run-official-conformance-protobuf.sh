@@ -18,13 +18,23 @@
 #
 # Le rapport est écrit dans champollion-protobuf-tck/target/conformance-report.txt
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TCK_DIR="$SCRIPT_DIR/champollion-protobuf-tck"
 REPORT="$TCK_DIR/target/conformance-report.txt"
 
 MODE="${1:-smoke}"
+
+# Charge sdkman si dispo pour avoir Java 25 + Maven 4 (sinon shell non-interactif
+# n'a pas la commande `sdk`).
+if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.sdkman/bin/sdkman-init.sh" || true
+fi
+if command -v sdk >/dev/null 2>&1; then
+    (cd "$SCRIPT_DIR" && sdk env >/dev/null 2>&1) || true
+fi
 
 if ! command -v java >/dev/null || ! command -v mvn >/dev/null; then
     echo "ERREUR : java et/ou mvn non trouvés ; lance 'sdk env' dans champollion/" >&2
@@ -76,7 +86,26 @@ case "$MODE" in
 esac
 
 JAR="$TCK_DIR/target/champollion-protobuf-tck-0.1.0-SNAPSHOT.jar"
+
+# Génère le classpath complet (dépendances Maven) via dependency:build-classpath.
+# Le `java -jar JAR` standard ne charge pas les deps externes (NoClassDefFoundError
+# sur Message, jakarta.json-api, etc.) — il faut `java -cp` explicite.
+CP_FILE="$TCK_DIR/target/conformance-classpath.txt"
+(cd "$TCK_DIR" && mvn -ntp dependency:build-classpath \
+    "-Dmdep.outputFile=$CP_FILE" \
+    -DincludeScope=runtime -q)
+FULL_CP="$JAR:$(cat "$CP_FILE")"
+
 echo ">>> Conformance $MODE via $RUNNER"
-"$RUNNER" "${ARGS[@]}" -- java -jar "$JAR" 2>&1 | tee "$REPORT"
+# Conformance runner protocol moderne : pas de `--` séparateur, le test-program
+# est passé en dernier argument et exécuté comme binaire fork+pipe.
+WRAPPER="$TCK_DIR/target/run-runner.sh"
+mkdir -p "$(dirname "$WRAPPER")"
+cat > "$WRAPPER" <<EOF
+#!/usr/bin/env bash
+exec java -cp "$FULL_CP" io.vidocq.champollion.protobuf.conformance.ConformanceRunner
+EOF
+chmod +x "$WRAPPER"
+"$RUNNER" "${ARGS[@]}" "$WRAPPER" 2>&1 | tee "$REPORT"
 
 echo "Rapport : $REPORT"

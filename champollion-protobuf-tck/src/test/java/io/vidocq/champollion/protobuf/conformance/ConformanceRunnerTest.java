@@ -1,6 +1,7 @@
 package io.vidocq.champollion.protobuf.conformance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.vidocq.champollion.protobuf.Protobuf;
@@ -16,6 +17,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.io.IOException;
 import java.io.PrintStream;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +32,19 @@ import org.junit.jupiter.api.Test;
  * cohérents pour les cas non encore supportés (skipped).
  */
 class ConformanceRunnerTest {
+
+    /** Encode {@code len} en 4 octets little-endian (le format attendu par
+     * le runner Google et donc consommé par {@link ConformanceRunner}). */
+    private static void writeLenLE(ByteArrayOutputStream out, int len) {
+        out.write(len & 0xFF);
+        out.write((len >>> 8) & 0xFF);
+        out.write((len >>> 16) & 0xFF);
+        out.write((len >>> 24) & 0xFF);
+    }
+
+    private static int readLenLE(DataInputStream in) throws IOException {
+        return ByteBuffer.wrap(in.readNBytes(4)).order(ByteOrder.LITTLE_ENDIAN).getInt();
+    }
 
     @Nested
     @DisplayName("ConformanceMessages — round-trip via runtime binding")
@@ -54,8 +70,23 @@ class ConformanceRunnerTest {
         void response_skipped_factory_only_sets_skipped_field() {
             ConformanceResponse r = ConformanceResponse.skipped("not yet");
             assertEquals("not yet", r.skipped());
-            assertEquals("", r.parse_error());
-            assertEquals(0, r.protobuf_payload().length);
+            // Les autres champs sont null en mémoire (oneof simulé) mais
+            // après round-trip wire ils seront aux defaults Java ("" / new byte[0])
+            // — la distinction null/default n'est pas portée par le wire format.
+            assertNull(r.parse_error());
+            assertNull(r.protobuf_payload());
+        }
+
+        @Test
+        void response_roundtrip_lost_null_distinction() throws IOException {
+            ConformanceResponse src = ConformanceResponse.skipped("not yet");
+            byte[] bytes = Protobuf.toByteArray(src);
+            ConformanceResponse back = Protobuf.parser(ConformanceResponse.class).parseFrom(bytes);
+            // skipped est présent
+            assertEquals("not yet", back.skipped());
+            // Les champs absents sur le wire deviennent les defaults Java après parse
+            assertEquals("", back.parse_error());
+            assertEquals(0, back.protobuf_payload().length);
         }
     }
 
@@ -72,7 +103,7 @@ class ConformanceRunnerTest {
             byte[] reqBytes = Protobuf.toByteArray(req);
 
             ByteArrayOutputStream input = new ByteArrayOutputStream();
-            new DataOutputStream(input).writeInt(reqBytes.length);
+            writeLenLE(input, reqBytes.length);
             input.write(reqBytes);
             // Pas d'octet suivant → EOF naturel
 
@@ -85,25 +116,25 @@ class ConformanceRunnerTest {
 
             // Vérifie la réponse
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
-            int respLen = din.readInt();
+            int respLen = readLenLE(din);
             byte[] respBytes = din.readNBytes(respLen);
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
             assertTrue(resp.skipped().contains("Unknown message_type"),
                     "skipped doit mentionner le message inconnu, got: " + resp.skipped());
+            // round-trip wire → defaults Java pour les champs absents
             assertEquals("", resp.parse_error());
         }
 
         @Test
         void multiple_requests_all_processed() throws IOException {
             ByteArrayOutputStream input = new ByteArrayOutputStream();
-            DataOutputStream dout = new DataOutputStream(input);
             for (int i = 0; i < 3; i++) {
                 ConformanceRequest req = new ConformanceRequest(
                         new byte[]{(byte) i}, "", WireFormat.PROTOBUF, "ex.T",
                         TestCategory.BINARY_TEST, "", "", false);
                 byte[] reqBytes = Protobuf.toByteArray(req);
-                dout.writeInt(reqBytes.length);
-                dout.write(reqBytes);
+                writeLenLE(input, reqBytes.length);
+                input.write(reqBytes);
             }
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -116,7 +147,7 @@ class ConformanceRunnerTest {
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
             int count = 0;
             while (din.available() > 0) {
-                int respLen = din.readInt();
+                int respLen = readLenLE(din);
                 din.readNBytes(respLen);
                 count++;
             }
@@ -142,7 +173,7 @@ class ConformanceRunnerTest {
             byte[] reqBytes = Protobuf.toByteArray(req);
 
             ByteArrayOutputStream input = new ByteArrayOutputStream();
-            new DataOutputStream(input).writeInt(reqBytes.length);
+            writeLenLE(input, reqBytes.length);
             input.write(reqBytes);
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -151,9 +182,10 @@ class ConformanceRunnerTest {
                     output, new PrintStream(new ByteArrayOutputStream()));
 
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
-            byte[] respBytes = din.readNBytes(din.readInt());
+            byte[] respBytes = din.readNBytes(readLenLE(din));
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
-            assertEquals("", resp.parse_error(), "parse_error must be empty");
+            // round-trip wire perd la distinction null/default proto3
+            assertEquals("", resp.parse_error(), "parse_error must be empty after wire round-trip");
             assertEquals("", resp.serialize_error(), "serialize_error must be empty");
             assertEquals("", resp.skipped(), "must not be skipped");
             // Re-parse le payload réponse en TestAllTypesProto3 et vérifie identité.
@@ -178,7 +210,7 @@ class ConformanceRunnerTest {
             byte[] reqBytes = Protobuf.toByteArray(req);
 
             ByteArrayOutputStream input = new ByteArrayOutputStream();
-            new DataOutputStream(input).writeInt(reqBytes.length);
+            writeLenLE(input, reqBytes.length);
             input.write(reqBytes);
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -187,7 +219,7 @@ class ConformanceRunnerTest {
                     output, new PrintStream(new ByteArrayOutputStream()));
 
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
-            byte[] respBytes = din.readNBytes(din.readInt());
+            byte[] respBytes = din.readNBytes(readLenLE(din));
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
             assertEquals("", resp.parse_error());
             assertTrue(resp.json_payload().contains("\"optionalInt32\":7"),

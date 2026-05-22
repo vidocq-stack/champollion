@@ -8,8 +8,6 @@ import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.Conformanc
 import io.vidocq.champollion.protobuf.conformance.ConformanceMessages.WireFormat;
 import io.vidocq.champollion.protobuf.tck.proto3.TestAllTypesProto3;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -62,19 +60,24 @@ public final class ConformanceRunner {
     }
 
     public void run(InputStream stdin, OutputStream stdout, PrintStream log) throws IOException {
-        DataInputStream in = new DataInputStream(stdin);
-        DataOutputStream out = new DataOutputStream(stdout);
         long total = 0;
         long handled = 0;
         long skipped = 0;
+        byte[] lenBuf = new byte[4];
         while (true) {
-            int len;
-            try {
-                len = in.readInt();
-            } catch (java.io.EOFException eof) {
-                break;
+            int read = stdin.readNBytes(lenBuf, 0, 4);
+            if (read == 0) break;
+            if (read != 4) {
+                throw new IOException("Truncated length prefix (got " + read + " bytes)");
             }
-            byte[] payload = in.readNBytes(len);
+            // Le runner Google encode la longueur en LITTLE-endian (cf.
+            // conformance_test_runner.cc fork_pipe_runner WriteFd / ReadFd) —
+            // contrairement à ce que suggère parfois la doc.
+            int len = (lenBuf[0] & 0xFF)
+                    | ((lenBuf[1] & 0xFF) << 8)
+                    | ((lenBuf[2] & 0xFF) << 16)
+                    | ((lenBuf[3] & 0xFF) << 24);
+            byte[] payload = stdin.readNBytes(len);
             if (payload.length != len) {
                 throw new IOException("Truncated conformance request (expected "
                         + len + " bytes, got " + payload.length + ")");
@@ -84,9 +87,13 @@ public final class ConformanceRunner {
             if (response.skipped() != null && !response.skipped().isEmpty()) skipped++;
             else handled++;
             byte[] respBytes = Protobuf.toByteArray(response);
-            out.writeInt(respBytes.length);
-            out.write(respBytes);
-            out.flush();
+            int rlen = respBytes.length;
+            stdout.write(rlen & 0xFF);
+            stdout.write((rlen >>> 8) & 0xFF);
+            stdout.write((rlen >>> 16) & 0xFF);
+            stdout.write((rlen >>> 24) & 0xFF);
+            stdout.write(respBytes);
+            stdout.flush();
         }
         log.println("Champollion conformance: total=" + total
                 + " handled=" + handled + " skipped=" + skipped);

@@ -58,44 +58,51 @@ public final class ConformanceMessages {
     }
 
     /**
-     * {@code conformance.ConformanceResponse}. Le {@code oneof result} est
-     * représenté par 7 champs (un seul à la fois). On utilise les factories
-     * statiques pour produire une réponse cohérente.
+     * {@code conformance.ConformanceResponse}. Le {@code oneof result} d'origine
+     * est représenté par 8 champs ; un seul est non-{@code null} à la fois.
+     *
+     * <p>{@code explicitPresence=true} sur tous : nécessaire pour que des
+     * payloads <em>vides</em> (ex. {@code protobuf_payload = new byte[0]} quand
+     * le message protobuf encodé est entièrement default) ne soient pas omis,
+     * sinon le runner Google interprète comme "no payload set" et termine sur
+     * {@code unknown payload type: 0}. Les autres factories utilisent {@code null}
+     * pour les champs non sélectionnés afin que {@code writeMessage} les saute
+     * (cf. {@code if (value == null) continue;}).</p>
      */
     @ProtobufMessage
     public record ConformanceResponse(
-            @ProtobufField(number = 1, type = FieldType.STRING) String parse_error,
-            @ProtobufField(number = 2, type = FieldType.STRING) String runtime_error,
-            @ProtobufField(number = 3, type = FieldType.BYTES) byte[] protobuf_payload,
-            @ProtobufField(number = 4, type = FieldType.STRING) String json_payload,
-            @ProtobufField(number = 5, type = FieldType.STRING) String skipped,
-            @ProtobufField(number = 6, type = FieldType.STRING) String serialize_error,
-            @ProtobufField(number = 7, type = FieldType.STRING) String jspb_payload,
-            @ProtobufField(number = 8, type = FieldType.STRING) String text_payload
+            @ProtobufField(number = 1, type = FieldType.STRING, explicitPresence = true) String parse_error,
+            @ProtobufField(number = 2, type = FieldType.STRING, explicitPresence = true) String runtime_error,
+            @ProtobufField(number = 3, type = FieldType.BYTES, explicitPresence = true) byte[] protobuf_payload,
+            @ProtobufField(number = 4, type = FieldType.STRING, explicitPresence = true) String json_payload,
+            @ProtobufField(number = 5, type = FieldType.STRING, explicitPresence = true) String skipped,
+            @ProtobufField(number = 6, type = FieldType.STRING, explicitPresence = true) String serialize_error,
+            @ProtobufField(number = 7, type = FieldType.STRING, explicitPresence = true) String jspb_payload,
+            @ProtobufField(number = 8, type = FieldType.STRING, explicitPresence = true) String text_payload
     ) implements Message {
 
         public static ConformanceResponse parseError(String msg) {
-            return new ConformanceResponse(msg, "", new byte[0], "", "", "", "", "");
+            return new ConformanceResponse(msg, null, null, null, null, null, null, null);
         }
 
         public static ConformanceResponse runtimeError(String msg) {
-            return new ConformanceResponse("", msg, new byte[0], "", "", "", "", "");
+            return new ConformanceResponse(null, msg, null, null, null, null, null, null);
         }
 
         public static ConformanceResponse serializeError(String msg) {
-            return new ConformanceResponse("", "", new byte[0], "", "", msg, "", "");
+            return new ConformanceResponse(null, null, null, null, null, msg, null, null);
         }
 
         public static ConformanceResponse protobufPayload(byte[] bytes) {
-            return new ConformanceResponse("", "", bytes, "", "", "", "", "");
+            return new ConformanceResponse(null, null, bytes, null, null, null, null, null);
         }
 
         public static ConformanceResponse jsonPayload(String json) {
-            return new ConformanceResponse("", "", new byte[0], json, "", "", "", "");
+            return new ConformanceResponse(null, null, null, json, null, null, null, null);
         }
 
         public static ConformanceResponse skipped(String reason) {
-            return new ConformanceResponse("", "", new byte[0], "", reason, "", "", "");
+            return new ConformanceResponse(null, null, null, null, reason, null, null, null);
         }
     }
 }
