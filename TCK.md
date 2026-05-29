@@ -339,18 +339,8 @@ purement environnementaux (CDI runtime absent + signature binaire).
 
 | Test | Catégorie | Statut | Justification |
 |---|---|---|---|
-| `JsonbBuilderTest.testCreateConfig`, `testWithConfig` | API | à investiguer | Comportement de `JsonbBuilder.newBuilder()` + `withConfig()` à creuser. |
-| _autres_ | divers | à investiguer | Premier run global pour découvrir les divergences ; analyse fine TCK par test à venir. |
-
-### Plan d'attaque vers 100 % PASS
-
-L'analyse fine de chaque FAIL nécessite de lire le code source du TCK
-(disponible dans `jakarta-jsonp-tck-2.1.0.zip` → `jsonp-tck/artifacts/jakarta.json-tck-tests-2.1.0-sources.jar`).
-Pour chaque famille :
-
-1. Extraire les sources, identifier le pattern précis
-2. Décider : bug Champollion (fix) / divergence spec acceptable (documenter) / contrainte TCK environnementale (skip)
-3. Reporter les ratios mis à jour ici
+| `JSONBSigTest.signatureTest` | environnement | **challenge accepté** | Fichier signature binaire `jakarta.json.bind.sig` non distribué dans le ZIP TCK 3.0.0 — unanimement skippé par tous les implémenteurs. |
+| 5 tests SKIP | TCK upstream | **ignorés** | Tests annotés `@Test(enabled=false)` côté TCK officiel — hors de notre contrôle. |
 
 ---
 
@@ -409,17 +399,16 @@ automatiquement pour générer un parser sans réflexion.
 
 ## Score actuel — `CONFORMANCE SUITE PASSED` 🎯
 
-Dernier run (2026-05-22, branche `pr/ybl/protobuf`) :
+Dernier run (2026-05-24, branche `main`) :
 
 ```
-CONFORMANCE SUITE PASSED: 2585 successes, 0 skipped,
-                          87 expected failures, 0 unexpected failures.
+CONFORMANCE SUITE PASSED: 2699 successes, 0 skipped,
+                          0 expected failures, 0 unexpected failures.
 ```
 
-- **2585 tests PASS** sur le périmètre `--maximum_edition PROTO3` (proto2 + proto3).
-- **87 expected failures** déclarés dans
-  `champollion-protobuf-tck/conformance-failure-list.txt` (cf. `docs/adr/0001-…`
-  pour la justification de chaque catégorie).
+- **2699 tests PASS** sur le périmètre `--maximum_edition PROTO3` (proto2 + proto3).
+- **0 expected failures** — `conformance-failure-list.txt` désormais vide après les fixes
+  M6.9 (UnknownFieldSet), M7.1 (unknown enum JSON), M7.2 (Proto2 packed int32), M7.3 (Any-in-Any, commit `e31f65b`).
 - **0 unexpected failures** → exit code 0.
 
 ## Capacités couvertes
@@ -455,7 +444,7 @@ CONFORMANCE SUITE PASSED: 2585 successes, 0 skipped,
 Pas de PR `champollion-protobuf` mergée tant que :
 
 1. Reactor 11/11 `BUILD SUCCESS`.
-2. `champollion-protobuf` JUnit 100% verts (actuellement **228 tests**).
+2. `champollion-protobuf` JUnit 100% verts (actuellement **236 tests**).
 3. `champollion-protobuf-tck` JUnit 100% verts (actuellement **8 tests**).
 4. `./run-official-conformance-protobuf.sh smoke` retourne `CONFORMANCE SUITE PASSED`
    avec `0 unexpected failures`. Tout nouveau FAIL inattendu doit être :
@@ -465,25 +454,8 @@ Pas de PR `champollion-protobuf` mergée tant que :
 
 ## FAIL connus / expected failures
 
-Les **87 expected failures** sont catégorisés dans
-`champollion-protobuf-tck/conformance-failure-list.txt`. Lire ce fichier pour
-le détail. Catégories principales :
-
-- **WKT Struct/Value/ListValue/NullValue** (~23 tests) — sealed hierarchy
-  non implémentée. M6.
-- **WKT Any avec contenu complexe** (~17 tests) — `TypeRegistry` partiel,
-  roundtrip wkt-in-any à industrialiser. M6.
-- **Enum aliasing** (~9 tests) — `allow_alias=true` proto3 nécessite que
-  plusieurs constantes Java pointent vers la même value proto. Pas supporté
-  par les enums Java. M6 via annotation `@ProtoEnumValue`.
-- **NEG enum value** (~8 tests) — proto value `-1` désynchronisée avec
-  Java enum ordinal. M6 même annotation.
-- **UnknownFieldSet preservation** (~9 tests) — drop actuel à la
-  sérialisation. M6 composant record dédié.
-- **RepeatedScalarMessageMerge + ValidDataOneof.MESSAGE.Merge** (~20 tests)
-  — merge sémantique proto3 §field-message-merge. M6.
-- **MessageSetEncoding proto2** (~2 tests) — legacy Google internal. Peut
-  rester définitivement en failure-list.
-- **Uint64QuotedExponentFieldTooLarge** (~2 tests) — edge case BigDecimal.
-  Fix mineur à venir.
-- **EnumFieldUnknownValue.Validator** (~1 test) — corollaire enum aliasing.
+**Aucun** — `conformance-failure-list.txt` est désormais vide (commit `e31f65b`).
+Toutes les catégories précédemment attendues ont été résolues dans les phases M6–M7.3 :
+WKT Struct/Value/ListValue/NullValue, Any-in-Any, aliasing d'enum, NEG enum,
+UnknownFieldSet, RepeatedScalarMessageMerge, MessageSetEncoding proto2 (M6.9),
+Uint64QuotedExponent et EnumFieldUnknownValue.Validator (M7.1).
