@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.1.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd"
-         root="true">
-    <modelVersion>4.1.0</modelVersion>
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         >
+    <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>io.vidocq</groupId>
         <artifactId>vidocq-parent</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>0.1.1-SNAPSHOT</version>
         <relativePath/>
     </parent>
 
@@ -56,18 +56,18 @@
         les POMs Model 4.1.0. Il sera invoqué par run-official-tck-jsonp.sh
         et run-official-tck-jsonb.sh après installation locale du reactor.
     -->
-    <subprojects>
-        <subproject>champollion-api</subproject>
-        <subproject>champollion-jsonp</subproject>
-        <subproject>champollion-jsonb</subproject>
-        <subproject>champollion-protobuf</subproject>
-        <subproject>champollion-protobuf-codegen</subproject>
-        <subproject>champollion-protobuf-maven-plugin</subproject>
-        <subproject>champollion-codegen-apt</subproject>
-        <subproject>champollion-codegen-maven-plugin</subproject>
-        <subproject>champollion-bench</subproject>
-        <subproject>champollion-examples</subproject>
-    </subprojects>
+    <modules>
+        <module>champollion-api</module>
+        <module>champollion-jsonp</module>
+        <module>champollion-jsonb</module>
+        <module>champollion-protobuf</module>
+        <module>champollion-protobuf-codegen</module>
+        <module>champollion-protobuf-maven-plugin</module>
+        <module>champollion-codegen-apt</module>
+        <module>champollion-codegen-maven-plugin</module>
+        <module>champollion-bench</module>
+        <module>champollion-examples</module>
+    </modules>
 
     <dependencyManagement>
         <dependencies>

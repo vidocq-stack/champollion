@@ -7,7 +7,7 @@ Cinq minutes pour ajouter Champollion à un projet Maven, parser un document JSO
 == Prérequis
 
 * Java 25 (Temurin recommandé)
-* Maven 4.0.0-rc-5 (un `.sdkmanrc` est fourni à la racine du repo : `sdk env`)
+* Maven 3.9.16 (un `.sdkmanrc` est fourni à la racine du repo : `sdk env`)
 * Aucune autre dépendance — Champollion ne tire **rien** d'autre que les specs Jakarta
 
 == Dépendances Maven

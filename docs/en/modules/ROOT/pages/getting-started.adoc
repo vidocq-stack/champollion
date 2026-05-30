@@ -7,7 +7,7 @@ Five minutes to add Champollion to a Maven project, parse a JSON document in str
 == Prerequisites
 
 * Java 25 (Temurin recommended)
-* Maven 4.0.0-rc-5 (a `.sdkmanrc` is provided at the repo root: `sdk env`)
+* Maven 3.9.16 (a `.sdkmanrc` is provided at the repo root: `sdk env`)
 * No other dependency — Champollion pulls **nothing** else than the Jakarta specs
 
 == Maven dependencies

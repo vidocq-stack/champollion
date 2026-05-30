@@ -203,7 +203,7 @@ Bound to `generate-sources`. 100% delegation to `champollion-codegen-apt` — no
 == Compatibility
 
 * **Java**: 25 (LTS).
-* **Maven**: 4.0.0-rc-5 (Model 4.1.0 for the main reactor; `champollion-tck` stays in standalone Model 4.0.0 — see xref:tck.adoc[]).
+* **Maven**: 3.9.16 (Model 4.0.0 — the whole Vidocq stack moved to Maven 3.9; see xref:tck.adoc[] for the historical ShrinkWrap note).
 * **JPMS**: strict, every module has a `module-info.java`.
 * **Virtual threads**: no `synchronized`, no exported `ThreadLocal`.
 * **AOT**: GraalVM `native-image` and Leyden CDS friendly in static codegen mode.

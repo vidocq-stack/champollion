@@ -71,7 +71,7 @@ Bugs reproductibles : [`BUG.md`](./BUG.md). Mesures perf : [`BENCH.md`](./BENCH.
 ## Démarrage rapide
 
 ```bash
-sdk env                           # JDK 25 + Maven 4.0.0-rc-5 (cf. .sdkmanrc)
+sdk env                           # JDK 25 + Maven 3.9.16 (cf. .sdkmanrc)
 mvn -ntp install -DskipTests      # build du reactor (8 modules)
 mvn test                          # tests unitaires
 ```

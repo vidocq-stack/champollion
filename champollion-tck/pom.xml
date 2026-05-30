@@ -2,7 +2,7 @@
 <!--
     champollion-tck — runner des TCK officiels Jakarta JSON-P 2.1 et JSON-B 3.0.
 
-    Module HORS REACTOR (volontairement pas listé dans <subprojects> du parent
+    Module HORS REACTOR (volontairement pas listé dans <modules> du parent
     champollion 0.1.0-SNAPSHOT) — POM Maven Model 4.0.0 standalone pour
     contourner ShrinkWrap Maven Resolver 3.3 qui ne sait pas parser les POMs
     Model 4.1.0. Même contrainte que cassini-tck/foy-tck.

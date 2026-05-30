@@ -12,7 +12,7 @@
 #   ./run-official-conformance-protobuf.sh --editions  # cible Editions 2023
 #
 # Prérequis :
-#   - Java 25 + Maven 4.0.0-rc-5 (cf. .sdkmanrc)
+#   - Java 25 + Maven 3.9.16 (cf. .sdkmanrc)
 #   - Le binaire `conformance_test_runner` accessible via $CONFORMANCE_TEST_RUNNER
 #     (sinon : voir section "Installation du runner Google" plus bas)
 #
