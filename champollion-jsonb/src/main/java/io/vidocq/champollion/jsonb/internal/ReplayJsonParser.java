@@ -11,13 +11,13 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * {@link JsonParser} qui rejoue un événement déjà consommé sur le parser sous-jacent.
+ * {@link JsonParser} that replays an event already consumed from the underlying parser.
  *
- * <p>Cas d'usage : un {@code JsonbDeserializer} custom a déjà appelé {@code parser.next()}
- * pour récupérer le {@code START_OBJECT}/{@code START_ARRAY}/{@code VALUE_xxx} initial,
- * puis appelle {@code ctx.deserialize(type, parser)}. La désérialisation standard
- * de Champollion fait {@code parser.next()} au début, ce qui consommerait l'élément
- * suivant (KEY_NAME, etc.). Ce wrapper restitue l'événement initial une fois.</p>
+ * <p>Use case: a custom {@code JsonbDeserializer} has already called
+ * {@code parser.next()} to obtain the initial {@code START_OBJECT}/{@code START_ARRAY}
+ * / {@code VALUE_xxx}, then calls {@code ctx.deserialize(type, parser)}. Champollion's
+ * standard deserialization calls {@code parser.next()} at the beginning, which would
+ * consume the next element (KEY_NAME, etc.). This wrapper returns the initial event once.</p>
  */
 final class ReplayJsonParser implements JsonParser {
 

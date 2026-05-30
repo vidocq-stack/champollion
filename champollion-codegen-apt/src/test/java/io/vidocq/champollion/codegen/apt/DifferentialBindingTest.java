@@ -121,11 +121,11 @@ class DifferentialBindingTest {
         Class<?> bindingClass = cl.loadClass(fqn + "$$Binding");
         var staticBinding = (JsonbBinding<Object>) bindingClass.getDeclaredConstructor().newInstance();
 
-        // Le binding statique compilé vit dans 'cl' (URLClassLoader temporaire) ;
-        // le JsonbBuilder.create() du test, lui, utilise le ClassLoader du test.
-        // Ces deux ClassLoader sont disjoints : le ServiceLoader du runtime ne voit
-        // PAS le binding statique → introspection garantie. C'est exactement ce
-        // qu'on veut pour le differential testing.
+        // The compiled static binding lives in 'cl' (temporary URLClassLoader);
+        // the JsonbBuilder.create() of the test, on the other hand, uses the test's ClassLoader.
+        // These two ClassLoaders are disjoint: the runtime's ServiceLoader does not see
+        // the static binding → introspection guaranteed. This is exactly what
+        // we want for differential testing.
         Jsonb runtimeJsonb = JsonbBuilder.create();
 
         return new Setup(target, staticBinding, runtimeJsonb);

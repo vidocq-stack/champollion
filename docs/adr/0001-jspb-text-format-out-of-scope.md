@@ -1,58 +1,58 @@
-# ADR 0001 — JSPB et TEXT_FORMAT hors scope
+# ADR 0001 — JSPB and TEXT_FORMAT out of scope
 
-## Statut
+## Status
 
-Accepté — 2026-05-22.
+Accepted — 2026-05-22.
 
-## Contexte
+## Context
 
-Le `conformance_test_runner` Google envoie 4 wire formats à tester :
-PROTOBUF, JSON, JSPB, TEXT_FORMAT. Pour atteindre 100% PASS, Champollion doit
-fournir une réponse correcte sur les 4 — ou les déclarer comme expected
-failures dans `--failure_list`.
+Google's `conformance_test_runner` sends 4 wire formats to test:
+PROTOBUF, JSON, JSPB, TEXT_FORMAT. To reach 100% PASS, Champollion must
+provide a correct response for all 4 — or declare them as expected
+failures in `--failure_list`.
 
-- **JSPB** : encodage JavaScript Protocol Buffer interne à Google. Utilisé
-  par Closure Library / GWT côté frontend Google. Aucun consommateur Java
-  raisonnable. Non documenté dans la spec publique proto3.
-- **TEXT_FORMAT** : format texte ad-hoc (`my_field: 42 nested { ... }`).
-  Spec officiellement « debugging only » (cf. <https://protobuf.dev/reference/protobuf/textformat-spec/>).
-  ~5 kLOC d'implémentation pour zéro valeur métier en pratique — les
-  consommateurs Java ont déjà `Message.toString()` natif.
+- **JSPB**: Google's internal JavaScript Protocol Buffer encoding. Used by
+  Closure Library / GWT on Google's frontend side. No reasonable Java consumer.
+  Not documented in the public proto3 spec.
+- **TEXT_FORMAT**: ad-hoc text format (`my_field: 42 nested { ... }`).
+  Officially "debugging only" (see <https://protobuf.dev/reference/protobuf/textformat-spec/>).
+  ~5 kLOC of implementation for zero practical business value — Java consumers
+  already have native `Message.toString()`.
 
-## Décision
+## Decision
 
-**Champollion ne supporte ni JSPB ni TEXT_FORMAT.**
+**Champollion supports neither JSPB nor TEXT_FORMAT.**
 
-Les tests conformance qui les requièrent (`*.JspbInput.*`, `*.JspbOutput.*`,
-`*.TextInput.*`, `*.TextOutput.*`) sont déclarés dans
-`champollion-protobuf-tck/conformance-failure-list.txt` et passés au runner
-Google via `--failure_list`. Ils sont comptés comme **expected failures** —
-n'impactent pas le score 100% PASS du périmètre supporté.
+The conformance tests that require them (`*.JspbInput.*`, `*.JspbOutput.*`,
+`*.TextInput.*`, `*.TextOutput.*`) are listed in
+`champollion-protobuf-tck/conformance-failure-list.txt` and passed to Google's
+runner via `--failure_list`. They are counted as **expected failures** — they do
+not affect the 100% PASS score for the supported scope.
 
-Le `ConformanceRunner.handle` continue de répondre `skipped` pour ces tests
-(absent de `KNOWN_TYPES` ou wire format JSPB/TEXT) — le runner Google les
-classe selon la failure-list.
+`ConformanceRunner.handle` continues to respond `skipped` for these tests
+(absent from `KNOWN_TYPES` or the JSPB/TEXT wire format) — Google's runner
+classifies them according to the failure list.
 
-## Conséquences
+## Consequences
 
-**Positives** :
-- Économie de ~30 jours-homme d'implémentation (TEXT_FORMAT lecteur + écrivain
-  + 4 sous-grammaires).
-- Aucune dette technique sur des formats que personne n'utilisera en pratique
-  côté Java (la spec public Google ne mentionne JSPB nulle part).
-- Cohérent avec `protobuf-java` officiel qui n'a pas non plus de lecteur
-  TEXT_FORMAT strict.
+**Positives**:
+- Saves ~30 person-days of implementation (TEXT_FORMAT reader + writer
+  + 4 subgrammars).
+- No technical debt for formats that nobody will use in practice on the Java
+  side (the public Google spec does not mention JSPB anywhere).
+- Consistent with official `protobuf-java`, which also does not provide a strict
+  TEXT_FORMAT reader.
 
-**Négatives** :
-- Le score conformance affiché par le runner contient une ligne
-  `87 expected failures` à expliquer à un reviewer.
-- Si une consommation gRPC future requiert un format texte (peu probable —
-  gRPC est binaire), il faudra implémenter.
+**Negatives**:
+- The conformance score displayed by the runner includes a line
+  `87 expected failures` to explain to reviewers.
+- If a future gRPC use case requires a text format (unlikely — gRPC is binary),
+  it will have to be implemented.
 
-## Alternatives écartées
+## Rejected Alternatives
 
-| Option | Pourquoi écarté |
+| Option | Why rejected |
 |---|---|
-| Implémenter TEXT_FORMAT lecteur seul | Spec non figée, ~5 kLOC, zero usage |
-| Implémenter JSPB | Aucun consommateur public, format propriétaire Closure |
-| Forker le runner Google pour supprimer ces tests | Coût de maintenance > coût du failure-list |
+| Implement TEXT_FORMAT reader only | Spec not fixed, ~5 kLOC, zero usage |
+| Implement JSPB | No public consumer, proprietary Closure format |
+| Fork Google's runner to remove these tests | Maintenance cost > failure-list cost |

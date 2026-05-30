@@ -6,17 +6,17 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marque un type pour la génération d'un {@link JsonbBinding} à la compilation
- * par {@code champollion-codegen-apt}.
+ * Marks a type for generation of a {@link JsonbBinding} at compile time by
+ * {@code champollion-codegen-apt}.
  *
- * <p>Le binding généré sera enregistré comme service {@link JsonbBinding} via
- * un fichier {@code META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding}
- * et donc utilisé en lookup-first par {@code ChampollionJsonb}, sans aucune
- * réflexion à l'exécution.</p>
+ * <p>The generated binding will be registered as a {@link JsonbBinding} service
+ * via a {@code META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding}
+ * file and therefore used lookup-first by {@code ChampollionJsonb}, with no
+ * reflection at runtime.</p>
  *
- * <p>Rétention {@link RetentionPolicy#CLASS} : préservée dans le bytecode pour
- * permettre un éventuel scan post-compile par {@code champollion-codegen-maven-plugin}
- * sur les types annotés transitivement, sans nécessiter d'avoir le code source.</p>
+ * <p>{@link RetentionPolicy#CLASS} retention: preserved in bytecode to allow a
+ * possible post-compile scan by {@code champollion-codegen-maven-plugin} on
+ * transitively annotated types, without requiring source code access.</p>
  */
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.TYPE)

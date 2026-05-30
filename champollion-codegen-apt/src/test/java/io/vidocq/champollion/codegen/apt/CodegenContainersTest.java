@@ -95,10 +95,10 @@ class CodegenContainersTest {
                 .newInstance("Bob", Optional.empty());
         var sw2 = new StringWriter();
         try (JsonGenerator g = Json.createGenerator(sw2)) { s.staticBinding.write(g, empty); }
-        // Optional.empty() omis du JSON par le binding statique (cohérent §3.14.2 + sémantique runtime).
+        // Optional.empty() omitted from JSON by static binding (consistent with §3.14.2 + runtime semantics).
         assertEquals("{\"name\":\"Bob\"}", sw2.toString());
 
-        // Read sur JSON sans email → Optional.empty()
+        // Read on JSON without email → Optional.empty()
         try (JsonParser p = Json.createParser(new StringReader("{\"name\":\"Bob\"}"))) {
             Object back = s.staticBinding.read(p);
             Optional<?> emailField = (Optional<?>) s.targetClass.getMethod("email").invoke(back);

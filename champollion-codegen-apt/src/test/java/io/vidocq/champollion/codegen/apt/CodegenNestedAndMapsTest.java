@@ -82,8 +82,8 @@ class CodegenNestedAndMapsTest {
 
     @Test
     void nested_static_record_field(@TempDir Path tmp) throws Exception {
-        // Deux records dans le même round APT — A contient un B annoté @JsonbStatic.
-        // L'APT doit générer A$$Binding qui appelle new B$$Binding() pour la délégation.
+        // Two records in the same APT round — A contains a B annotated @JsonbStatic.
+        // APT must generate A$$Binding that calls new B$$Binding() for delegation.
         String src = """
                 package generated.m55;
                 import io.vidocq.champollion.jsonb.spi.JsonbStatic;

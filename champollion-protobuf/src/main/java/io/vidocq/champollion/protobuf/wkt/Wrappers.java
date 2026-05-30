@@ -6,12 +6,12 @@ import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
 /**
- * Wrappers {@code google.protobuf.*Value} — version « boxée » des scalaires
- * permettant l'expression de la présence explicite en proto3.
+ * Wrappers {@code google.protobuf.*Value} — boxed versions of scalars
+ * allowing explicit presence to be expressed in proto3.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#wrapper-types">Wrapper types</a>.
- * JSON canonical : la <b>valeur primitive directement</b>, sans wrapper d'objet
- * (ex. {@code 42} et pas {@code {"value":42}}).</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#wrapper-types">Wrapper types</a>.
+ * Canonical JSON: the <b>primitive value directly</b>, without an object wrapper
+ * (e.g. {@code 42} and not {@code {"value":42}}).</p>
  */
 public final class Wrappers {
 

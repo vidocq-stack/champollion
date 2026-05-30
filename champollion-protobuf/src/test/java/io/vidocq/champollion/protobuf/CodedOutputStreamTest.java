@@ -85,7 +85,7 @@ class CodedOutputStreamTest {
 
         @Test
         void negative_int32_via_writeInt32NoTag_is_ten_bytes_sign_extended() throws IOException {
-            // Sign-extension proto2 : un int32 négatif occupe 10 octets en varint.
+            // Sign-extension proto2 : a negative int32 occupies 10 bytes in varint.
             byte[] bytes = encode(o -> o.writeInt32NoTag(-1));
             assertEquals(10, bytes.length);
         }

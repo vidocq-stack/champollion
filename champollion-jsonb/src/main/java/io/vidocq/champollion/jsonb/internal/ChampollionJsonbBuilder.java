@@ -9,9 +9,9 @@ import jakarta.json.spi.JsonProvider;
 import java.util.List;
 
 /**
- * {@link JsonbBuilder} Champollion. Pour l'instant la configuration et le
- * provider JSON-P sous-jacent sont fixes ; M4.1 = MVP. L'enrichissement de
- * {@link JsonbConfig} suivra.
+ * Champollion {@link JsonbBuilder}. For now the configuration and underlying
+ * JSON-P provider are fixed; M4.1 is the MVP. {@link JsonbConfig} support will
+ * be expanded later.
  */
 public final class ChampollionJsonbBuilder implements JsonbBuilder {
 
@@ -30,9 +30,9 @@ public final class ChampollionJsonbBuilder implements JsonbBuilder {
     }
 
     /**
-     * Pré-charge des {@link JsonbBinding} statiques (en plus / à la place de la
-     * découverte par {@link java.util.ServiceLoader}). Utile pour les tests et
-     * pour les bindings écrits à la main qui ne passent pas par l'APT.
+     * Preloads static {@link JsonbBinding}s (in addition to or instead of
+     * {@link java.util.ServiceLoader} discovery). Useful for tests and for
+     * manually written bindings that do not go through the APT.
      */
     public ChampollionJsonbBuilder withStaticBindings(List<? extends JsonbBinding<?>> bindings) {
         this.staticBindings = bindings;
@@ -44,8 +44,8 @@ public final class ChampollionJsonbBuilder implements JsonbBuilder {
     }
 
     /**
-     * Variante typée {@link ChampollionJsonb} pour exposer les méthodes internes
-     * dans les tests sans cast.
+     * Typed {@link ChampollionJsonb} variant to expose internal methods in tests
+     * without casts.
      */
     ChampollionJsonb buildChampollion() {
         JsonProvider provider = jsonProvider != null ? jsonProvider : JsonProvider.provider();

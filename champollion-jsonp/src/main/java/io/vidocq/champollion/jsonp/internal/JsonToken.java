@@ -1,9 +1,9 @@
 package io.vidocq.champollion.jsonp.internal;
 
 /**
- * Tokens élémentaires reconnus par le scanner JSON RFC 8259.
+ * Elementary tokens recognized by the RFC 8259 JSON scanner.
  *
- * <p>Hiérarchie sealed pour exhaustive matching dans les niveaux supérieurs.</p>
+ * <p>Sealed hierarchy for exhaustive matching in higher layers.</p>
  */
 public sealed interface JsonToken {
 
@@ -34,12 +34,12 @@ public sealed interface JsonToken {
     /** {@code null} */
     enum Null implements JsonToken { INSTANCE }
 
-    /** Fin de flux. */
+    /** End of stream. */
     enum Eof implements JsonToken { INSTANCE }
 
-    /** Chaîne JSON décodée (sans quotes, escapes appliqués). RFC 8259 §7. */
+    /** Decoded JSON string (without quotes, escapes applied). RFC 8259 §7. */
     record StringToken(String value) implements JsonToken {}
 
-    /** Nombre JSON sous forme textuelle (parsing différé en {@code BigDecimal} si demandé). RFC 8259 §6. */
+    /** JSON number as text (deferred parsing to {@code BigDecimal} if needed). RFC 8259 §6. */
     record NumberToken(String literal) implements JsonToken {}
 }

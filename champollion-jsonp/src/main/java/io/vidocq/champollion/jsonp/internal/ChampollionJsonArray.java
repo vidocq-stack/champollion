@@ -10,8 +10,8 @@ import java.util.AbstractList;
 import java.util.List;
 
 /**
- * Implémentation immuable de {@link JsonArray}. Délègue à une {@code List<JsonValue>}
- * non modifiable. Spec Jakarta JSON-P §4.2.
+ * Immutable {@link JsonArray} implementation. Delegates to an unmodifiable
+ * {@code List<JsonValue>}. Jakarta JSON-P §4.2.
  */
 public final class ChampollionJsonArray extends AbstractList<JsonValue> implements JsonArray {
 

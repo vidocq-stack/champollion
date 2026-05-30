@@ -183,7 +183,7 @@ class ChampollionJsonbWriteTest {
             try (var j = jsonb()) {
                 var p = new PublicFields("Alice", 7);
                 String json = j.toJson(p);
-                // Ordre champs pas garanti par la spec ; on vérifie le contenu.
+                // Field order not guaranteed by spec; we verify the content.
                 assertTrue(json.contains("\"name\":\"Alice\""));
                 assertTrue(json.contains("\"count\":7"));
             } catch (Exception e) { throw new RuntimeException(e); }

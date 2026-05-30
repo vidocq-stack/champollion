@@ -104,7 +104,7 @@ class JsonValueImplTest {
 
         @Test
         void equals_compares_numerical_value_per_spec() {
-            // Spec §4.5 : equals based on bigDecimalValue() — "1" et "1.0" sont égaux numériquement.
+            // Spec §4.5 : equals based on bigDecimalValue() — "1" and "1.0" are numerically equal.
             var a = ChampollionJsonNumber.of("1");
             var b = ChampollionJsonNumber.of("1.0");
             assertEquals(a, b);

@@ -20,20 +20,20 @@ import java.util.Deque;
  * <p>Pile de contextes pour valider la grammaire (KEY attendue dans un objet,
  * VALUE attendue dans un array, etc.). Pas de {@code synchronized}.</p>
  *
- * <p>Pretty-printing : 4 espaces, LF unique. Pas configurable au niveau M1 — sera
- * exposé via {@link jakarta.json.stream.JsonGeneratorFactory} en M1.4.</p>
+ * <p>Pretty-printing: 4 spaces, single LF. Not configurable at M1 — will be
+ * exposed via {@link jakarta.json.stream.JsonGeneratorFactory} in M1.4.</p>
  */
 public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKeyWriter {
 
     private enum Ctx {
-        ROOT_BEFORE,    // racine pas encore écrite
-        ROOT_AFTER,     // racine écrite, plus rien autorisé
-        OBJECT_FIRST,   // dans un objet, aucun membre encore
-        OBJECT_KEY,     // dans un objet, en attente d'une clé (après ',')
-        OBJECT_VALUE,   // dans un objet, on vient d'écrire une clé, valeur attendue
-        OBJECT_AFTER_VALUE, // après une valeur d'objet, attend ',' ou '}'
-        ARRAY_FIRST,    // dans un array, aucun élément
-        ARRAY_AFTER     // dans un array, après un élément, attend ',' ou ']'
+        ROOT_BEFORE,    // root not written yet
+        ROOT_AFTER,     // root written, nothing else allowed
+        OBJECT_FIRST,   // in an object, no member yet
+        OBJECT_KEY,     // in an object, waiting for a key (after ',')
+        OBJECT_VALUE,   // in an object, a key was just written, value expected
+        OBJECT_AFTER_VALUE, // after an object value, expects ',' or '}'
+        ARRAY_FIRST,    // in an array, no element yet
+        ARRAY_AFTER     // in an array, after an element, expects ',' or ']'
     }
 
     private final Writer out;
@@ -43,11 +43,10 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
         if (out == null) throw new IllegalArgumentException("writer is null");
-        // P2 — buffer 1 KB par défaut sur le Writer cible. Évite des dizaines
-        // de petits writes par valeur sur OutputStreamWriter/StringWriter et
-        // amortit le coût d'écriture des escapes string char-par-char.
-        // Si l'appelant a déjà fourni un Writer bufferisé, on évite la double
-        // bufferisation.
+        // P2 — 1 KB default buffer on the target Writer. Avoids dozens of small
+        // writes per value on OutputStreamWriter/StringWriter and amortizes the
+        // cost of writing string escapes char by char.
+        // If the caller already provided a buffered Writer, avoid double buffering.
         this.out = (out instanceof BufferedWriter || out instanceof java.io.StringWriter
                 || out instanceof java.io.CharArrayWriter)
                 ? out
@@ -185,7 +184,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         return this;
     }
 
-    /** Émet un JsonValue arbitraire (objet, array, scalaire). */
+    /** Emits an arbitrary JsonValue (object, array, scalar). */
     private void emitJsonValue(JsonValue value) {
         if (value == null) { writeRaw("null"); return; }
         switch (value.getValueType()) {
@@ -281,17 +280,16 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     /**
-     * Voie rapide pour les codegens statiques : écrit la clé pré-encodée (quoted +
-     * escape RFC 8259 §7 déjà appliqué) sans repasser dans le scanner d'escape à
-     * chaque appel.
+     * Fast path for static codegens: writes the pre-encoded key (quoted +
+     * RFC 8259 §7 escaping already applied) without running the escape scanner
+     * on every call.
      *
-     * <p>{@code preQuotedKey} doit déjà inclure les guillemets englobants, par
-     * exemple {@code "\"name\""}. Le {@code :} et la virgule éventuelle sont
-     * gérés par cette méthode.</p>
+     * <p>{@code preQuotedKey} must already include the surrounding quotes, for
+     * example {@code "\"name\""}. The {@code :} and any comma are handled by
+     * this method.</p>
      *
-     * <p>Usage : produit du même code que {@link #writeKey(String)} mais en
-     * O(1) au lieu de O(n) sur la longueur du nom (pas de scan caractère par
-     * caractère).</p>
+     * <p>Usage: produces the same code as {@link #writeKey(String)} but in
+     * O(1) instead of O(n) on the name length (no character-by-character scan).</p>
      */
     @Override
     public void writeKeyRaw(String preQuotedKey) {
@@ -314,8 +312,8 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     /**
-     * Voie rapide P4 : fragment {@code "name":} en bloc unique. Réduit le hot
-     * path d'un objet à {@code N+1} writes au lieu de {@code 3N+1}.
+     * P4 fast path: fragment {@code "name":} as a single block. Reduces the hot
+     * path of an object to {@code N+1} writes instead of {@code 3N+1}.
      */
     @Override
     public void writeKeyRawWithColon(String preQuotedKeyWithColon) {
@@ -340,8 +338,8 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         if (stack.peek() != Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("close() called with open containers or empty document");
         }
-        // Spec §3.5 : close() ferme le Writer/OutputStream sous-jacent et propage
-        // toute IOException en JsonException.
+        // Spec §3.5: close() closes the underlying Writer/OutputStream and
+        // propagates any IOException as JsonException.
         try {
             out.flush();
             out.close();
@@ -402,7 +400,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     private void afterValue() {
-        // Pour les valeurs *nommées* dans un objet, on est en OBJECT_VALUE → bascule OBJECT_AFTER_VALUE.
+        // For *named* values in an object, we are in OBJECT_VALUE → switch to OBJECT_AFTER_VALUE.
         Ctx top = stack.peek();
         if (top == Ctx.OBJECT_VALUE) {
             stack.pop();
@@ -428,9 +426,9 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     private void writeString(String s) {
-        // Fast-path ASCII pur sans escape — couvre l'écrasante majorité des keys
-        // de records et des chaînes ordinaires. Évite N appels char-par-char à
-        // out.write(c) au profit d'un unique out.write(s, off, len).
+        // Pure ASCII no-escape fast path — covers the overwhelming majority of
+        // record keys and ordinary strings. Avoids N char-by-char calls to
+        // out.write(c) in favor of a single out.write(s, off, len).
         int n = s.length();
         int i = 0;
         while (i < n) {
@@ -445,7 +443,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
                 out.write('"');
                 return;
             }
-            // Préfixe propre, puis slow path à partir de i.
+            // Clean prefix, then slow path from i onward.
             if (i > 0) out.write(s, 0, i);
             for (; i < n; i++) {
                 char c = s.charAt(i);

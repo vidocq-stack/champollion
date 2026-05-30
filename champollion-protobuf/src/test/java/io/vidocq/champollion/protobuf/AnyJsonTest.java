@@ -131,7 +131,7 @@ class AnyJsonTest {
             String json = "{\"name\":\"x\",\"@type\":\"type.googleapis.com/test.Item\",\"qty\":7}";
             Any any = ProtobufJson.fromJson(Any.class, json);
             assertEquals("type.googleapis.com/test.Item", any.type_url());
-            // Decode value bytes pour vérifier les champs
+            // Decode value bytes to verify the fields
             assertEquals(new Item("x", 7), Protobuf.parser(Item.class).parseFrom(any.value()));
         }
     }

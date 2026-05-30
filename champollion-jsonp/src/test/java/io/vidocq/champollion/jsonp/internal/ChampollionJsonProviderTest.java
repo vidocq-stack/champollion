@@ -112,8 +112,8 @@ class ChampollionJsonProviderTest {
 
     @Test
     void provider_resolution_is_consistent() {
-        // La spec ne garantit pas le caching de l'instance ; on vérifie seulement
-        // que chaque appel retourne une instance non-null du provider attendu.
+        // The spec does not guarantee caching of the instance; we just verify
+        // that each call returns a non-null instance of the expected provider.
         assertNotNull(JsonProvider.provider());
         assertInstanceOf(ChampollionJsonProvider.class, JsonProvider.provider());
     }

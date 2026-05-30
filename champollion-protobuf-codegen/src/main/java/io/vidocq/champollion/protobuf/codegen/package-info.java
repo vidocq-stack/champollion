@@ -1,11 +1,11 @@
 /**
- * Codegen Protobuf — squelette M1, implémentation réelle reportée à M2/M3.
+ * Protobuf codegen — M1 skeleton, with the real implementation deferred to M2/M3.
  *
- * <p>M2 : compilateur {@code .proto → .java} (lexer + parser + emitter Class-File API)
- * invoqué par {@code champollion-protobuf-maven-plugin}.</p>
+ * <p>M2: {@code .proto → .java} compiler (lexer + parser + Class-File API emitter)
+ * invoked by {@code champollion-protobuf-maven-plugin}.</p>
  *
- * <p>M3 : APT {@code @ProtobufStatic} sur records Java pour produire un
- * {@code <FQN>$$Binding} compilé sans réflexion, ServiceLoader-discoverable,
- * compatible AOT (GraalVM, Leyden CDS).</p>
+ * <p>M3: {@code @ProtobufStatic} APT on Java records to produce a compiled
+ * {@code <FQN>$$Binding} without reflection, ServiceLoader-discoverable,
+ * AOT-compatible (GraalVM, Leyden CDS).</p>
  */
 package io.vidocq.champollion.protobuf.codegen;

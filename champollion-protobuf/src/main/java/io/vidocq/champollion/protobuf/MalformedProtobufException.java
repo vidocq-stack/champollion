@@ -3,8 +3,8 @@ package io.vidocq.champollion.protobuf;
 import java.io.IOException;
 
 /**
- * Levée quand le flux binaire ne respecte pas le wire format Protocol Buffers
- * (varint > 10 octets, wire type inconnu, longueur LEN négative, troncature, etc.).
+ * Thrown when the binary stream does not respect the Protocol Buffers wire format
+ * (varint > 10 bytes, unknown wire type, negative LEN length, truncation, etc.).
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/encoding/">Protocol Buffers Encoding</a>.</p>
  */

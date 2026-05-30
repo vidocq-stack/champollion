@@ -6,11 +6,11 @@ import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
 /**
- * {@code google.protobuf.Duration} — durée signée.
+ * {@code google.protobuf.Duration} — signed duration.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#duration">Duration</a>.
- * JSON canonical : {@code "3.5s"} (fraction de seconde optionnelle, suffixe
- * obligatoire {@code s}). Les deux composants doivent avoir le même signe.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#duration">Duration</a>.
+ * Canonical JSON: {@code "3.5s"} (optional fractional seconds, mandatory
+ * {@code s} suffix). Both components must have the same sign.</p>
  */
 @ProtobufMessage("google.protobuf.Duration")
 public record Duration(

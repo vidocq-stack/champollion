@@ -4,41 +4,41 @@ import jakarta.json.stream.JsonGenerator;
 import jakarta.json.stream.JsonParser;
 
 /**
- * Binding statique d'un type Java vers / depuis JSON. Une instance par type cible.
+ * Static binding for a Java type to and from JSON. One instance per target type.
  *
- * <p>Les bindings sont produits soit :</p>
+ * <p>Bindings are produced either:</p>
  * <ul>
- *   <li>par l'APT {@code champollion-codegen-apt} pour les classes annotées
- *       {@code @JsonbStatic} ou scannées par {@code champollion-codegen-maven-plugin} ;</li>
- *   <li>à la main, pour des cas spécifiques (ex : adaptation d'un type tiers
- *       qu'on ne peut pas annoter ni recompiler).</li>
+ *   <li>by the {@code champollion-codegen-apt} APT for classes annotated
+ *       with {@code @JsonbStatic} or scanned by {@code champollion-codegen-maven-plugin} ;</li>
+ *   <li>manually, for specific cases (e.g. adapting a third-party type that
+ *       cannot be annotated or recompiled).</li>
  * </ul>
  *
- * <p>Les implémentations sont découvertes via {@link java.util.ServiceLoader} sur
- * cette interface et utilisées en lookup-first par {@code ChampollionJsonb}, avec
- * fallback automatique vers le runtime introspectif quand aucun binding statique
- * n'est disponible pour un type donné.</p>
+ * <p>Implementations are discovered via {@link java.util.ServiceLoader} on this
+ * interface and used lookup-first by {@code ChampollionJsonb}, with an automatic
+ * fallback to the introspective runtime when no static binding is available for
+ * a given type.</p>
  *
- * <p><b>Contrats sur {@link #write} :</b> à l'appel, le {@link JsonGenerator} est
- * positionné juste avant l'émission de la valeur. L'implémentation doit émettre
- * exactement <em>une</em> valeur JSON complète (objet, tableau, scalaire) et rendre
- * la main au générateur dans un état correct.</p>
+ * <p><b>Contracts for {@link #write}:</b> on entry, the {@link JsonGenerator} is
+ * positioned just before value emission. The implementation must emit exactly
+ * <em>one</em> complete JSON value (object, array, scalar) and leave the generator
+ * in a valid state.</p>
  *
- * <p><b>Contrats sur {@link #read} :</b> à l'appel, le {@link JsonParser} est
- * positionné juste avant l'événement de tête de la valeur. L'implémentation doit
- * appeler {@link JsonParser#next()} elle-même pour consommer la valeur, et rendre
- * la main après avoir consommé exactement une valeur JSON complète.</p>
+ * <p><b>Contracts for {@link #read}:</b> on entry, the {@link JsonParser} is
+ * positioned just before the leading event for the value. The implementation
+ * must call {@link JsonParser#next()} itself to consume the value, and return
+ * after consuming exactly one complete JSON value.</p>
  *
  * @param <T> le type Java cible
  */
 public interface JsonbBinding<T> {
 
-    /** Le type Java pour lequel ce binding est canonique. */
+    /** The Java type for which this binding is canonical. */
     Class<T> type();
 
-    /** Sérialise {@code value} dans {@code generator}. */
+    /** Serializes {@code value} into {@code generator}. */
     void write(JsonGenerator generator, T value);
 
-    /** Désérialise une valeur depuis {@code parser}. */
+    /** Deserializes a value from {@code parser}. */
     T read(JsonParser parser);
 }

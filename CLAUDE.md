@@ -2,149 +2,150 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Prérequis
+## Prerequisites
 
-- **Java 25** + **Maven 3.9.16** (`.sdkmanrc` fourni — utiliser `sdk env`)
-- Les TCK officiels devront être installés dans le M2 local (artefacts non-publics) :
+- **Java 25** + **Maven 3.9.16** (`.sdkmanrc` provided — use `sdk env`)
+- Official TCKs must be installed in the local M2 (non-public artifacts):
   - `jakarta.json:jakarta.json-tck:2.1.x` (JSON-P 2.1)
   - `jakarta.json.bind:jakarta.json.bind-tck:3.0.x` (JSON-B 3.0)
 
-## Commandes essentielles
+## Essential Commands
 
 ```bash
-# Build du reactor (sans TCK)
+# Build reactor (without TCK)
 mvn -ntp install -DskipTests
 
-# Tests unitaires
+# Unit tests
 mvn test
 
-# Benchmarks JMH
+# JMH benchmarks
 mvn -pl champollion-bench -am package
 java -jar champollion-bench/target/benchmarks.jar
 
-# TCK JSON-P — smoke test seulement
+# JSON-P TCK — smoke test only
 ./run-official-tck-jsonp-2.1.sh
 
-# TCK JSON-B — smoke test seulement
+# JSON-B TCK — smoke test only
 ./run-official-tck-jsonb-3.0.sh
 ```
 
-> `champollion-tck` sera **hors reactor** (POM Model 4.0.0 standalone) pour
-> contourner ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — même contrainte
-> que `cassini-tck` et `foy-tck`. Ne pas changer ce modèle.
+> `champollion-tck` is **out-of-reactor** (standalone POM Model 4.0.0) to work around
+> ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — same constraint as `cassini-tck`
+> and `foy-tck`. Do not change this model.
 
 ## Architecture
 
-Champollion est une implémentation Jakarta JSON Processing 2.1 + Jakarta JSON Binding 3.0,
-**zéro dépendance hors specs Jakarta**, virtual threads, JPMS strict, et compilation
-statique des bindings via APT pour éviter la réflexion à chaud.
+Champollion is a Jakarta JSON Processing 2.1 + Jakarta JSON Binding 3.0 implementation,
+**zero dependencies beyond Jakarta specs**, virtual threads, strict JPMS, and static
+compilation of bindings via APT to avoid runtime reflection.
 
 ```
-champollion-api        ← Spec Jakarta seulement (re-exposition jakarta.json + jakarta.json.bind)
-champollion-jsonp      ← Implémentation JSON-P 2.1 (parser, generator, JsonValue, JsonPatch, JsonPointer, JsonMergePatch)
-champollion-jsonb      ← Implémentation JSON-B 3.0 (Jsonb, JsonbBuilder, ser/deser, customization)
-champollion-codegen    ← APT + Maven plugin : génère les serializers/deserializers JSON-B à la compilation
-champollion-bench      ← JMH : comparatif Parsson/Yasson/Jackson, throughput/latence, allocations
-champollion-examples   ← Exemples d'utilisation
-champollion-tck        ← Runners TCK officiels JSON-P 2.1 et JSON-B 3.0 (HORS reactor)
+champollion-api        ← Jakarta spec only (re-exposing jakarta.json + jakarta.json.bind)
+champollion-jsonp      ← JSON-P 2.1 implementation (parser, generator, JsonValue, JsonPatch, JsonPointer, JsonMergePatch)
+champollion-jsonb      ← JSON-B 3.0 implementation (Jsonb, JsonbBuilder, ser/deser, customization)
+champollion-codegen    ← APT + Maven plugin: generates JSON-B serializers/deserializers at compile time
+champollion-bench      ← JMH: comparison Parsson/Yasson/Jackson, throughput/latency, allocations
+champollion-examples   ← Usage examples
+champollion-tck        ← Official JSON-P 2.1 and JSON-B 3.0 TCK runners (OUT OF REACTOR)
 ```
 
-**Flux JSON-P :** `JsonParser` (pull) ↔ `JsonGenerator` (push) sur `Reader/Writer/InputStream/OutputStream`.
-Object model `JsonObject/JsonArray/JsonValue` au-dessus. Patch/Pointer/MergePatch en couche feuille.
+**JSON-P flow:** `JsonParser` (pull) ↔ `JsonGenerator` (push) on `Reader/Writer/InputStream/OutputStream`.
+Object model `JsonObject/JsonArray/JsonValue` on top. Patch/Pointer/MergePatch as leaf layer.
 
-**Flux JSON-B :** `Jsonb.toJson(obj)` → `BindingPlan` (résolu une seule fois par classe) → série de
-`PropertyWriter` qui pushent dans un `JsonGenerator` (champollion-jsonp). Symétrique en lecture.
+**JSON-B flow:** `Jsonb.toJson(obj)` → `BindingPlan` (resolved once per class) → series of
+`PropertyWriter` that push into a `JsonGenerator` (champollion-jsonp). Symmetric on reading.
 
-**Deux modes de binding :**
-- **Mode Runtime** (par défaut) : introspection à la première rencontre de la classe via `MethodHandles`,
-  cache concurrent. Pas de réflexion à chaque appel — coût amorti après warmup.
-- **Mode Statique** (recommandé) : APT `champollion-codegen` génère un `BindingFactory` par type
-  annoté `@JsonbStatic` (ou détecté par scan classpath via le Maven plugin). Aucune réflexion à l'exécution,
-  compatible AOT (GraalVM, Leyden CDS). ServiceLoader résout automatiquement la factory générée.
+**Two binding modes:**
+- **Runtime mode** (default): introspection on first encounter of the class via `MethodHandles`,
+  concurrent cache. No reflection on every call — cost amortized after warmup.
+- **Static mode** (recommended): APT `champollion-codegen` generates a `BindingFactory` per type
+  annotated `@JsonbStatic` (or detected by classpath scan via the Maven plugin). No runtime reflection,
+  AOT-compatible (GraalVM, Leyden CDS). ServiceLoader automatically resolves the generated factory.
 
-## Contraintes d'architecture à ne pas violer
+## Architecture Constraints Not to Violate
 
-1. **Zéro dépendance hors specs Jakarta** dans `champollion-jsonp` et `champollion-jsonb`.
-   JUnit/JMH uniquement en `scope=test`/`scope=provided`.
-2. **`champollion-jsonb` dépend de `champollion-jsonp`** mais jamais l'inverse — la couche binding
-   sait composer sur la couche processing, pas l'inverse.
-3. **JPMS strict** : tous les modules ont un `module-info.java`, packages `internal.*` non exportés,
-   SPI exposée uniquement via `provides ... with`.
-4. **Pas de `synchronized`, pas de `ThreadLocal`** — virtual-thread-friendly. Utiliser `ScopedValue`
-   pour la propagation contextuelle (ex. `JsonbContext.CURRENT` pendant un `toJson`).
-5. **Pas de réflexion `setAccessible(true)`** sauf en mode runtime explicitement documenté ;
-   privilégier `MethodHandles.privateLookupIn` + `module.addOpens` côté consommateur.
-6. **TCK JSON-P et JSON-B PASS à 100 %** est un contrat avant tout merge structurel sur `jsonp`/`jsonb`.
+1. **Zero dependencies beyond Jakarta specs** in `champollion-jsonp` and `champollion-jsonb`.
+   JUnit/JMH only in `scope=test`/`scope=provided`.
+2. **`champollion-jsonb` depends on `champollion-jsonp`** but never the reverse — the binding
+   layer knows how to compose on the processing layer, not vice versa.
+3. **Strict JPMS**: all modules have a `module-info.java`, `internal.*` packages not exported,
+   SPI exposed only via `provides ... with`.
+4. **No `synchronized`, no `ThreadLocal`** — virtual-thread-friendly. Use `ScopedValue`
+   for contextual propagation (e.g. `JsonbContext.CURRENT` during a `toJson`).
+5. **No `setAccessible(true)` reflection** except in explicitly documented runtime mode;
+   prefer `MethodHandles.privateLookupIn` + `module.addOpens` on the consumer side.
+6. **JSON-P and JSON-B TCK PASS at 100%** is a hard contract before any structural merge on `jsonp`/`jsonb`.
 
 ## Conventions
 
-- **Java modules explicites** : tous les modules ont un `module-info.java`.
-- **Packages** :
-  - `io.vidocq.champollion.spi.*` = SPI public stable (extensions tierces)
-  - `io.vidocq.champollion.internal.*` = code interne (peut casser entre versions)
-- **Maven groupId** : `io.vidocq.champollion`.
-- **Records** pour tous les DTO immuables ; **sealed interfaces** pour les hiérarchies fermées
+- **Explicit Java modules**: all modules have a `module-info.java`.
+- **Packages**:
+  - `io.vidocq.champollion.spi.*` = stable public SPI (third-party extensions)
+  - `io.vidocq.champollion.internal.*` = internal code (may break between versions)
+- **Maven groupId**: `io.vidocq.champollion`.
+- **Records** for all immutable DTOs; **sealed interfaces** for closed hierarchies
   (`JsonValue`, `JsonEvent`, `BindingNode`).
-- **Pattern matching** exhaustif sur switch — pas de chaîne `if/else if`.
-- **`java.lang.foreign`** envisagé pour le scanner JSON le plus chaud (parser SIMD-friendly).
+- **Exhaustive pattern matching** on switch — no `if/else if` chains.
+- **`java.lang.foreign`** considered for the hottest JSON scanner (SIMD-friendly parser).
+- **Language** — commit messages, Javadoc, and all `.md` file content must be written in **English**.
 
-## Roadmap en cours
+## Current Roadmap
 
-Voir `ROADMAP.md` pour le plan détaillé phase par phase (M0..M7).
+See `ROADMAP.md` for the detailed phase-by-phase plan (M0..M7).
 
-## TDD — Test-Driven Development (obligatoire)
+## TDD — Test-Driven Development (mandatory)
 
-Champollion est développé en **TDD strict**, dans cet ordre :
+Champollion is developed with **strict TDD**, in this order:
 
-1. **Red** — écrire le test qui décrit le comportement attendu (citation spec ou RFC en commentaire JavaDoc).
-   Le test doit échouer pour la bonne raison (compilation OK, assertion KO).
-2. **Green** — écrire le minimum de code pour faire passer le test. Pas d'optimisation, pas d'abstraction
-   qui anticipe un test futur.
-3. **Refactor** — nettoyer en gardant les tests verts. Lancer la suite complète du module avant tout commit.
+1. **Red** — write the test describing the expected behavior (cite the spec or RFC in JavaDoc comments).
+   The test must fail for the right reason (compilation OK, assertion KO).
+2. **Green** — write the minimum code to make the test pass. No optimization, no abstraction
+   anticipating a future test.
+3. **Refactor** — clean up while keeping tests green. Run the full module suite before any commit.
 
-Règles concrètes :
+Concrete rules:
 
-- **Un test par classe publique**, nommé `<Classe>Test`, dans le même package (`src/test/java`).
-- **Pas de Mockito** — doubles écrits à la main ; le découplage du code s'y prête.
-- **Tests par fixture spec** : pour chaque section RFC 8259 / Jakarta JSON-P 2.1 / Jakarta JSON-B 3.0
-  référencée, un test nommé `<methode>_rfc8259_section6_4()` ou similaire. Permet la traçabilité spec ↔ test.
-- **JSONTestSuite** (`nst/JSONTestSuite`) intégré dès le M1 dans `champollion-jsonp/src/test/resources/`
-  pour un harness de conformité RFC 8259 indépendant du TCK.
-- **Coverage mesurée** mais pas érigée en gate ; la qualité du test prime sur le pourcentage.
-- **Differential testing** entre runtime reflectif (M4) et codegen statique (M5) : pour chaque type
-  testé, on vérifie que `runtime.toJson(o).equals(static.toJson(o))` et symétriquement à la lecture.
+- **One test per public class**, named `<Class>Test`, in the same package (`src/test/java`).
+- **No Mockito** — hand-written doubles; the code decoupling lends itself to this.
+- **Spec fixture tests**: for each referenced RFC 8259 / Jakarta JSON-P 2.1 / Jakarta JSON-B 3.0
+  section, a test named `<method>_rfc8259_section6_4()` or similar. Enables spec ↔ test traceability.
+- **JSONTestSuite** (`nst/JSONTestSuite`) integrated from M1 in `champollion-jsonp/src/test/resources/`
+  for an RFC 8259 conformance harness independent of the TCK.
+- **Coverage measured** but not used as a gate; test quality takes precedence over percentage.
+- **Differential testing** between reflective runtime (M4) and static codegen (M5): for each tested
+  type, verify that `runtime.toJson(o).equals(static.toJson(o))` and symmetrically on reading.
 
 ## TCK — Technology Compatibility Kits
 
-Deux TCK officiels, exécutés dans un module hors reactor (`champollion-tck`, POM Model 4.0.0)
-pour contourner ShrinkWrap Maven Resolver 3.3 :
+Two official TCKs, run in an out-of-reactor module (`champollion-tck`, POM Model 4.0.0)
+to work around ShrinkWrap Maven Resolver 3.3:
 
-| TCK | Artifact | Cibles |
+| TCK | Artifact | Target |
 |---|---|---|
-| Jakarta JSON Processing 2.1 | `jakarta.json:jakarta-json-tck:2.1.x` | 100 % PASS (contrat) |
-| Jakarta JSON Binding 3.0 | `jakarta.json.bind:jakarta-json-bind-tck:3.0.x` | 100 % PASS (contrat) |
+| Jakarta JSON Processing 2.1 | `jakarta.json:jakarta-json-tck:2.1.x` | 100% PASS (hard contract) |
+| Jakarta JSON Binding 3.0 | `jakarta.json.bind:jakarta-json-bind-tck:3.0.x` | 100% PASS (hard contract) |
 
-Les scripts `run-official-tck-jsonp-2.1.sh` et `run-official-tck-jsonb-3.0.sh` :
+The `run-official-tck-jsonp-2.1.sh` and `run-official-tck-jsonb-3.0.sh` scripts:
 
-- supportent `smoke` (par défaut), `all`, et `-Dtest=NomDuTest` ciblé ;
-- installent le reactor en local (`mvn install -DskipTests`) avant invocation ;
-- produisent un rapport `target/tck-report.txt` avec le score PASS/FAIL/SKIP.
+- support `smoke` (default), `all`, and targeted `-Dtest=TestName`;
+- install the reactor locally (`mvn install -DskipTests`) before invocation;
+- produce a `target/tck-report.txt` report with the PASS/FAIL/SKIP score.
 
-**Discipline de release :**
+**Release discipline:**
 
-- **Aucun merge structurel** sur `champollion-jsonp`/`champollion-jsonb` sans TCK PASS.
-- Les éventuels challenges (tests désactivés pour interprétation spec ou bug TCK) sont documentés
-  dans `TCK.md` avec citation spec, hash du test, et plan de réactivation. Suit le modèle `cassini/TCK.md`.
-- **Differential mode** : le TCK doit passer aussi bien en mode runtime qu'en mode codegen statique.
-  Le script `run-official-tck-jsonb-3.0.sh --static` recompile les fixtures TCK avec l'APT pour valider
-  la cohérence du codegen.
+- **No structural merge** on `champollion-jsonp`/`champollion-jsonb` without TCK PASS.
+- Any challenges (disabled tests for spec interpretation or TCK bug) are documented
+  in `TCK.md` with spec citation, test hash, and reactivation plan. Follows the `cassini/TCK.md` model.
+- **Differential mode**: the TCK must pass in both runtime mode and static codegen mode.
+  The script `run-official-tck-jsonb-3.0.sh --static` recompiles TCK fixtures with APT to validate
+  codegen consistency.
 
-## Principes IA — collaboration sur ce dépôt
+## AI Principles — Collaboration on This Repository
 
-- **Plan mode par défaut** sur tout changement structurel (nouveau module, nouveau format wire,
-  modification de SPI publique).
-- **Élégance équilibrée** : préférer un design simple qui passe le TCK à un design parfait qui
-  ne le passe pas. Documenter les arbitrages dans des ADR (`docs/adr/`).
-- **Pas de paresse sur les specs** : citer la section RFC 8259 / Jakarta JSON-P 2.1 / Jakarta
-  JSON-B 3.0 dans les commentaires de code quand l'implémentation y répond directement.
-- **Zéro dépendance** : si une lib externe semble nécessaire, c'est qu'on s'est trompé de découpe.
+- **Plan mode by default** on any structural change (new module, new wire format,
+  modification of public SPI).
+- **Balanced elegance**: prefer a simple design that passes the TCK over a perfect design that
+  does not. Document trade-offs in ADRs (`docs/adr/`).
+- **No laziness on specs**: cite the RFC 8259 / Jakarta JSON-P 2.1 / Jakarta JSON-B 3.0
+  section in code comments when the implementation directly responds to it.
+- **Zero dependencies**: if an external library seems necessary, the decomposition is wrong.

@@ -5,21 +5,21 @@ import io.vidocq.champollion.protobuf.ProtoEnumValue;
 /**
  * {@code TestAllTypesProto3.AliasedEnum} — enum avec {@code option allow_alias = true}.
  *
- * <p>Plusieurs constantes Java pointent vers la même valeur proto via
+ * <p>Multiple Java constants point to the same proto value via
  * {@link ProtoEnumValue} :</p>
  *
  * <pre>
  * ALIAS_FOO = 0
  * ALIAS_BAR = 1
  * ALIAS_BAZ = 2
- * MOO      = 2   (alias de ALIAS_BAZ)
- * moo      = 2   (alias casse-différente)
- * bAz      = 2   (alias casse-différente bis)
+ * MOO      = 2   (alias of ALIAS_BAZ)
+ * moo      = 2   (alias different-case)
+ * bAz      = 2   (alias different-case bis)
  * </pre>
  *
- * <p>Lors de la désérialisation, la première constante déclarée avec
- * {@code value=2} (donc {@code ALIAS_BAZ}) est utilisée — c'est l'ordre
- * de déclaration qui gagne en cas d'aliasing.</p>
+ * <p>During deserialization, the first constant declared with
+ * {@code value=2} (i.e. {@code ALIAS_BAZ}) is used — declaration order
+ * wins in case of aliasing.</p>
  */
 public enum AliasedEnumT {
     ALIAS_FOO,                       // 0

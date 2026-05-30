@@ -1,227 +1,227 @@
-# Champollion — Plan d'attaque
+# Champollion — Implementation plan
 
-> Implémentation Jakarta JSON Processing 2.1 (JSON-P) + Jakarta JSON Binding 3.0 (JSON-B)
-> dans le style Vidocq : zéro dépendance, JDK 25, virtual threads, JPMS strict,
-> compilation statique des bindings via APT/Maven plugin.
+> Jakarta JSON Processing 2.1 (JSON-P) + Jakarta JSON Binding 3.0 (JSON-B)
+> implementation in the Vidocq style: zero dependency, JDK 25, virtual threads, strict JPMS,
+> static binding compilation via APT/Maven plugin.
 
-## Principes directeurs
+## Design principles
 
-| Principe | Application concrète |
+| Principle | Concrete application |
 |---|---|
-| Zéro dépendance | Pas de Parsson/Yasson/Jackson dans `champollion-jsonp`/`champollion-jsonb`. Seules les API specs Jakarta sont compilées. |
-| Virtual threads | Pas de `synchronized`, pas de `ThreadLocal`. Caches `ConcurrentHashMap`/`ClassValue`. Propagation via `ScopedValue`. |
-| Compilation statique (2 artifacts séparés) | `champollion-codegen-apt` = Annotation Processor JDK pur (utilisable seul, sans Maven). `champollion-codegen-maven-plugin` = Mojo qui scanne le classpath et délègue à l'APT pour les classes non-annotables. |
-| Runtime reflectif en fallback | Si aucun `BindingFactoryProvider` n'est trouvé pour un type, le runtime introspectif prend le relais. Permet le bootstrap progressif et la compatibilité avec les classes tierces non recompilables. |
-| JPMS strict | `module-info.java` partout, `internal.*` non exporté, SPI via `provides/uses`. |
-| TDD strict | Red → Green → Refactor. Tests écrits avant le code de prod. Cf. section TDD ci-dessous. |
-| TCK PASS 100 % | Contrat dur sur JSON-P 2.1 et JSON-B 3.0, en mode runtime ET en mode codegen statique. |
-| Performance mesurée | JMH dès M1, comparatif systématique avec Parsson/Yasson/Jackson, baseline ratchet. |
+| Zero dependency | No Parsson/Yasson/Jackson in `champollion-jsonp`/`champollion-jsonb`. Only the Jakarta spec APIs are compiled. |
+| Virtual threads | No `synchronized`, no `ThreadLocal`. `ConcurrentHashMap`/`ClassValue` caches. Propagation via `ScopedValue`. |
+| Static compilation (2 separate artifacts) | `champollion-codegen-apt` = pure JDK Annotation Processor (usable on its own, without Maven). `champollion-codegen-maven-plugin` = Mojo that scans the classpath and delegates to the APT for non-annotatable classes. |
+| Reflective runtime fallback | If no `BindingFactoryProvider` is found for a type, the introspective runtime takes over. Enables progressive bootstrap and compatibility with non-recompilable third-party classes. |
+| JPMS strict | `module-info.java` everywhere, `internal.*` not exported, SPI via `provides/uses`. |
+| Strict TDD | Red → Green → Refactor. Tests written before production code. See the TDD section below. |
+| TCK PASS 100 % | Hard contract on JSON-P 2.1 and JSON-B 3.0, in both runtime and static codegen modes. |
+| Measured performance | JMH from M1 onward, systematic comparison with Parsson/Yasson/Jackson, baseline ratchet. |
 
-## Méthodologie : TDD + TCK comme garde-fous parallèles
+## Methodology: TDD + TCK as parallel safeguards
 
-Champollion est développé en **TDD strict** (Red → Green → Refactor). Aucune ligne de production
-n'est écrite avant un test qui la justifie. Au-delà du cycle TDD interne :
+Champollion is developed with **strict TDD** (Red → Green → Refactor). No production line
+is written before a test justifies it. Beyond the internal TDD cycle:
 
-- **Couche 1 — tests unitaires TDD** : pilotent la conception de chaque classe.
-- **Couche 2 — JSONTestSuite (RFC 8259)** : harnais de conformité scanner intégré dès M1 ; ne dépend
-  pas du TCK et reste fiable pour le coverage RFC.
-- **Couche 3 — TCK officiels** (`jakarta.json-tck` + `jakarta.json.bind-tck`) : contrat 100 % PASS
-  avant tout merge structurel sur `jsonp`/`jsonb`. Module hors reactor (POM Model 4.0.0).
-- **Couche 4 — Differential testing** : entre runtime reflectif et codegen statique, sur 100+ types
-  hétérogènes, à chaque commit qui touche `jsonb` ou `codegen-apt`.
+- **Layer 1 — TDD unit tests**: drive the design of each class.
+- **Layer 2 — JSONTestSuite (RFC 8259)**: integrated scanner conformance harness from M1 onward; it does
+  not depend on the TCK and remains reliable for RFC coverage.
+- **Layer 3 — official TCKs** (`jakarta.json-tck` + `jakarta.json.bind-tck`): 100% PASS contract
+  before any structural merge on `jsonp`/`jsonb`. Module outside the reactor (POM Model 4.0.0).
+- **Layer 4 — Differential testing**: between reflective runtime and static codegen, across 100+ heterogeneous
+  types, on every commit touching `jsonb` or `codegen-apt`.
 
-Les TCK sont exécutés en deux modes :
-- **runtime** (introspection JSON-B) — valide la conformité à la spec.
-- **static** (recompilation des fixtures TCK avec l'APT) — valide que le codegen produit le même
-  comportement observable que le runtime.
+The TCKs are run in two modes:
+- **runtime** (JSON-B introspection) — validates spec compliance.
+- **static** (recompiling TCK fixtures with the APT) — validates that codegen produces the same
+  observable behavior as the runtime.
 
 ## Phases
 
-### M0 — Bootstrap (cette session)
+### M0 — Bootstrap (this session)
 
 - [x] `.sdkmanrc`, `.gitignore`, `.mvn/maven.config`
-- [x] `pom.xml` parent (Model 4.1.0, multi-module, dependency management Jakarta)
-- [x] `CLAUDE.md` (TDD + TCK inclus)
+- [x] parent `pom.xml` (Model 4.1.0, multi-module, Jakarta dependency management)
+- [x] `CLAUDE.md` (TDD + TCK included)
 - [x] `ROADMAP.md`
-- [x] Création des 7 sous-modules : `champollion-api`, `champollion-jsonp`, `champollion-jsonb`,
+- [x] Creation of the 7 submodules: `champollion-api`, `champollion-jsonp`, `champollion-jsonb`,
       `champollion-codegen-apt`, `champollion-codegen-maven-plugin`, `champollion-bench`,
-      `champollion-examples` (avec `pom.xml` + `module-info.java` squelettes)
+      `champollion-examples` (with skeletal `pom.xml` + `module-info.java`)
 - [ ] `LICENSE` (Apache 2.0)
 - [ ] `README.md`
-- [ ] Validation `mvn -ntp install -DskipTests` réussit (reactor vide)
+- [ ] Validation that `mvn -ntp install -DskipTests` succeeds (empty reactor)
 
-**Livrable :** `mvn -ntp install -DskipTests` réussit sur un reactor vide, JPMS résout tous les modules.
+**Deliverable:** `mvn -ntp install -DskipTests` succeeds on an empty reactor, JPMS resolves all modules.
 
 ---
 
-### M1 — JSON-P 2.1 streaming (parser pull / generator push)
+### M1 — JSON-P 2.1 streaming (pull parser / push generator)
 
-**Scope spec :** §3 (Streaming API) de Jakarta JSON Processing 2.1.
+**Scope spec:** §3 (Streaming API) of Jakarta JSON Processing 2.1.
 
-| Tâche | Notes |
+| Task | Notes |
 |---|---|
-| `JsonParser` pull-based sur `Reader` et `InputStream` | UTF-8 / UTF-16 BE/LE / UTF-32 BE/LE détection BOM ; RFC 8259 strict |
+| `JsonParser` pull-based on `Reader` and `InputStream` | UTF-8 / UTF-16 BE/LE / UTF-32 BE/LE BOM detection; strict RFC 8259 |
 | `JsonParserFactory` + `Json.createParserFactory(Map)` | `pretty-printing`, `buffer-pool-size`, etc. |
-| `JsonGenerator` push-based sur `Writer` et `OutputStream` | Pretty-printing, indentation, escaping conformes RFC 8259 §7 |
-| `JsonGeneratorFactory` | Identique côté config |
-| Buffer pool (`JsonProvider#createBufferPool`) | `MpmcBoundedBuffer` simple, sans dépendance |
-| `JsonProvider` impl + `META-INF/services/jakarta.json.spi.JsonProvider` | Point d'entrée ServiceLoader |
-| Scanner caractère par caractère, branchless le plus possible | Tableau de transitions state machine RFC 8259 |
-| Tests : RFC 8259 conformance suite (NSTI, JSONTestSuite) | Source ouverte, intégrée en `src/test/resources` |
-| Bench JMH : parser throughput vs Parsson | Cible : ≥ Parsson sur le 90e percentile |
+| `JsonGenerator` push-based on `Writer` and `OutputStream` | Pretty-printing, indentation, RFC 8259 §7-compliant escaping |
+| `JsonGeneratorFactory` | Same on the config side |
+| Buffer pool (`JsonProvider#createBufferPool`) | Simple, dependency-free `MpmcBoundedBuffer` |
+| `JsonProvider` impl + `META-INF/services/jakarta.json.spi.JsonProvider` | ServiceLoader entry point |
+| Character-by-character scanner, as branchless as possible | RFC 8259 state machine transition table |
+| Tests: RFC 8259 conformance suite (NSTI, JSONTestSuite) | Open source, integrated in `src/test/resources` |
+| JMH bench: parser throughput vs Parsson | Target: ≥ Parsson at the 90th percentile |
 
-**Livrable :** `Json.createParser(reader).next()` et `Json.createGenerator(writer).write(...)` opérationnels,
-tests RFC 8259 verts, bench publié.
+**Deliverable:** `Json.createParser(reader).next()` and `Json.createGenerator(writer).write(...)` work,
+RFC 8259 tests green, benchmark published.
 
 ---
 
 ### M2 — JSON-P 2.1 object model
 
-**Scope spec :** §4 (Object Model) + §6 (Json class factory methods).
+**Scope spec:** §4 (Object Model) + §6 (Json class factory methods).
 
-| Tâche | Notes |
+| Task | Notes |
 |---|---|
-| `JsonValue`, `JsonString`, `JsonNumber` (sealed) | Records immuables ; `JsonNumber` adossé à `BigDecimal` lazy |
-| `JsonObject` (LinkedHashMap-backed, ordre d'insertion) | Iteration order préservé (cf. spec §4.2) |
-| `JsonArray` | `List<JsonValue>` immuable |
-| `JsonObjectBuilder` / `JsonArrayBuilder` | Mutables pendant la construction, `build()` rend immuable |
-| `JsonReader` / `JsonWriter` (orientés value) | Adossés à parser/generator de M1 |
-| `JsonString` : escape UTF-16 surrogates | Conforme RFC 8259 §7 |
-| `JsonNumber` : entier vs décimal, exact match | `intValueExact`, `bigIntegerValueExact` |
-| Tests TCK JSON-P 2.1 — section object-model | Doit passer |
+| `JsonValue`, `JsonString`, `JsonNumber` (sealed) | Immutable records; `JsonNumber` backed by lazy `BigDecimal` |
+| `JsonObject` (LinkedHashMap-backed, insertion order) | Iteration order preserved (see spec §4.2) |
+| `JsonArray` | Immutable `List<JsonValue>` |
+| `JsonObjectBuilder` / `JsonArrayBuilder` | Mutable during construction, `build()` returns immutable |
+| `JsonReader` / `JsonWriter` (value-oriented) | Backed by the M1 parser/generator |
+| `JsonString`: UTF-16 surrogate escaping | RFC 8259 §7 compliant |
+| `JsonNumber`: integer vs decimal, exact match | `intValueExact`, `bigIntegerValueExact` |
+| JSON-P 2.1 TCK tests — object-model section | Must pass |
 
-**Livrable :** TCK JSON-P 2.1 vert sur les sections Streaming + Object Model.
+**Deliverable:** JSON-P 2.1 TCK green on the Streaming + Object Model sections.
 
 ---
 
 ### M3 — JSON-P 2.1 Patch / Pointer / Merge Patch
 
-**Scope spec :** §5 (Patch RFC 6902, Pointer RFC 6901, Merge Patch RFC 7396).
+**Scope spec:** §5 (Patch RFC 6902, Pointer RFC 6901, Merge Patch RFC 7396).
 
-| Tâche | Notes |
+| Task | Notes |
 |---|---|
 | `JsonPointer` | RFC 6901, escape `~0`/`~1`, indexation tableau |
-| `JsonPatch` | RFC 6902, opérations `add`/`remove`/`replace`/`move`/`copy`/`test` |
+| `JsonPatch` | RFC 6902, operations `add`/`remove`/`replace`/`move`/`copy`/`test` |
 | `JsonMergePatch` | RFC 7396 |
-| `JsonPatchBuilder` / `JsonMergePatchBuilder` | API builder fluide |
-| Tests TCK JSON-P 2.1 — section patch/pointer | Doit passer |
+| `JsonPatchBuilder` / `JsonMergePatchBuilder` | Fluent builder API |
+| JSON-P 2.1 TCK tests — patch/pointer section | Must pass |
 
-**Livrable :** TCK JSON-P 2.1 PASS à 100 % (objectif contrat).
+**Deliverable:** JSON-P 2.1 TCK 100% PASS (contract target).
 
 ---
 
-### M4 — JSON-B 3.0 runtime (mode reflectif)
+### M4 — JSON-B 3.0 runtime (reflective mode)
 
-**Scope spec :** Jakarta JSON Binding 3.0, sections 3 (Default Mapping) à 4.7 (Custom Mapping).
+**Scope spec:** Jakarta JSON Binding 3.0, sections 3 (Default Mapping) to 4.7 (Custom Mapping).
 
-| Tâche | Notes |
+| Task | Notes |
 |---|---|
-| `JsonbBuilder` SPI + `JsonbProvider` impl | ServiceLoader, point d'entrée `Jsonb.create()` |
+| `JsonbBuilder` SPI + `JsonbProvider` impl | ServiceLoader, `Jsonb.create()` entry point |
 | `JsonbConfig` | Properties standard : `JSONB_NULL_VALUES`, `JSONB_FORMATTING`, `JSONB_LOCALE`, etc. |
-| `BindingPlan` par classe, cache `ClassValue<BindingPlan>` | Calculé une fois, lecture lock-free |
-| `PropertyWriter` / `PropertyReader` adossés à `MethodHandles` | Pas de `setAccessible` à chaud |
-| Adapters par défaut : primitives, String, Number, BigDecimal, BigInteger, dates `java.time` | `Date`/`Calendar` deprecated mais supportés (TCK) |
-| `Collection`, `Map`, `Optional`, arrays, enums | Conformes spec §3.5 |
-| Polymorphisme : `@JsonbTypeInfo`, `@JsonbSubtype` | Nouveau en JSON-B 3.0 |
-| Customization : `@JsonbProperty`, `@JsonbTransient`, `@JsonbDateFormat`, `@JsonbNumberFormat`, `@JsonbAdapter` | Couverture complète |
-| `JsonbCreator` factory | Records natifs + classes immuables |
-| Tests unitaires + premiers passes TCK JSON-B 3.0 | Couverture ≥ 80 % avant M5 |
+| `BindingPlan` per class, `ClassValue<BindingPlan>` cache | Computed once, lock-free reads |
+| `PropertyWriter` / `PropertyReader` backed by `MethodHandles` | No hot `setAccessible` |
+| Default adapters: primitives, String, Number, BigDecimal, BigInteger, `java.time` dates | `Date`/`Calendar` deprecated but supported (TCK) |
+| `Collection`, `Map`, `Optional`, arrays, enums | Spec §3.5 compliant |
+| Polymorphism: `@JsonbTypeInfo`, `@JsonbSubtype` | New in JSON-B 3.0 |
+| Customization: `@JsonbProperty`, `@JsonbTransient`, `@JsonbDateFormat`, `@JsonbNumberFormat`, `@JsonbAdapter` | Full coverage |
+| `JsonbCreator` factory | Native records + immutable classes |
+| Unit tests + initial JSON-B 3.0 TCK passes | Coverage ≥ 80% before M5 |
 
-**Livrable :** `Jsonb.create().toJson(obj)` / `fromJson(...)` opérationnels en mode runtime,
-records bindés sans config, TCK JSON-B 3.0 sections Default + Customization vertes.
-
----
-
-### M5 — JSON-B 3.0 codegen statique (APT + Maven plugin)
-
-**Scope :** générer à la compilation un `BindingFactory<T>` pour chaque type cible et l'enregistrer
-via ServiceLoader. Le runtime reflectif (M4) reste **fallback** quand aucune factory générée n'est trouvée.
-
-**Deux artifacts séparés** (décision actée) :
-
-- `champollion-codegen-apt` — Annotation Processor JDK pur (`Processor` SPI). Utilisable seul via
-  `javac -processorpath`, sans Maven. Cible : code Java généré, **pas de bytecode**.
-- `champollion-codegen-maven-plugin` — Mojo Maven qui scanne le classpath du projet hôte et invoque
-  l'APT sur les types JSON-B détectés mais non annotés `@JsonbStatic`. Pour les classes tierces.
-
-| Tâche | Notes |
-|---|---|
-| `champollion-codegen-apt` : `Processor` pour `@JsonbStatic` | `javax.annotation.processing.Processor` ; ServiceLoader `META-INF/services` |
-| Génération de `<FQN>$$Binding.java` (writer + reader) | Code Java pur, pas de bytecode, lisible et debuggable |
-| Génération du `BindingFactoryProvider` ServiceLoader fichier-source | `META-INF/services/io.vidocq.champollion.jsonb.spi.BindingFactoryProvider` |
-| `champollion-codegen-maven-plugin` Mojo `generate` | Lié à `generate-sources` ; param `<targets>`/`<excludes>` |
-| Le Mojo délègue 100 % à `champollion-codegen-apt` | Pas de duplication — le plugin est un orchestrateur |
-| Runtime fallback : `BindingFactoryProvider` non trouvé → introspection M4 | Logué en INFO ; flag `champollion.jsonb.warn-on-fallback=true` pour audit |
-| Optimisations : escape précompilé pour les noms de propriétés (constantes UTF-8 byte arrays) | `private static final byte[] PROP_NAME = {...}` |
-| **Differential testing** : binding statique vs runtime → mêmes résultats sur 100+ classes | Suite automatisée, gate avant merge |
-| Bench JMH : statique vs runtime, vs Yasson | Cible : > 2× Yasson en throughput, allocs ≈ 0 |
-
-**Livrable :** factory générée auto-découverte via ServiceLoader, zéro réflexion à `Jsonb.toJson(obj)`
-quand la classe a été compilée avec l'APT ou scannée par le plugin Maven. Runtime reflectif intact
-en fallback.
+**Deliverable:** `Jsonb.create().toJson(obj)` / `fromJson(...)` work in runtime mode,
+records bound without config, JSON-B 3.0 TCK Default + Customization sections green.
 
 ---
 
-### M6 — TCK officiels (hors reactor)
+### M5 — JSON-B 3.0 static codegen (APT + Maven plugin)
 
-| Tâche | Notes |
+**Scope:** generate a `BindingFactory<T>` at compile time for each target type and register it
+via ServiceLoader. The reflective runtime (M4) remains the **fallback** when no generated factory is found.
+
+**Two separate artifacts** (decided):
+
+- `champollion-codegen-apt` — pure JDK Annotation Processor (`Processor` SPI). Usable on its own via
+  `javac -processorpath`, without Maven. Target: generated Java code, **not bytecode**.
+- `champollion-codegen-maven-plugin` — Maven Mojo that scans the host project classpath and invokes
+  the APT on detected JSON-B types not annotated `@JsonbStatic`. For third-party classes.
+
+| Task | Notes |
 |---|---|
-| `champollion-tck/pom.xml` Model 4.0.0 standalone | Idem `cassini-tck`/`foy-tck` |
-| `run-official-tck-jsonp-2.1.sh` | Cible smoke + full + ciblé |
-| `run-official-tck-jsonb-3.0.sh` | Idem |
-| `TCK.md` | Documente les éventuels challenges (tests désactivés avec justification spec) |
-| Score contrat : 100 % PASS sur les deux TCK | Régression bloquante |
+| `champollion-codegen-apt`: `Processor` for `@JsonbStatic` | `javax.annotation.processing.Processor`; ServiceLoader `META-INF/services` |
+| Generation of `<FQN>$$Binding.java` (writer + reader) | Pure Java code, no bytecode, readable and debuggable |
+| Generation of the `BindingFactoryProvider` ServiceLoader file source | `META-INF/services/io.vidocq.champollion.jsonb.spi.BindingFactoryProvider` |
+| `champollion-codegen-maven-plugin` `generate` Mojo | Bound to `generate-sources`; `<targets>`/`<excludes>` parameter |
+| The Mojo delegates 100% to `champollion-codegen-apt` | No duplication — the plugin is an orchestrator |
+| Runtime fallback: `BindingFactoryProvider` not found → M4 introspection | Logged at INFO; `champollion.jsonb.warn-on-fallback=true` flag for audit |
+| Optimizations: precompiled escape for property names (UTF-8 byte array constants) | `private static final byte[] PROP_NAME = {...}` |
+| **Differential testing**: static binding vs runtime → same results on 100+ classes | Automated suite, gate before merge |
+| JMH bench: static vs runtime, vs Yasson | Target: >2× Yasson throughput, allocs ≈ 0 |
 
-**Livrable :** scripts shell + rapport TCK reproductible à chaque release.
+**Deliverable:** generated factory auto-discovered via ServiceLoader, zero reflection in `Jsonb.toJson(obj)`
+when the class was compiled with the APT or scanned by the Maven plugin. Reflective runtime intact
+as fallback.
 
 ---
 
-### M7 — Intégration écosystème Vidocq
+### M6 — Official TCKs (outside the reactor)
 
-| Tâche | Notes |
+| Task | Notes |
 |---|---|
-| Adapter `cassini-champollion` (côté Cassini) : `MessageBodyReader/Writer<JsonValue>` et `<Object>` via JSON-B | Remplace Parsson/Yasson dans Cassini |
-| Adapter `chappe-champollion` (optionnel) : `BodyHandler` JSON pour Chappe | Cas non-JAX-RS |
-| Documentation : `docs/integration-cassini.md`, `docs/integration-chappe.md` | Diagrammes mermaid |
-| Bench end-to-end : Cassini + Champollion vs Cassini + Yasson | Throughput requêtes JSON / sec |
+| `champollion-tck/pom.xml` standalone Model 4.0.0 | Same as `cassini-tck`/`foy-tck` |
+| `run-official-tck-jsonp-2.1.sh` | Smoke + full + targeted |
+| `run-official-tck-jsonb-3.0.sh` | Same |
+| `TCK.md` | Documents any challenges (tests disabled with spec justification) |
+| Contract score: 100% PASS on both TCKs | Blocking regression |
 
-**Livrable :** Cassini livre une release sans aucune dépendance Parsson/Yasson.
+**Deliverable:** shell scripts + reproducible TCK report on every release.
 
 ---
 
-## Ordre de priorité — pourquoi celui-ci ?
+### M7 — Vidocq ecosystem integration
 
-1. **M1 → M3 (JSON-P)** d'abord parce que JSON-B en dépend strictement. Pas de raccourci.
-2. **M4 (runtime JSON-B)** avant M5 (codegen) car le runtime est l'oracle de référence : on
-   compare les sorties du codegen contre celles du runtime sur differential testing. Sans le runtime,
-   le codegen vole sans filet.
-3. **M6 (TCK)** est une activité continue dès M2/M3 sur JSON-P, dès M4 sur JSON-B, mais
-   l'objectif "100 % PASS" ne devient un contrat qu'à la fin de chaque scope.
-4. **M7 (intégration)** vient en dernier : on ne polluera pas Cassini avant que Champollion soit
-   solide. Le swap se fera derrière une PR dédiée.
-
-## Risques connus
-
-| Risque | Mitigation |
+| Task | Notes |
 |---|---|
-| Parser JSON conformance RFC 8259 stricte (cas tordus type "JSONTestSuite") | Intégrer le test corpus `nst/JSONTestSuite` dès M1, suite parallèle au TCK |
-| JSON-B 3.0 polymorphisme (`@JsonbTypeInfo`) — feature nouvelle, peu d'exemples | Lire la spec puis le TCK avant de coder ; étudier l'impl Yasson 3.x comme référence |
-| Codegen APT et JPMS : `provides` généré dynamiquement, mais `module-info` est figé en source | Le plugin Maven génère un `module-info-extra.java` ou ajoute des `provides` via `--add-modules` ; sinon descriptor manuel + factory de factories |
-| TCK officiels JSON-P/JSON-B accessibles ? | Vérifier dispo dans M2 local Eclipse Foundation ; sinon TCK communautaire |
-| GraalVM AOT compatibility | Tester `native-image` sur `champollion-examples` dès M5 pour valider l'absence de réflexion |
+| Adapt `cassini-champollion` (Cassini side): `MessageBodyReader/Writer<JsonValue>` and `<Object>` via JSON-B | Replaces Parsson/Yasson in Cassini |
+| Adapt `chappe-champollion` (optional): JSON `BodyHandler` for Chappe | Non-JAX-RS case |
+| Documentation: `docs/integration-cassini.md`, `docs/integration-chappe.md` | Mermaid diagrams |
+| End-to-end bench: Cassini + Champollion vs Cassini + Yasson | JSON request throughput / sec |
 
-## Décisions actées
+**Deliverable:** Cassini ships a release with no Parsson/Yasson dependency.
 
-- ✅ **Deux artifacts séparés** pour la compilation statique : `champollion-codegen-apt` (JDK pur)
-  et `champollion-codegen-maven-plugin` (orchestrateur Maven). L'APT ne dépend pas de Maven.
-- ✅ **Runtime reflectif gardé en fallback** : permet bootstrap progressif et compatibilité avec
-  classes tierces non recompilables. Comportement loggé.
-- ✅ **TDD strict** sur tous les modules de production.
-- ✅ **TCK PASS 100 %** comme contrat dur, en mode runtime ET statique.
+---
 
-## Décisions ouvertes
+## Priority order — why this one?
 
-- [ ] Faut-il exposer un mode "stream-as-iterator" pour JSON-P (au-delà du contrat spec) ?
-- [ ] Adopter `java.lang.foreign` pour le scanner UTF-8 dès M1 ou différer en M5 ? → Différer ; baseline pure JDK d'abord.
-- [ ] Polymorphisme `@JsonbTypeInfo` en mode statique : impose une enum sealed des sous-types à la compilation.
-  Comment gérer l'ouverture (extensions dynamiques) ? → À traiter en M5.
+1. **M1 → M3 (JSON-P)** first because JSON-B depends on it strictly. No shortcut.
+2. **M4 (JSON-B runtime)** before M5 (codegen) because the runtime is the reference oracle: we
+   compare codegen outputs against runtime outputs in differential testing. Without the runtime,
+   codegen flies without a net.
+3. **M6 (TCK)** is an ongoing activity from M2/M3 onward for JSON-P, from M4 onward for JSON-B, but
+   the "100% PASS" objective only becomes a contract at the end of each scope.
+4. **M7 (integration)** comes last: we will not pollute Cassini before Champollion is solid. The swap
+   will happen behind a dedicated PR.
+
+## Known risks
+
+| Risk | Mitigation |
+|---|---|
+| Strict RFC 8259 JSON parser conformance (edge cases like "JSONTestSuite") | Integrate the `nst/JSONTestSuite` corpus from M1 onward, parallel to the TCK |
+| JSON-B 3.0 polymorphism (`@JsonbTypeInfo`) — new feature, few examples | Read the spec and then the TCK before coding; study Yasson 3.x as a reference implementation |
+| APT codegen and JPMS: `provides` generated dynamically, but `module-info` is fixed in source | The Maven plugin generates a `module-info-extra.java` or adds `provides` via `--add-modules`; otherwise manual descriptor + factory of factories |
+| Accessible official JSON-P/JSON-B TCKs? | Check availability in the local Eclipse Foundation M2; otherwise use the community TCK |
+| GraalVM AOT compatibility | Test `native-image` on `champollion-examples` from M5 onward to validate the absence of reflection |
+
+## Decided decisions
+
+- ✅ **Two separate artifacts** for static compilation: `champollion-codegen-apt` (pure JDK)
+  and `champollion-codegen-maven-plugin` (Maven orchestrator). The APT does not depend on Maven.
+- ✅ **Reflective runtime kept as fallback**: enables progressive bootstrap and compatibility with
+  non-recompilable third-party classes. Behavior logged.
+- ✅ **Strict TDD** on all production modules.
+- ✅ **TCK PASS 100 %** as a hard contract, in both runtime and static modes.
+
+## Open decisions
+
+- [ ] Should we expose a "stream-as-iterator" mode for JSON-P (beyond the spec contract)?
+- [ ] Adopt `java.lang.foreign` for the UTF-8 scanner from M1 onward or defer to M5? → Defer; pure JDK baseline first.
+- [ ] Static-mode `@JsonbTypeInfo` polymorphism: requires a sealed enum of subtypes at compile time.
+  How should openness (dynamic extensions) be handled? → To be addressed in M5.

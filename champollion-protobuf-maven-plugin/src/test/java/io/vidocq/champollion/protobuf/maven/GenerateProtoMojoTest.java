@@ -42,7 +42,7 @@ class GenerateProtoMojoTest {
             GenerateProtoMojo mojo = new GenerateProtoMojo();
             mojo.setSourceDirectory(src.toFile());
             mojo.setOutputDirectory(out.toFile());
-            mojo.setJavaPackage(""); // hérite du package proto
+            mojo.setJavaPackage(""); // inherits from proto package
 
             mojo.execute();
 
@@ -123,7 +123,7 @@ class GenerateProtoMojoTest {
             mojo.setSourceDirectory(tmp.resolve("src").toFile());
             mojo.setOutputDirectory(tmp.resolve("out").toFile());
             mojo.execute();
-            // Soit le répertoire out n'a pas été créé, soit il est vide
+            // Either the out directory was not created or it is empty
             if (Files.exists(tmp.resolve("out"))) {
                 try (var s = Files.list(tmp.resolve("out"))) {
                     assertEquals(0, s.count());

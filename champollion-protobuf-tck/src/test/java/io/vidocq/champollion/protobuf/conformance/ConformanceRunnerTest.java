@@ -33,8 +33,8 @@ import org.junit.jupiter.api.Test;
  */
 class ConformanceRunnerTest {
 
-    /** Encode {@code len} en 4 octets little-endian (le format attendu par
-     * le runner Google et donc consommé par {@link ConformanceRunner}). */
+    /** Encodes {@code len} in 4 bytes little-endian (the format expected by
+     * the Google runner and thus consumed by {@link ConformanceRunner}). */
     private static void writeLenLE(ByteArrayOutputStream out, int len) {
         out.write(len & 0xFF);
         out.write((len >>> 8) & 0xFF);
@@ -82,9 +82,9 @@ class ConformanceRunnerTest {
             ConformanceResponse src = ConformanceResponse.skipped("not yet");
             byte[] bytes = Protobuf.toByteArray(src);
             ConformanceResponse back = Protobuf.parser(ConformanceResponse.class).parseFrom(bytes);
-            // skipped est présent
+            // skipped is present
             assertEquals("not yet", back.skipped());
-            // Les champs absents sur le wire deviennent les defaults Java après parse
+            // Fields absent on wire become Java defaults after parse
             assertEquals("", back.parse_error());
             assertEquals(0, back.protobuf_payload().length);
         }
@@ -96,7 +96,7 @@ class ConformanceRunnerTest {
 
         @Test
         void single_skipped_request_yields_skipped_response() throws IOException {
-            // Construit un pipe avec une seule requête mockée
+            // Construct a pipe with a single mocked request
             ConformanceRequest req = new ConformanceRequest(
                     new byte[0], "", WireFormat.JSON, "external.TestAllTypesProto3",
                     TestCategory.JSON_TEST, "", "", false);
@@ -105,7 +105,7 @@ class ConformanceRunnerTest {
             ByteArrayOutputStream input = new ByteArrayOutputStream();
             writeLenLE(input, reqBytes.length);
             input.write(reqBytes);
-            // Pas d'octet suivant → EOF naturel
+            // No following byte → natural EOF
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
@@ -114,7 +114,7 @@ class ConformanceRunnerTest {
                     output,
                     new PrintStream(errBuf));
 
-            // Vérifie la réponse
+            // Verify the response
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
             int respLen = readLenLE(din);
             byte[] respBytes = din.readNBytes(respLen);

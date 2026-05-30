@@ -1,17 +1,17 @@
 package io.vidocq.champollion.jsonp.internal;
 
 /**
- * Escape RFC 8259 §7 partagé entre {@link ChampollionJsonGenerator} et
- * {@link ChampollionJsonString#toString()} (pour avoir une représentation textuelle
- * directement valide en JSON).
+ * RFC 8259 §7 escaping shared between {@link ChampollionJsonGenerator} and
+ * {@link ChampollionJsonString#toString()} (to obtain a text representation that
+ * is directly valid JSON).
  */
 public final class JsonStringEscaper {
 
     private JsonStringEscaper() {}
 
     /**
-     * Variante publique pour les outils de codegen : retourne la chaîne
-     * {@code "<s>"} avec quotes englobantes et escape RFC 8259 §7 appliqué.
+     * Public variant for codegen tools: returns the {@code "<s>"} string with
+     * surrounding quotes and RFC 8259 §7 escaping applied.
      */
     public static String preQuoted(String s) {
         return quote(s);

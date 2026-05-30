@@ -12,8 +12,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Builder mutable de {@link JsonObject}. {@link #build()} produit une vue immuable.
- * Spec Jakarta JSON-P §4.7. Préserve l'ordre d'insertion.
+ * Mutable {@link JsonObject} builder. {@link #build()} produces an immutable view.
+ * Jakarta JSON-P §4.7. Preserves insertion order.
  */
 public final class ChampollionJsonObjectBuilder implements JsonObjectBuilder {
 
@@ -86,8 +86,8 @@ public final class ChampollionJsonObjectBuilder implements JsonObjectBuilder {
     }
 
     @Override public JsonObject build() {
-        // Spec 2.1 §4.7 : build() retourne le résultat ET réinitialise le builder
-        // pour les utilisations futures.
+        // Spec 2.1 §4.7: build() returns the result AND resets the builder for
+        // future use.
         var snapshot = new LinkedHashMap<>(members);
         members.clear();
         return ChampollionJsonObject.of(snapshot);

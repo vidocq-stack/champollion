@@ -28,10 +28,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Registre de {@link BindingReader} symétrique à {@link RuntimeBindingRegistry}.
+ * {@link BindingReader} registry symmetrical to {@link RuntimeBindingRegistry}.
  *
- * <p>Cache {@link ClassValue} pour les classes simples + map concurrente pour les types
- * paramétrés (clé = {@link Type#getTypeName()}).</p>
+ * <p>{@link ClassValue} cache for simple classes + concurrent map for parameterized
+ * types (key = {@link Type#getTypeName()}).</p>
  */
 final class RuntimeReadRegistry {
 
@@ -117,7 +117,7 @@ final class RuntimeReadRegistry {
     private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     BindingReader readerFor(Type t) {
-        // Adapter ou Deserializer global enregistré pour ce type ?
+        // Global adapter or deserializer registered for this type?
         Class<?> rawAd = t instanceof Class<?> cc ? cc
                 : t instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
                 : null;
@@ -146,9 +146,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Cherche un adapter global enregistré via {@code JsonbConfig.withAdapters} dont
-     * le type {@code Original} est assignable depuis {@code raw}. Renvoie un reader
-     * qui lit le format adapté puis invoque {@code adaptFromJson}.
+     * Finds a global adapter registered via {@code JsonbConfig.withAdapters} whose
+     * {@code Original} type is assignable from {@code raw}. Returns a reader that
+     * reads the adapted format and then invokes {@code adaptFromJson}.
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     private BindingReader adapterReaderFor(Class<?> raw) {
@@ -172,7 +172,7 @@ final class RuntimeReadRegistry {
         };
     }
 
-    /** Variante de {@link #readerFor(Type)} sans court-circuit adapter, pour éviter une récursion infinie. */
+    /** Variant of {@link #readerFor(Type)} without adapter short-circuiting, to avoid infinite recursion. */
     private BindingReader readerForRaw(Class<?> c) {
         if (c == null || c == Object.class) return this::dynamicValue;
         if (c.isArray()) return arrayReader(c.getComponentType());
@@ -180,9 +180,8 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Cherche un {@code JsonbDeserializer} global enregistré dont le type {@code T}
-     * est assignable depuis {@code raw}. Renvoie un reader qui invoque
-     * {@code deserialize(parser, ctx, type)}.
+     * Finds a global {@code JsonbDeserializer} whose {@code T} type is assignable
+     * from {@code raw}. Returns a reader that invokes {@code deserialize(parser, ctx, type)}.
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     private BindingReader deserializerReaderFor(Class<?> raw, Type fullType) {
@@ -199,9 +198,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Reader pour {@code @JsonbTypeDeserializer} sur record component / Method / Field.
-     * Variante par défaut : <em>regular property</em> — Champollion avance le
-     * parser au premier token de la valeur avant de déléguer (cf. spec §10.3
+     * Reader for {@code @JsonbTypeDeserializer} on a record component / Method / Field.
+     * Default variant: <em>regular property</em> — Champollion advances the parser
+     * to the first token of the value before delegating (see spec §10.3
      * "JsonParser positioned on the first token of the value").
      */
     java.util.Optional<BindingReader> customDeserializerReader(java.lang.reflect.AnnotatedElement member,
@@ -211,19 +210,19 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Variante explicite avec contrôle de l'avancement du parser.
+     * Explicit variant with parser-advance control.
      *
-     * <p>Pour un <strong>regular property</strong> (setter, field), le parser
-     * est positionné juste après la {@code KEY_NAME} ; Champollion appelle
-     * {@code parser.next()} pour avancer au premier token de la valeur (e.g.
-     * {@code START_ARRAY}, {@code START_OBJECT}, {@code VALUE_STRING}) avant
-     * d'invoquer {@code deserialize()} — ce que le {@code AnimalListDeserializerInjected}
-     * du TCK attend pour faire {@code while (parser.next() == START_OBJECT)}.</p>
+     * <p>For a <strong>regular property</strong> (setter, field), the parser is
+     * positioned just after {@code KEY_NAME}; Champollion calls {@code parser.next()}
+     * to advance to the first token of the value (e.g. {@code START_ARRAY},
+     * {@code START_OBJECT}, {@code VALUE_STRING}) before invoking {@code deserialize()}
+     * — which is what the TCK's {@code AnimalListDeserializerInjected} expects
+     * for {@code while (parser.next() == START_OBJECT)}.</p>
      *
-     * <p>Pour un <strong>creator parameter</strong>, le parser reste à
-     * {@code KEY_NAME} ; le deserializer fait lui-même le {@code next()}, ce
-     * que le {@code SimpleStringDeserializer} du TCK
-     * {@code InstantiationCustomizationTest} attend.</p>
+     * <p>For a <strong>creator parameter</strong>, the parser stays at
+     * {@code KEY_NAME}; the deserializer performs the {@code next()} itself, which
+     * is what the TCK's {@code SimpleStringDeserializer}
+     * {@code InstantiationCustomizationTest} expects.</p>
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     java.util.Optional<BindingReader> customDeserializerReader(java.lang.reflect.AnnotatedElement member,
@@ -238,7 +237,7 @@ final class RuntimeReadRegistry {
         Class<? extends jakarta.json.bind.serializer.JsonbDeserializer> dClass = ann.value();
         jakarta.json.bind.serializer.JsonbDeserializer deser;
         try {
-            // §5 — résolution CDI si container disponible, sinon newInstance.
+            // §5 — CDI resolution if a container is available, otherwise newInstance.
             deser = CdiResolver.resolve(dClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
@@ -252,7 +251,7 @@ final class RuntimeReadRegistry {
         return java.util.Optional.of(parser -> deser.deserialize(parser, deserContext, targetType));
     }
 
-    /** Variante de {@link #readerFor(Type)} sans adapter mais préservant les ParameterizedType. */
+    /** Variant of {@link #readerFor(Type)} without adapter but preserving {@link java.lang.reflect.ParameterizedType}s. */
     private BindingReader readerForGeneric(java.lang.reflect.Type t) {
         if (t == null) return this::dynamicValue;
         if (t instanceof java.lang.reflect.ParameterizedType p) {
@@ -275,9 +274,9 @@ final class RuntimeReadRegistry {
         BindingReader b = Builtins.lookup(type);
         if (b != null) return b;
         if (type.isEnum()) return enumReader(type);
-        // M4.5 : polymorphisme — si @JsonbTypeInfo, dispatch sur la cascade.
-        // Pour suivre l'ordre d'écriture (ancêtre le plus général en premier), on
-        // démarre la lecture avec l'@JsonbTypeInfo du TOP de la chaîne.
+        // M4.5: polymorphism — if @JsonbTypeInfo is present, dispatch through the cascade.
+        // To follow write order (most general ancestor first), reading starts with the
+        // TOP of the chain's @JsonbTypeInfo.
         var chain = RuntimeBindingRegistry.typeInfoChain(type);
         var info = chain.isEmpty() ? null : chain.get(0);
         if (info != null) return polymorphicReader(info);
@@ -330,10 +329,10 @@ final class RuntimeReadRegistry {
             if (isJsonbTransient(comp)) continue;
             indexByName.put(jsonbName(comp), i);
         }
-        // §R-1/R-5 — canonical constructor d'un record est TOUJOURS public.
-        // publicLookup() le résout SANS setAccessible ni opens côté consommateur
-        // pour les records DANS UN PACKAGE EXPORTÉ. Pour les records internes
-        // de test ou non-exportés, fallback Reflection avec setAccessible.
+        // §R-1/R-5 — a record's canonical constructor is ALWAYS public.
+        // publicLookup() resolves it WITHOUT setAccessible or opens on the consumer side
+        // for records IN AN EXPORTED PACKAGE. For internal test or non-exported
+        // records, fall back to Reflection with setAccessible.
         java.lang.invoke.MethodHandle ctorMh = null;
         try {
             ctorMh = java.lang.invoke.MethodHandles.publicLookup().findConstructor(type,
@@ -382,13 +381,13 @@ final class RuntimeReadRegistry {
     }
 
     private BindingReader resolvePojo(Class<?> type) {
-        // M4.4e : si @JsonbCreator est sur un constructor ou une static factory, on l'utilise.
+        // M4.4e: if @JsonbCreator is on a constructor or static factory, use it.
         var creator = findJsonbCreator(type);
         if (creator != null) return resolveCreator(creator);
 
         RuntimeBindingRegistry.validateTransientCombinations(type);
 
-        // Fallback : ctor sans arg + champs publics.
+        // Fallback: no-arg ctor + public fields.
         Constructor<?> ctor;
         try {
             ctor = type.getDeclaredConstructor();
@@ -396,14 +395,14 @@ final class RuntimeReadRegistry {
             throw new JsonbException("No no-arg constructor for " + type
                     + " (consider adding @JsonbCreator on a constructor or static factory).", e);
         }
-        // JSON-B 3.0 §3.7.1 : sans @JsonbCreator, le constructeur doit être public ou protected.
+        // JSON-B 3.0 §3.7.1: without @JsonbCreator, the constructor must be public or protected.
         int cMods = ctor.getModifiers();
         if (!Modifier.isPublic(cMods) && !Modifier.isProtected(cMods)) {
             throw new JsonbException("No accessible no-arg constructor for " + type
                     + " (consider adding @JsonbCreator).");
         }
-        // §R-2 — préférer publicLookup pour les POJOs publics (évite opens côté
-        // consommateur). Fallback Reflection pour ctor protected ou type non-exporté.
+        // §R-2 — prefer publicLookup for public POJOs (avoids opens on the consumer
+        // side). Reflection fallback for protected ctors or non-exported types.
         java.lang.invoke.MethodHandle ctorMh = null;
         if (Modifier.isPublic(cMods) && Modifier.isPublic(type.getModifiers())) {
             try {
@@ -417,14 +416,14 @@ final class RuntimeReadRegistry {
             try { ctor.setAccessible(true); } catch (Exception ignore) {}
         }
         final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
-        // Découverte des setters JavaBean (§3.7) + champs publics fallback.
+        // Discover JavaBean setters (§3.7) + public-field fallback.
         Map<String, BeanWriter> writersByName = new HashMap<>();
 
-        // 1) Setters publics : setXxx(T) avec un getter correspondant pour vérifier @JsonbTransient.
-        // Détection préalable de duplicate names (même logique que côté writer)
+        // 1) Public setters: setXxx(T) with a corresponding getter to verify @JsonbTransient.
+        // Pre-detect duplicate names (same logic as on the writer side).
         validateNoDuplicateNames(type);
 
-        // Découvrir TOUS les setters (incluant non-public) pour identifier les hidden properties.
+        // Discover ALL setters (including non-public) to identify hidden properties.
         Map<String, Method> setterByProp = new java.util.LinkedHashMap<>();
         var hiddenProps = new java.util.HashSet<String>();
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
@@ -473,7 +472,7 @@ final class RuntimeReadRegistry {
             Class<?> paramType = m.getParameterTypes()[0];
             Field underlyingF = findFieldByName(type, prop);
             BindingReader reader;
-            // §4.7 — @JsonbTypeAdapter / @JsonbTypeDeserializer sur setter / getter / underlying field.
+            // §4.7 — @JsonbTypeAdapter / @JsonbTypeDeserializer on setter / getter / underlying field.
             var adapterR = customAdapterReader(m, underlyingF);
             if (adapterR.isEmpty() && getter != null) adapterR = customAdapterReader(getter, underlyingF);
             var deserR = adapterR.isPresent() ? adapterR
@@ -491,8 +490,8 @@ final class RuntimeReadRegistry {
                     reader = numR != null ? numR : readerFor(m.getGenericParameterTypes()[0]);
                 }
             }
-            // §R-2 — privilégier publicLookup pour le setter quand il est public
-            // ET dans une classe publique (JPMS strict). Fallback Reflection sinon.
+            // §R-2 — prefer publicLookup for the setter when it is public
+            // AND in a public class (strict JPMS). Otherwise fall back to Reflection.
             BeanWriter setter = null;
             if (Modifier.isPublic(m.getModifiers()) && Modifier.isPublic(m.getDeclaringClass().getModifiers())) {
                 try {
@@ -511,7 +510,7 @@ final class RuntimeReadRegistry {
             writersByName.put(name, setter);
         }
 
-        // 2) Champs publics non couverts par un setter et non masqués.
+        // 2) Public fields not covered by a setter and not hidden.
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
@@ -527,7 +526,7 @@ final class RuntimeReadRegistry {
             writersByName.put(name, new FieldSetter(f, reader));
         }
 
-        // Application de PropertyVisibilityStrategy (config / @JsonbVisibility / package).
+        // Apply PropertyVisibilityStrategy (config / @JsonbVisibility / package).
         var visibility = effectiveVisibility(type);
         if (visibility != null) {
             var keep = new java.util.LinkedHashMap<String, BeanWriter>();
@@ -578,8 +577,8 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Détecte si après application de @JsonbProperty / naming strategy, deux properties auront
-     * le même nom JSON ; lève JsonbException sinon.
+     * Detects whether two properties would end up with the same JSON name after
+     * applying @JsonbProperty / naming strategy; otherwise throws JsonbException.
      */
     private void validateNoDuplicateNames(Class<?> type) {
         var seen = new java.util.HashMap<String, String>();
@@ -600,12 +599,12 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Cherche un reader date pour {@code paramType} en consultant @JsonbDateFormat à
-     * plusieurs niveaux (setter, getter, field, type, package, config).
+     * Looks for a date reader for {@code paramType} by consulting @JsonbDateFormat
+     * at several levels (setter, getter, field, type, package, config).
      */
     private BindingReader dateReaderFor(Class<?> paramType, Method setter, Method getter, Class<?> declaringType) {
         if (!RuntimeBindingRegistry.isDateLikeType(paramType)) return null;
-        // Priorité : setter > getter > field underlying > type > package > config
+        // Priority: setter > getter > underlying field > type > package > config
         java.lang.reflect.AnnotatedElement member = setter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? setter : null;
         if (member == null && getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)) member = getter;
         if (member == null) {
@@ -686,7 +685,7 @@ final class RuntimeReadRegistry {
         };
     }
 
-    /** Reader numérique custom via @JsonbNumberFormat. */
+    /** Custom numeric reader via @JsonbNumberFormat. */
     private BindingReader numberReaderFor(Class<?> paramType, Method setter, Method getter, Class<?> declaringType) {
         Class<?> boxed = paramType.isPrimitive() ? boxOfPrim(paramType) : paramType;
         if (!Number.class.isAssignableFrom(boxed)) return null;
@@ -771,7 +770,7 @@ final class RuntimeReadRegistry {
         return n;
     }
 
-    /** Cherche un field (toutes visibilités) sur la classe ou ses parents. */
+    /** Finds a field (any visibility) on the class or its parents. */
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
@@ -780,7 +779,7 @@ final class RuntimeReadRegistry {
         return null;
     }
 
-    /** Cherche un getter conventionnel pour la propriété {@code prop}. */
+    /** Finds a conventional getter for property {@code prop}. */
     private static Method findGetter(Class<?> type, String prop) {
         String cap = Character.toUpperCase(prop.charAt(0)) + prop.substring(1);
         for (Method m : type.getMethods()) {
@@ -812,7 +811,7 @@ final class RuntimeReadRegistry {
         return RuntimeBindingRegistry.transformName(name, propertyNamingStrategy);
     }
 
-    /** Setter polymorphe : reçoit l'instance + parser et applique la valeur lue. */
+    /** Polymorphic setter: receives the instance + parser and applies the read value. */
     interface BeanWriter {
         void apply(Object target, JsonParser p);
         BindingReader reader();
@@ -841,9 +840,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Setter via {@link java.lang.invoke.MethodHandle} (publicLookup) — utilisé
-     * pour les POJOs publics avec setters publics. Évite {@code setAccessible}
-     * et {@code opens}, conforme JPMS strict.
+     * Setter via {@link java.lang.invoke.MethodHandle} (publicLookup) — used for
+     * public POJOs with public setters. Avoids {@code setAccessible} and
+     * {@code opens}, consistent with strict JPMS.
      */
     private record MhSetter(java.lang.invoke.MethodHandle mh, Method m, BindingReader reader) implements BeanWriter {
         public void apply(Object target, JsonParser p) {
@@ -885,7 +884,7 @@ final class RuntimeReadRegistry {
         if (e != JsonParser.Event.START_OBJECT) throw new JsonbException("Expected object, got " + e);
         Object inst;
         try {
-            // §R-2 — privilégier MethodHandle (publicLookup) pour les POJOs publics.
+            // §R-2 — prefer MethodHandle (publicLookup) for public POJOs.
             if (ctorMh != null) inst = ctorMh.invoke();
             else inst = ctor.newInstance();
         } catch (Throwable ex) {
@@ -904,7 +903,7 @@ final class RuntimeReadRegistry {
                 skipValue(p);
             } else {
                 w.apply(inst, p);
-                // Si un BindingReader custom (ex. JsonbDeserializer du TCK) a sur-consommé
+                // If a custom BindingReader (e.g. a TCK JsonbDeserializer) consumed
                 // jusqu'au END_OBJECT du parent, on sort proprement.
                 if (p.currentEvent() == JsonParser.Event.END_OBJECT) break;
             }
@@ -912,7 +911,7 @@ final class RuntimeReadRegistry {
         return inst;
     }
 
-    /** Cherche un reader date pour un creator parameter via @JsonbDateFormat. */
+    /** Finds a date reader for a creator parameter via @JsonbDateFormat. */
     private java.util.Optional<BindingReader> dateReaderForParam(java.lang.reflect.Parameter p, Class<?> paramType) {
         if (!RuntimeBindingRegistry.isDateLikeType(paramType)) return java.util.Optional.empty();
         var ann = p.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
@@ -923,7 +922,7 @@ final class RuntimeReadRegistry {
         return java.util.Optional.of(makeDateReader(paramType, spec));
     }
 
-    /** Recherche silencieuse de @JsonbCreator pour usage polymorphique (sans validation stricte). */
+    /** Silent @JsonbCreator lookup for polymorphic use (without strict validation). */
     private static java.lang.reflect.Executable findJsonbCreatorPolymorphic(Class<?> type) {
         for (Constructor<?> c : type.getDeclaredConstructors()) {
             if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbCreator.class)) return c;
@@ -936,9 +935,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Cherche un constructor ou une static factory annotée {@code @JsonbCreator}.
-     * Renvoie null si aucun n'est trouvé. La spec §4.6 autorise au plus un creator,
-     * et si c'est une static factory son type de retour doit correspondre à {@code type}.
+     * Looks for a constructor or static factory annotated with {@code @JsonbCreator}.
+     * Returns null if none is found. Spec §4.6 allows at most one creator,
+     * and if it is a static factory its return type must match {@code type}.
      */
     private static java.lang.reflect.Executable findJsonbCreator(Class<?> type) {
         java.util.List<java.lang.reflect.Executable> creators = new java.util.ArrayList<>();
@@ -963,9 +962,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Construit un BindingReader qui lit le JSON, mappe les paramètres du creator
-     * via {@code @JsonbProperty} (ou nom de paramètre par défaut), et invoque
-     * le constructor ou la static factory pour produire l'instance.
+     * Builds a BindingReader that reads JSON, maps the creator parameters
+     * via {@code @JsonbProperty} (or the default parameter name), and invokes
+     * the constructor or static factory to produce the instance.
      */
     private BindingReader resolveCreator(java.lang.reflect.Executable creator) {
         try { creator.setAccessible(true); } catch (Exception ignore) {}
@@ -985,7 +984,7 @@ final class RuntimeReadRegistry {
             // sur le param du creator (ex. AnnotationTypeInfoTest.DateConstructor).
             BindingReader paramReader = customAdapterReader(param, null)
                     // Creator parameter : ne PAS avancer le parser — le
-                    // deserializer fait lui-même son next() (cf. TCK
+                    // the deserializer performs its own next() (see the TCK
                     // InstantiationCustomizationTest.testJsonbDeserializerOnCreatorParameter).
                     .or(() -> customDeserializerReader(param, null, genericParamType, /*advanceParser*/ false))
                     .or(() -> dateReaderForParam(param, paramType))
@@ -994,14 +993,14 @@ final class RuntimeReadRegistry {
             String name = paramJsonbName(params[i]);
             indexByName.put(name, i);
             var prop = params[i].getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
-            // §4.6 — par défaut, les creator parameters sont OPTIONNELS et reçoivent
-            // null / 0 / Optional.empty quand la clé est absente du JSON.
-            // Si JsonbConfig.CREATOR_PARAMETERS_REQUIRED=true est posé, alors TOUS
+            // §4.6 — by default, creator parameters are OPTIONAL and receive
+            // null / 0 / Optional.empty when the key is absent from JSON.
+            // If JsonbConfig.CREATOR_PARAMETERS_REQUIRED=true is set, then ALL
             // les params deviennent required, sauf si @JsonbProperty(nillable=true)
-            // est explicitement présent.
+            // parameters must be explicitly present.
             required[i] = creatorParametersRequired && !(prop != null && prop.nillable());
         }
-        // Découverte des BeanWriters supplémentaires (setters/fields publics non couverts par le creator)
+        // Discover additional BeanWriters (public setters/fields not covered by the creator)
         // pour testCustomConstructorPlusFields.
         Class<?> declaring = creator.getDeclaringClass();
         Map<String, BeanWriter> extras = discoverExtraWriters(declaring, indexByName.keySet());
@@ -1009,9 +1008,9 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Calcule les BeanWriters publics (setters + fields) pour les propriétés qui ne sont
-     * PAS couvertes par les paramètres du creator. Utilisé pour appliquer les valeurs
-     * restantes après l'invocation du creator (JSON-B 3.0 §4.6).
+     * Computes public BeanWriters (setters + fields) for properties that are NOT
+     * covered by creator parameters. Used to apply values after construction,
+     * remaining after the creator invocation (JSON-B 3.0 §4.6).
      */
     private Map<String, BeanWriter> discoverExtraWriters(Class<?> type, java.util.Set<String> creatorNames) {
         if (type.isInterface() || type.isPrimitive() || type.isArray()) return Map.of();
@@ -1095,7 +1094,7 @@ final class RuntimeReadRegistry {
                 skipValue(p);
             }
         }
-        // Validation : tout paramètre required absent → JsonbException.
+        // Validation: any required parameter absent → JsonbException.
         if (required != null) {
             for (int i = 0; i < paramTypes.length; i++) {
                 if (required[i] && !seen[i]) {
@@ -1114,7 +1113,7 @@ final class RuntimeReadRegistry {
         } catch (ReflectiveOperationException ex) {
             throw new JsonbException("Failed to invoke @JsonbCreator: " + ex.getMessage(), ex);
         }
-        // Application des setters/fields supplémentaires.
+        // Apply additional setters/fields.
         for (Object[] pair : deferred) {
             ((BeanWriter) pair[0]).applyValue(inst, pair[1]);
         }
@@ -1190,12 +1189,12 @@ final class RuntimeReadRegistry {
         return null;
     }
 
-    /** Saute la valeur courante (peut être un objet ou array imbriqué). */
+    /** Skips the current value (may be a nested object or array). */
     private static void skipValue(JsonParser p) {
         JsonParser.Event e = p.next();
         if (e == JsonParser.Event.START_OBJECT) p.skipObject();
         else if (e == JsonParser.Event.START_ARRAY) p.skipArray();
-        // sinon scalaire → consommé par next()
+        // otherwise scalar → consumed by next()
     }
 
     // ===== Parameterized =====
@@ -1286,7 +1285,7 @@ final class RuntimeReadRegistry {
 
     private BindingReader optionalReader(BindingReader inner) {
         return parser -> {
-            // Lit la valeur ; null → Optional.empty
+            // Read the value; null → Optional.empty
             Object v = inner.read(parser);
             return v == null ? Optional.empty() : Optional.of(v);
         };
@@ -1371,14 +1370,14 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * JSON-B 3.0 §3.3.1 — désérialisation byte[] :
+     * JSON-B 3.0 §3.3.1 — byte[] deserialization:
      * <ul>
-     *   <li>BYTE (défaut) : lit un array d'entiers</li>
+     *   <li>BYTE (default): reads an integer array</li>
      *   <li>BASE_64 : lit une string base64 standard</li>
      *   <li>BASE_64_URL : lit une string base64 URL-safe</li>
      * </ul>
-     * On accepte aussi un fallback : si la stratégie est BYTE mais qu'on lit une string,
-     * on tente le décodage base64 (et inversement) pour rester tolérant.
+     * A fallback is also accepted: if the strategy is BYTE but a string is read,
+     * try base64 decoding (and vice versa) to stay tolerant.
      */
     private BindingReader byteArrayReader() {
         String s = binaryDataStrategy;
@@ -1402,7 +1401,7 @@ final class RuntimeReadRegistry {
                 return java.util.Base64.getUrlDecoder().decode(parser.getString());
             };
         }
-        // BYTE (défaut)
+        // BYTE (default)
         return parser -> {
             List<Object> tmp = (List<Object>) collectArray(parser, q -> { q.next(); return (byte) q.getInt(); });
             if (tmp == null) return null;
@@ -1413,8 +1412,8 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Lit un array et applique {@code elem.read} pour chaque élément. Gère le cas
-     * où l'event de tête est consommé en regardant {@code hasNext} avant de relancer.
+     * Reads an array and applies {@code elem.read} to each element. Handles the case
+     * where the leading event is consumed by checking {@code hasNext} before retrying.
      */
     private static Object collectArray(JsonParser p, BindingReader elem) {
         JsonParser.Event e = p.next();
@@ -1422,18 +1421,18 @@ final class RuntimeReadRegistry {
         if (e != JsonParser.Event.START_ARRAY) throw new JsonbException("Expected array, got " + e);
         var out = new ArrayList<Object>();
         // Wrapper "lookahead" : on lit next, si END_ARRAY on sort, sinon on rebranche un
-        // mini-parser qui restitue cet event au lecteur élément.
+        // mini-parser that restores that event to the element reader.
         while (true) {
             JsonParser.Event tok = p.next();
             if (tok == JsonParser.Event.END_ARRAY) return out;
-            // Replay : crée un parser "amorcé" qui retourne tok puis délègue.
+            // Replay: create a "primed" parser that returns tok then delegates.
             JsonParser primed = new PrimedParser(tok, p);
             out.add(elem.read(primed));
         }
     }
 
     /**
-     * Parser qui ré-émet un event consommé en amont, puis délègue le reste au parser sous-jacent.
+     * Parser that re-emits an event consumed upstream, then delegates the rest to the underlying parser.
      * Permet aux readers de toujours commencer par {@code parser.next()}.
      */
     private static final class PrimedParser implements JsonParser {
@@ -1478,7 +1477,7 @@ final class RuntimeReadRegistry {
         };
     }
 
-    /** Lit la valeur courante en tant qu'Object / déterminée dynamiquement. */
+    /** Reads the current value as an Object / dynamically determined. */
     private Object dynamicValue(JsonParser p) {
         JsonParser.Event e = p.next();
         return switch (e) {
@@ -1523,14 +1522,14 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Reader polymorphe : lit la clé discriminante (en première position dans le JSON,
-     * MVP M4.5), trouve la classe concrète associée à l'alias, puis lit les membres
+     * Polymorphic reader: reads the discriminator key (first in the JSON,
+     * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
      * restants directement dans le record/POJO concret via une variante de
-     * readObjectAndConstruct qui assume START_OBJECT déjà consommé.
+     * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
      *
-     * <p>Note : Champollion écrit toujours la clé discriminante en première position.
-     * Pour interopérer avec d'autres implémentations qui placent la clé ailleurs, il
-     * faudrait bufferiser tout l'objet — reporté.</p>
+     * <p>Note: Champollion always writes the discriminator key first.
+     * To interoperate with other implementations that place the key elsewhere, it
+     * would need to buffer the whole object — deferred.</p>
      */
     private BindingReader polymorphicReader(jakarta.json.bind.annotation.JsonbTypeInfo info) {
         // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest).
@@ -1543,10 +1542,10 @@ final class RuntimeReadRegistry {
             if (e != JsonParser.Event.START_OBJECT) {
                 throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
             }
-            // Cascade : à partir de la première discriminator key, suivre la chaîne
-            // d'@JsonbTypeInfo de l'ancêtre vers l'enfant. Chaque étape : lire la
+            // Cascade: starting from the first discriminator key, follow the chain
+            // of @JsonbTypeInfo from ancestor to child. Each step: read the
             // discriminator key courante, mapper l'alias vers un subtype, puis si
-            // ce subtype porte LUI-MÊME un @JsonbTypeInfo, recommencer.
+            // if this subtype itself carries @JsonbTypeInfo, repeat.
             jakarta.json.bind.annotation.JsonbTypeInfo currentInfo = info;
             Class<?> concrete = null;
             while (true) {
@@ -1572,7 +1571,7 @@ final class RuntimeReadRegistry {
                 if (next == null) throw new JsonbException("Unknown @JsonbSubtype alias: " + alias);
                 concrete = next;
                 var nextInfo = next.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
-                if (nextInfo == null) break; // plus de discriminators à lire
+                if (nextInfo == null) break; // no more discriminators to read
                 currentInfo = nextInfo;
             }
             return readMembersOnly(parser, concrete);
@@ -1581,7 +1580,7 @@ final class RuntimeReadRegistry {
 
     /**
      * Lit les membres restants d'un objet (sans START_OBJECT initial) et construit
-     * une instance du type concret. Utilisé pour la deuxième phase de la lecture
+     * an instance of the concrete type. Used for the second phase of reading
      * polymorphe.
      */
     private Object readMembersOnly(JsonParser parser, Class<?> concrete) {
@@ -1623,13 +1622,13 @@ final class RuntimeReadRegistry {
                 throw new JsonbException("ctor failed for " + concrete, ex);
             }
         }
-        // POJO non-record : si @JsonbCreator présent, déléguer au creator-based reader
-        // (les membres déjà avancés au-delà du discriminator sont absorbés en relisant
+        // Non-record POJO: if @JsonbCreator is present, delegate to the creator-based reader
+        // (members already advanced past the discriminator are absorbed by rereading
         // l'objet via un PrimedParser qui rejoue START_OBJECT). Sinon ctor sans arg.
         var creator = findJsonbCreatorPolymorphic(concrete);
         if (creator != null) {
-            // Construire un BindingReader creator-based puis appeler avec un parser primé
-            // qui ré-injecte START_OBJECT au début.
+            // Build a creator-based BindingReader then call it with a primed parser
+            // that re-injects START_OBJECT at the beginning.
             BindingReader r = resolveCreator(creator);
             JsonParser primed = new PrimedParser(JsonParser.Event.START_OBJECT, parser);
             return r.read(primed);
@@ -1680,8 +1679,8 @@ final class RuntimeReadRegistry {
     }
 
     /**
-     * Reader global pour les types {@code java.time.*} basé sur {@code JSONB_DATE_FORMAT}.
-     * Renvoie empty si pas de pattern global ou si {@code raw} n'est pas un type java.time supporté.
+     * Global reader for {@code java.time.*} types based on {@code JSONB_DATE_FORMAT}.
+     * Returns empty if there is no global pattern or if {@code raw} is not a supported java.time type.
      */
     private java.util.Optional<BindingReader> globalDateReader(Class<?> raw) {
         if (defaultDateFormat == null) return java.util.Optional.empty();
@@ -1708,7 +1707,7 @@ final class RuntimeReadRegistry {
     /**
      * Si le composant a {@code @JsonbTypeAdapter(class)}, retourne un reader qui :
      * 1. instancie l'adapter (no-arg ctor),
-     * 2. délègue la lecture au reader du type {@code Adapted},
+     * 2. delegates reading to the reader of the {@code Adapted} type,
      * 3. invoque {@code adaptFromJson(adapted)} pour reconstruire l'Original.
      */
     private java.util.Optional<BindingReader> customAdapterReader(RecordComponent c) {
@@ -1735,7 +1734,7 @@ final class RuntimeReadRegistry {
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
         jakarta.json.bind.adapter.JsonbAdapter adapter;
         try {
-            // §5 — résolution CDI si container disponible, sinon newInstance.
+            // §5 — CDI resolution if a container is available, otherwise newInstance.
             adapter = CdiResolver.resolve(adapterClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
@@ -1777,7 +1776,7 @@ final class RuntimeReadRegistry {
             if (raw == java.time.ZonedDateTime.class) return java.time.ZonedDateTime.parse(s, fmt);
             if (raw == java.time.Instant.class) {
                 // Instant n'a pas de parse(String, DateTimeFormatter) direct ; on passe par OffsetDateTime
-                // si le pattern le permet, sinon on délègue à Instant.from.
+                // if the pattern allows it, otherwise delegate to Instant.from.
                 return java.time.Instant.from(fmt.parse(s));
             }
             throw new JsonbException("@JsonbDateFormat unsupported type: " + raw);
@@ -1807,7 +1806,7 @@ final class RuntimeReadRegistry {
 
     // ===== Builtins =====
 
-    /** Rejette les IDs de timezone à 3 lettres dépréciés (JDK : ZoneId.SHORT_IDS). */
+    /** Rejects deprecated 3-letter timezone IDs (JDK: ZoneId.SHORT_IDS). */
     private static final java.util.Set<String> DEPRECATED_TZ_IDS = java.util.Set.of(
             "ACT", "AET", "AGT", "ART", "AST", "BET", "BST", "CAT", "CNT", "CST",
             "CTT", "EAT", "ECT", "EST", "HST", "IET", "IST", "JST", "MIT", "MST",

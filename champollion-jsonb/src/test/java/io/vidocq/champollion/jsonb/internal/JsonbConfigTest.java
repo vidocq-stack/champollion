@@ -63,9 +63,9 @@ class JsonbConfigTest {
             var config = new JsonbConfig().withNullValues(true);
             try (var j = JsonbBuilder.create(config)) {
                 String json = j.toJson(new Box("crate", null));
-                // Les deux propriétés sont incluses, content est null.
+                // Both properties are included, content is null.
                 assertTrue(json.contains("\"content\":null"),
-                        "JSONB_NULL_VALUES=true doit forcer l'inclusion. JSON = " + json);
+                        "JSONB_NULL_VALUES=true must force inclusion. JSON = " + json);
                 assertTrue(json.contains("\"name\":\"crate\""));
             } catch (Exception e) { throw new RuntimeException(e); }
         }

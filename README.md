@@ -5,7 +5,7 @@
 <h1 align="center">Champollion</h1>
 
 <p align="center">
-  <strong>Implémentation Jakarta JSON-P 2.1 + JSON-B 3.0 — zéro dépendance, codegen statique APT, JPMS natif</strong><br>
+  <strong>Jakarta JSON-P 2.1 + JSON-B 3.0 implementation — zero dependencies, static APT codegen, native JPMS</strong><br>
   <a href="https://jakarta.ee/specifications/jsonp/2.1/">Jakarta JSON-P 2.1</a> | <a href="https://jakarta.ee/specifications/jsonb/3.0/">Jakarta JSON-B 3.0</a> | Virtual Threads | JDK 25
 </p>
 
@@ -19,77 +19,77 @@
 
 ---
 
-Champollion est l'implémentation **Jakarta JSON Processing 2.1** et **Jakarta JSON Binding 3.0**
-de l'écosystème [Vidocq](https://forge.vidocq.dev/vidocq) : zéro dépendance hors specs Jakarta,
-JDK 25 pur, JPMS strict, virtual threads, **compilation statique des bindings via APT** pour
-éviter la réflexion à chaud.
+Champollion is the **Jakarta JSON Processing 2.1** and **Jakarta JSON Binding 3.0**
+implementation of the [Vidocq](https://forge.vidocq.dev/vidocq) ecosystem: zero dependencies
+beyond Jakarta specs, pure JDK 25, strict JPMS, virtual threads, **compile-time static binding
+generation via APT** to avoid runtime reflection.
 
-Le nom rend hommage à **Jean-François Champollion** (1790–1832), déchiffreur des hiéroglyphes
-égyptiens — Champollion lit les structures arbitraires et les traduit en objets Java typés.
+The name pays homage to **Jean-François Champollion** (1790–1832), decipherer of Egyptian
+hieroglyphics — Champollion reads arbitrary structures and translates them into typed Java objects.
 
 ## Modules
 
 | Module | Description |
 | --- | --- |
-| `champollion-api` | Re-expose `jakarta.json` + `jakarta.json.bind`. Point d'extension propre à venir. |
-| `champollion-jsonp` | Implémentation complète JSON-P 2.1 — parser/generator streaming, object model, builders, Reader/Writer, JsonPointer (RFC 6901), JsonPatch (RFC 6902), JsonMergePatch. |
-| `champollion-jsonb` | Implémentation JSON-B 3.0 — `toJson`/`fromJson` runtime + lookup-first via SPI `JsonbBinding<T>`. Couvre primitives, `java.time`, UUID, enum, records, POJOs, containers. |
-| `champollion-codegen-apt` | Annotation Processor JDK pur. Génère un `JsonbBinding<T>` par record annoté `@JsonbStatic` + ServiceLoader file. Différentiel automatisé static vs runtime. |
-| `champollion-codegen-maven-plugin` | Mojo `generate` qui scanne le classpath compile et délègue à l'APT pour les classes non-annotables (POJOs tiers). `maven-plugin-plugin 4.0.0-beta-2`, Java 25. |
-| `champollion-tck` | **Hors reactor** (POM Model 4.0.0). Profils `-Pjsonp-tck` (JUnit 5) et `-Pjsonb-tck` (TestNG). Skip propre (exit 78) si TCK officiel absent. |
-| `champollion-bench` | POM JMH prêt — comparatifs vs Parsson / Yasson / Jackson à venir. |
-| `champollion-examples` | Exemples d'usage — à écrire. |
+| `champollion-api` | Re-exports `jakarta.json` + `jakarta.json.bind`. Custom extension point to come. |
+| `champollion-jsonp` | Complete JSON-P 2.1 implementation — streaming parser/generator, object model, builders, Reader/Writer, JsonPointer (RFC 6901), JsonPatch (RFC 6902), JsonMergePatch. |
+| `champollion-jsonb` | JSON-B 3.0 implementation — `toJson`/`fromJson` runtime + lookup-first via `JsonbBinding<T>` SPI. Covers primitives, `java.time`, UUID, enum, records, POJOs, containers. |
+| `champollion-codegen-apt` | Pure JDK annotation processor. Generates one `JsonbBinding<T>` per record annotated `@JsonbStatic` + ServiceLoader file. Automatic static vs runtime differential. |
+| `champollion-codegen-maven-plugin` | `generate` mojo that scans the compile classpath and delegates to APT for non-annotable classes (third-party POJOs). `maven-plugin-plugin 4.0.0-beta-2`, Java 25. |
+| `champollion-tck` | **Out-of-reactor** (POM Model 4.0.0). Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Clean skip (exit 78) if official TCK is absent. |
+| `champollion-bench` | JMH POM ready — comparisons vs Parsson / Yasson / Jackson to come. |
+| `champollion-examples` | Usage examples — to be written. |
 
-## Philosophie (héritée de Vidocq)
+## Philosophy (inherited from Vidocq)
 
-- **JPMS strict**, pas de classpath.
-- **Class-File API (JEP 484) + APT** pour générer les `JsonbBinding<T>` à la compilation. Aucune réflexion runtime quand le binding statique existe ; runtime introspectif en fallback uniquement pour les types non recompilables.
-- **Zéro dépendance externe** hors `jakarta.json-api`, `jakarta.json.bind-api`. Pas de Parsson, Yasson, ni Jackson.
-- **Virtual Threads** — pas de `synchronized`, pas de `ThreadLocal`. Caches `ConcurrentHashMap` / `ClassValue`. Propagation via `ScopedValue`.
-- **TDD strict** — Red → Green → Refactor, citation RFC dans les `@DisplayName`.
-- **TCK 100 % PASS** comme contrat dur sur JSON-P et JSON-B, en mode runtime ET en mode codegen statique.
+- **Strict JPMS**, no classpath.
+- **Class-File API (JEP 484) + APT** to generate `JsonbBinding<T>` at compile time. No runtime reflection when the static binding exists; runtime introspective fallback only for non-recompilable types.
+- **Zero external dependencies** beyond `jakarta.json-api`, `jakarta.json.bind-api`. No Parsson, Yasson, or Jackson.
+- **Virtual Threads** — no `synchronized`, no `ThreadLocal`. `ConcurrentHashMap` / `ClassValue` caches. Propagation via `ScopedValue`.
+- **Strict TDD** — Red → Green → Refactor, RFC citations in `@DisplayName`.
+- **TCK 100% PASS** as a hard contract on both JSON-P and JSON-B, in runtime mode AND in static codegen mode.
 
-## Statut
+## Status
 
-🟢 Reactor opérationnel — `mvn install -DskipTests` ✅ sur 8 modules, **290/290** tests unitaires verts.
+🟢 Reactor operational — `mvn install -DskipTests` ✅ on 8 modules, **290/290** unit tests green.
 
-| Phase | État |
+| Phase | Status |
 | --- | --- |
-| M0 — Bootstrap multi-module, JPMS, ServiceLoader | ✅ |
+| M0 — Multi-module bootstrap, JPMS, ServiceLoader | ✅ |
 | M1 — JSON-P (tokenizer, parser, generator, provider) | ✅ |
 | M2 — Object model + builders + Reader/Writer | ✅ |
 | M3 — JsonPointer + JsonPatch + MergePatch | ✅ |
-| M4 — JSON-B runtime introspectif | ✅ |
+| M4 — JSON-B runtime introspective | ✅ |
 | M5 — Codegen APT + Maven plugin | ✅ MVP |
-| M6 — TCK 100 % PASS | 🟡 baseline en cours |
-| M7 — Benchmarks JMH vs Parsson / Yasson / Jackson | ⏳ planifié |
+| M6 — TCK 100% PASS | 🟡 baseline in progress |
+| M7 — JMH benchmarks vs Parsson / Yasson / Jackson | ⏳ planned |
 
-Détails par sous-module et avancement par phase : voir [`STATUS.md`](./STATUS.md) et [`ROADMAP.md`](./ROADMAP.md).
-État TCK exhaustif : [`TCK.md`](./TCK.md).
-Bugs reproductibles : [`BUG.md`](./BUG.md). Mesures perf : [`BENCH.md`](./BENCH.md).
+Details per sub-module and phase progress: see [`STATUS.md`](./STATUS.md) and [`ROADMAP.md`](./ROADMAP.md).
+Exhaustive TCK status: [`TCK.md`](./TCK.md).
+Reproducible bugs: [`BUG.md`](./BUG.md). Performance measurements: [`BENCH.md`](./BENCH.md).
 
-## Démarrage rapide
+## Quick Start
 
 ```bash
 sdk env                           # JDK 25 + Maven 3.9.16 (cf. .sdkmanrc)
-mvn -ntp install -DskipTests      # build du reactor (8 modules)
-mvn test                          # tests unitaires
+mvn -ntp install -DskipTests      # reactor build (8 modules)
+mvn test                          # unit tests
 ```
 
-TCK officiels (artefacts non publics, à installer dans le M2 local) :
+Official TCKs (non-public artifacts, must be installed in local M2):
 
 ```bash
-./install-tck.sh                  # télécharge les ZIP officiels Eclipse
-./run-official-tck-jsonp-2.1.sh   # smoke test JSON-P
-./run-official-tck-jsonb-3.0.sh   # smoke test JSON-B
+./install-tck.sh                  # download the official Eclipse ZIPs
+./run-official-tck-jsonp-2.1.sh   # JSON-P smoke test
+./run-official-tck-jsonb-3.0.sh   # JSON-B smoke test
 ```
 
 ## Documentation
 
-Le site Antora de l'écosystème Vidocq agrège la documentation de Champollion (FR + EN) :
+The Vidocq ecosystem's Antora site aggregates Champollion documentation (FR + EN):
 [doc.vidocq.dev/champollion-fr](https://doc.vidocq.dev/champollion-fr/) ·
 [doc.vidocq.dev/champollion](https://doc.vidocq.dev/champollion/).
 
-## Licence
+## License
 
-Apache License 2.0 — voir [`LICENSE`](./LICENSE).
+Apache License 2.0 — see [`LICENSE`](./LICENSE).

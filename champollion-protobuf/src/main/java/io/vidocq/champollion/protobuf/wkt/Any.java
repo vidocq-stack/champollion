@@ -10,25 +10,25 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * {@code google.protobuf.Any} — enveloppe pour un message arbitraire.
+ * {@code google.protobuf.Any} — envelope for an arbitrary message.
  *
  * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#any">Any</a>.</p>
  *
  * <p>Wire format : {@code string type_url = 1; bytes value = 2;}</p>
  *
- * <p>Méthodes utiles :</p>
+ * <p>Useful methods:</p>
  * <ul>
- *   <li>{@link #pack(Object)} — empaquette un message annoté
- *       {@link ProtobufMessage} avec le {@code type_url} par défaut
+ *   <li>{@link #pack(Object)} — packs a message annotated
+ *       {@link ProtobufMessage} with the default {@code type_url}
  *       ({@code type.googleapis.com/<fullName>}).</li>
- *   <li>{@link #unpack(Class)} — désérialise vers une classe attendue ;
- *       vérifie que le {@code type_url} matche.</li>
- *   <li>{@link #unpack()} — désérialise en consultant {@link TypeRegistry}.</li>
+ *   <li>{@link #unpack(Class)} — deserializes into an expected class;
+ *       verifies that the {@code type_url} matches.</li>
+ *   <li>{@link #unpack()} — deserializes by consulting {@link TypeRegistry}.</li>
  * </ul>
  *
- * <p>Le JSON canonical d'Any (aplatissement des champs vs {@code "value"} pour
- * les WKT) sera traité dans un commit ultérieur — pour l'instant le mapping
- * tombe sur le défaut "objet avec type_url + value base64".</p>
+ * <p>The canonical Any JSON mapping (flattening fields vs {@code "value"} for
+ * WKT) will be handled in a later commit — for now the mapping
+ * falls back to the default "object with type_url + base64 value".</p>
  */
 @ProtobufMessage("google.protobuf.Any")
 public record Any(
@@ -55,7 +55,7 @@ public record Any(
         return new Any(url, bytes);
     }
 
-    /** Désérialise dans la classe attendue ; lève si le {@code type_url} ne matche pas. */
+    /** Deserializes into the expected class; throws if the {@code type_url} does not match. */
     public <T> T unpack(Class<T> type) throws IOException {
         Objects.requireNonNull(type, "type");
         String expected = TypeRegistry.fullNameFromTypeUrl(type_url);
@@ -69,8 +69,8 @@ public record Any(
     }
 
     /**
-     * Désérialise en consultant {@link TypeRegistry}. Retourne {@code null}
-     * si le type {@code type_url} n'est pas enregistré.
+     * Deserializes by consulting {@link TypeRegistry}. Returns {@code null}
+     * if the {@code type_url} type is not registered.
      */
     public Object unpack() throws IOException {
         String full = TypeRegistry.fullNameFromTypeUrl(type_url);

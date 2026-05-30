@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Implémentation immuable de {@link JsonMergePatch} conforme RFC 7396.
+ * Immutable {@link JsonMergePatch} implementation conforming to RFC 7396.
  *
  * <p>Algorithme RFC 7396 §1 :
  * <pre>
@@ -46,7 +46,7 @@ public final class ChampollionJsonMergePatch implements JsonMergePatch {
         if (!(patch instanceof JsonObject patchObj)) {
             return patch;
         }
-        // patch est un objet
+        // patch is an object
         Map<String, JsonValue> base = (target instanceof JsonObject t)
                 ? new LinkedHashMap<>(t)
                 : new LinkedHashMap<>();
@@ -64,8 +64,8 @@ public final class ChampollionJsonMergePatch implements JsonMergePatch {
     }
 
     /**
-     * Calcule un merge patch tel que {@code mergePatch(source, diff(source, target)) == target}.
-     * RFC 7396 §1 indicatif : si source/target ne sont pas tous deux des objets, le patch est target.
+     * Computes a merge patch such that {@code mergePatch(source, diff(source, target)) == target}.
+     * RFC 7396 §1 note: if source/target are not both objects, the patch is target.
      */
     public static JsonMergePatch diff(JsonValue source, JsonValue target) {
         return new ChampollionJsonMergePatch(diffValue(source, target));
@@ -76,7 +76,7 @@ public final class ChampollionJsonMergePatch implements JsonMergePatch {
             return target;
         }
         var patch = new LinkedHashMap<String, JsonValue>();
-        // Membres dans target : add ou modifie
+        // Members in target: add or modify
         for (var e : tgt.entrySet()) {
             JsonValue srcVal = src.get(e.getKey());
             if (srcVal == null) {
@@ -85,7 +85,7 @@ public final class ChampollionJsonMergePatch implements JsonMergePatch {
                 patch.put(e.getKey(), diffValue(srcVal, e.getValue()));
             }
         }
-        // Membres uniquement dans source : null pour suppression
+        // Members only in source: null to delete
         for (var name : src.keySet()) {
             if (!tgt.containsKey(name)) {
                 patch.put(name, JsonValue.NULL);

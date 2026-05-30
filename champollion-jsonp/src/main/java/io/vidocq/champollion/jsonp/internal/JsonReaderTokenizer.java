@@ -6,19 +6,19 @@ import java.io.IOException;
 import java.io.Reader;
 
 /**
- * Tokenizer JSON RFC 8259 lisant un {@link Reader} via un buffer
- * {@code char[BUF_SIZE]} pré-alloué (P1).
+ * RFC 8259 JSON tokenizer that reads a {@link Reader} through a pre-allocated
+ * {@code char[BUF_SIZE]} buffer (P1).
  *
- * <p>P10.2 — {@link #next()} et tous ses helpers ({@code skipWhitespace},
- * {@code readKeyword}, {@code readString}, {@code readEscape}, {@code readNumber}…)
- * sont dupliqués localement (pas dans le parent abstract) pour que les appels
- * à {@link #read()}/{@link #peekRead()} restent <em>statiquement résolus</em>
- * dans la même classe finale, donc inlinables par HotSpot sans dispatch
- * virtuel.</p>
+ * <p>P10.2 — {@link #next()} and all helpers ({@code skipWhitespace},
+ * {@code readKeyword}, {@code readString}, {@code readEscape},
+ * {@code readNumber}…) are duplicated locally (not in the abstract parent) so
+ * calls to {@link #read()}/{@link #peekRead()} remain <em>statically resolved</em>
+ * in the same final class, and therefore HotSpot-inlineable without virtual
+ * dispatch.</p>
  */
 public final class JsonReaderTokenizer extends JsonTokenizer {
 
-    /** Taille du buffer char[] de lecture. */
+    /** Size of the read {@code char[]} buffer. */
     public static final int BUF_SIZE = 512;
 
     private final Reader reader;

@@ -14,13 +14,13 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Benchmark read — mode codegen statique (M5).
+ * Benchmark read — static codegen mode (M5).
  *
- * <p>JSON déjà sérialisé est passé à 5 implémentations qui le rebondissent en
+ * <p>Already serialized JSON is passed to 5 implementations which bounce it back to
  * {@code OrderStaticRecord} / {@code SmallStaticRecord} / {@code List<OrderStaticRecord>}.</p>
  *
- * <p>{@code champollion_static} bénéficie du binding APT : pas de cache lookup,
- * pas de MethodHandles, switch direct sur les keys connues à la compilation.</p>
+ * <p>{@code champollion_static} benefits from APT binding : no cache lookup,
+ * no MethodHandles, direct switch on keys known at compile time.</p>
  */
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -46,7 +46,7 @@ public class JsonbReadBenchStatic {
 
     @Setup(Level.Trial)
     public void setup() {
-        // Sérialise une fois avec champollion (pré-init léger) pour les payloads.
+        // Serialize once with champollion (light pre-init) for payloads.
         Jsonb seed = JsonbBuilder
                 .newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider")
                 .build();

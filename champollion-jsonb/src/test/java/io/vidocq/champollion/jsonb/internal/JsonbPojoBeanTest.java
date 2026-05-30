@@ -41,7 +41,7 @@ class JsonbPojoBeanTest {
         void writes_via_getters() {
             try (var j = JsonbBuilder.create()) {
                 String json = j.toJson(new Person("Alice", 30, true));
-                // Ordre des propriétés non garanti par la spec ; on vérifie le contenu.
+                // Property order not guaranteed by spec; we verify the content.
                 assertTrue(json.contains("\"name\":\"Alice\""));
                 assertTrue(json.contains("\"age\":30"));
                 assertTrue(json.contains("\"active\":true"));

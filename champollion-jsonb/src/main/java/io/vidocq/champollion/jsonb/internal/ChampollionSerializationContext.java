@@ -4,9 +4,9 @@ import jakarta.json.bind.serializer.SerializationContext;
 import jakarta.json.stream.JsonGenerator;
 
 /**
- * Implémentation interne de {@link SerializationContext} fournie aux
- * {@code JsonbSerializer} customs pour leur permettre de déléguer la sérialisation
- * récursive à Champollion.
+ * Internal {@link SerializationContext} implementation provided to custom
+ * {@code JsonbSerializer}s so they can delegate recursive serialization to
+ * Champollion.
  */
 final class ChampollionSerializationContext implements SerializationContext {
 

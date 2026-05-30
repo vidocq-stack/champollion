@@ -10,19 +10,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
- * Décode des primitives Protocol Buffers depuis un {@code byte[]} ou un {@link InputStream}.
+ * Decodes Protocol Buffers primitives from a {@code byte[]} or an {@link InputStream}.
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/encoding/">Protocol Buffers Encoding</a>.</p>
  *
- * <p>Pull parser tag-par-tag : {@link #readTag()} renvoie 0 quand l'entrée est
- * épuisée. L'appelant boucle, dispatche selon {@link WireFormat#getTagWireType(int)},
+ * <p>Pull parser tag by tag: {@link #readTag()} returns 0 when the input is
+ * exhausted. The caller loops and dispatches according to {@link WireFormat#getTagWireType(int)},
  * et appelle {@link #skipField(int)} pour les champs inconnus (forward-compat
- * exigée par Edition 2023).</p>
+ * required by Edition 2023).</p>
  */
 public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDecoder,
                                                       CodedInputStream.StreamDecoder {
 
-    /** Limite par défaut de récursion d'embedded messages — protection anti-stack-overflow. */
+    /** Default recursion limit for embedded messages — stack overflow protection. */
     public static final int DEFAULT_RECURSION_LIMIT = 100;
 
     int recursionDepth = 0;
@@ -70,28 +70,28 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
     // ------------------------------------------------------------------ Sub-stream limit
 
     /**
-     * Réduit temporairement la limite de lecture à {@code byteLimit} octets à
+     * Temporarily reduces the read limit to {@code byteLimit} bytes
      * partir de la position courante. Utile pour parser un embedded message
      * (wire type LEN) ou un payload packed sans allouer un sous-buffer.
      *
      * <p>L'appelant doit appairer chaque {@code pushLimit} avec un {@link #popLimit(int)}
-     * passant la valeur retournée — pattern try/finally recommandé.</p>
+     * passing the returned value back — try/finally pattern recommended.</p>
      */
     public abstract int pushLimit(int byteLimit) throws IOException;
 
-    /** Restaure la limite précédente. */
+    /** Restores the previous limit. */
     public abstract void popLimit(int oldLimit);
 
     /**
      * Nombre d'octets encore lisibles avant d'atteindre la limite courante.
-     * Renvoie {@code Integer.MAX_VALUE} si aucune limite n'a été poussée.
+     * Returns {@code Integer.MAX_VALUE} if no limit has been pushed.
      */
     public abstract int getBytesUntilLimit();
 
     // ------------------------------------------------------------------ Tag
 
     /**
-     * Lit le prochain tag du flux. Retourne 0 si le flux est épuisé (fin
+     * Reads the next tag from the stream. Returns 0 if the stream is exhausted (end
      * normale de message). Retourne aussi 0 si le wire type lu est END_GROUP
      * (le caller saura distinguer via le contexte du parser de groupe).
      */
@@ -101,13 +101,13 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
             return 0;
         }
         // Tag varint strict : max 5 octets (un tag = (field<<3)|wireType ∈ [0, 0xFFFFFFFF]).
-        // Au-delà = overlong → MalformedProtobufException (spec encoding §tag).
+        // Beyond that = overlong → MalformedProtobufException (spec encoding §tag).
         int tag = 0;
         int shift = 0;
         for (int i = 0; i < 5; i++) {
             byte b = readRawByte();
-            // 5e octet : seulement les 4 bits du bas peuvent être utilisés pour rester
-            // dans la plage int32 (32 - 28 = 4 bits). Au-delà = field_number too high.
+            // 5th byte: only the 4 low bits can be used to stay
+            // within the int32 range (32 - 28 = 4 bits). Beyond that = field_number too high.
             if (i == 4 && (b & 0xF0) != 0) {
                 throw new MalformedProtobufException(
                         "Protocol message contained a tag varint > 32 bits.");
@@ -130,7 +130,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                                     + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
                 }
                 int wireType = WireFormat.getTagWireType(tag);
-                // Wire types 6 et 7 sont réservés, jamais émis (spec encoding §wire-types).
+                // Wire types 6 and 7 are reserved, never emitted (spec encoding §wire-types).
                 if (wireType == 6 || wireType == 7) {
                     throw MalformedProtobufException.invalidWireType(wireType);
                 }
@@ -139,13 +139,13 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
             }
             shift += 7;
         }
-        // 5 octets lus, MSB encore à 1 → overlong tag varint.
+        // 5 bytes read, MSB still 1 → overlong tag varint.
         throw MalformedProtobufException.malformedVarint();
     }
 
     /**
-     * Vérifie que le dernier tag lu correspond bien à la valeur attendue.
-     * Utile à la fin d'un parsing de groupe (END_GROUP attendu).
+     * Verifies that the last read tag matches the expected value.
+     * Useful at the end of group parsing (END_GROUP expected).
      */
     public final void checkLastTagWas(int expected) throws MalformedProtobufException {
         if (lastTag != expected) {
@@ -184,7 +184,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         return (n >>> 1) ^ -(n & 1L);
     }
 
-    // ------------------------------------------------------------------ Scalaires typés
+    // ------------------------------------------------------------------ Typed scalars
 
     public final int readInt32() throws IOException {
         return (int) readRawVarint64();
@@ -260,12 +260,12 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
     }
 
     /**
-     * Lit une chaîne {@code length-delimited} avec validation UTF-8 stricte —
-     * comportement {@code Utf8Validation.VERIFY} d'Edition 2023 (proto3 par défaut).
+     * Reads a {@code length-delimited} string with strict UTF-8 validation —
+     * {@code Utf8Validation.VERIFY} behavior in Edition 2023 (proto3 by default).
      *
-     * <p>Toute séquence mal formée (continuation invalide, overlong, surrogate codé en
-     * 3 octets, etc. cf. RFC 3629 §3) déclenche {@link MalformedProtobufException}
-     * plutôt qu'un {@code U+FFFD} silencieux.</p>
+     * <p>Any malformed sequence (invalid continuation, overlong encoding, surrogate encoded as
+     * 3 bytes, etc. see RFC 3629 §3) throws {@link MalformedProtobufException}
+     * instead of a silent {@code U+FFFD}.</p>
      */
     public final String readStringRequireUtf8() throws IOException {
         int size = readRawVarint32();
@@ -286,9 +286,9 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
     // ------------------------------------------------------------------ Skip
 
     /**
-     * Skip le champ correspondant au {@code tag} déjà lu. Stocke l'octet de tag
+     * Skips the field corresponding to the already read {@code tag}. Stores the tag byte
      * et le payload comme « unknown field » si {@code unknownFields} est non null
-     * (forward-compat exigée par Edition 2023 §"Unknown Fields").
+     * (forward compatibility required by Edition 2023 §"Unknown Fields").
      */
     public final boolean skipField(int tag) throws IOException {
         return skipField(tag, null);
@@ -339,7 +339,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                 }
             }
             case WireFormat.WIRETYPE_END_GROUP -> {
-                // END_GROUP standalone (sans START_GROUP correspondant) = wire malformé.
+                // Standalone END_GROUP (without a matching START_GROUP) = malformed wire.
                 throw new MalformedProtobufException(
                         "Protocol message contained an unexpected END_GROUP tag.");
             }
@@ -350,8 +350,8 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
     // ------------------------------------------------------------------ Recursion limit (embedded messages)
 
     /**
-     * Incrémente la profondeur de récursion ; lance {@link MalformedProtobufException}
-     * si la limite est dépassée. À appeler avant tout {@code readMessage}.
+     * Increments recursion depth; throws {@link MalformedProtobufException}
+     * if the limit is exceeded. Call before any {@code readMessage}.
      */
     public final void incrementRecursionDepth() throws MalformedProtobufException {
         if (++recursionDepth > recursionLimit) {
@@ -430,7 +430,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
 
         @Override
         public int readRawVarint32() throws IOException {
-            // Fast path : un octet, MSB à 0.
+            // Fast path: one byte, MSB at 0.
             int p = position;
             if (limit == p) throw MalformedProtobufException.truncated();
             int x = buffer[p++];
@@ -441,7 +441,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                 position = p - 1;
                 return (int) slowReadRawVarint64();
             }
-            // Slow path déroulé sur 5 octets max pour un int32 varint.
+            // Unrolled slow path over at most 5 bytes for an int32 varint.
             int y;
             if ((y = buffer[p++]) >= 0) {
                 x ^= (y << 7);
@@ -467,7 +467,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                                 && buffer[p++] < 0
                                 && buffer[p++] < 0
                                 && buffer[p++] < 0) {
-                            // Drop 6 octets de sign-extension : int32 négatif passé en 10 octets.
+                            // Drop 6 sign-extension bytes: negative int32 encoded in 10 bytes.
                             throw MalformedProtobufException.malformedVarint();
                         }
                     }
@@ -541,11 +541,11 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
 
         private boolean refill() throws IOException {
             if (eof) return false;
-            // Avant de re-remplir, archiver le buffer entièrement consommé.
+            // Before refilling, archive the fully consumed buffer.
             totalBytesRetired += bufferSize;
             bufferPos = 0;
             bufferSize = 0;
-            // Ne pas lire au-delà de la limite courante.
+            // Do not read past the current limit.
             int remainingBeforeLimit = currentLimit - totalBytesRetired;
             if (remainingBeforeLimit <= 0) return false;
             int toRead = Math.min(buffer.length, remainingBeforeLimit);
@@ -677,7 +677,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
     /**
      * SPI optionnelle pour collecter les champs inconnus lors d'un skip
      * (forward-compat Edition 2023). Le runtime fournit un recorder via le
-     * binding ; la SPI est exposée ici pour découpler le décodeur du binding.
+     * binding; the SPI is exposed here to decouple the decoder from the binding.
      */
     public interface UnknownFieldRecorder {
         void recordVarint(int fieldNumber, long value);

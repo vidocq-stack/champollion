@@ -66,9 +66,9 @@ class ChampollionJsonPointerTest {
 
         @Test
         void rejects_invalid_escape() {
-            // ~ doit être suivi de 0 ou 1 (RFC 6901 §3) — erreur différée jusqu'à
-            // la première utilisation (compat TCK testResolvePathWithUnencodedTilde
-            // qui exige la construction tolérante).
+            // ~ must be followed by 0 or 1 (RFC 6901 §3) — error deferred until
+            // first use (TCK compat testResolvePathWithUnencodedTilde
+            // which requires tolerant construction).
             var p = new ChampollionJsonPointer("/~2");
             assertThrows(JsonException.class, () -> p.getValue(Json.createObjectBuilder().build()));
         }
@@ -142,7 +142,7 @@ class ChampollionJsonPointerTest {
             var doc = doc();
             JsonStructure updated = new ChampollionJsonPointer("/new").add(doc, Json.createValue("hello"));
             assertEquals("hello", ((jakarta.json.JsonString) ((JsonObject) updated).get("new")).getString());
-            // L'original n'est pas modifié
+            // The original is not modified
             assertFalse(((JsonObject) doc).containsKey("new"));
         }
 

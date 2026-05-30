@@ -13,9 +13,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Implémentation immuable de {@link JsonObject} adossée à un {@link LinkedHashMap}
- * pour préserver l'ordre d'insertion (spec Jakarta JSON-P §4.1 — implémentations
- * recommandées de préserver l'ordre).
+ * Immutable {@link JsonObject} implementation backed by a {@link LinkedHashMap}
+ * to preserve insertion order (Jakarta JSON-P §4.1 — implementations are
+ * recommended to preserve order).
  */
 public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> implements JsonObject {
 

@@ -12,21 +12,21 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Benchmark write — <strong>mode codegen statique</strong> (M5).
+ * Benchmark write — <strong>static codegen mode</strong> (M5).
  *
- * <p>Compare 4 voies sur des records annotés {@code @JsonbStatic} :</p>
+ * <p>Compare 4 paths on records annotated {@code @JsonbStatic} :</p>
  * <ul>
- *   <li>{@code champollion_static} — binding APT découvert par ServiceLoader, zéro
- *       réflexion, branche directe {@code JsonbBinding.write(g, value)} ;</li>
- *   <li>{@code champollion_runtime} — même Jsonb mais {@code withStaticBindings(List.of())}
- *       force le fallback introspectif (MethodHandles + cache) ;</li>
- *   <li>{@code yasson} / {@code jackson} / {@code jacksonJr} — concurrents.</li>
+ *   <li>{@code champollion_static} — APT binding discovered by ServiceLoader, zero
+ *       reflection, direct branch {@code JsonbBinding.write(g, value)} ;</li>
+ *   <li>{@code champollion_runtime} — same Jsonb but {@code withStaticBindings(List.of())}
+ *       forces introspective fallback (MethodHandles + cache) ;</li>
+ *   <li>{@code yasson} / {@code jackson} / {@code jacksonJr} — competitors.</li>
  * </ul>
  *
- * <p>L'APT {@code champollion-codegen-apt} est branché en
- * {@code annotationProcessorPaths} dans le pom du module bench : à la compilation,
- * un {@code <Type>$$Binding} est généré pour chaque record annoté ici, et
- * référencé dans {@code META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding}.</p>
+ * <p>The APT {@code champollion-codegen-apt} is wired in
+ * {@code annotationProcessorPaths} in the pom of the bench module : at compile time,
+ * a {@code <Type>$$Binding} is generated for each record annotated here, and
+ * referenced in {@code META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding}.</p>
  */
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -55,12 +55,12 @@ public class JsonbWriteBenchStatic {
             case "LARGE" -> payload = OrderStaticRecord.batch(100);
             default -> throw new IllegalArgumentException(size);
         }
-        // ServiceLoader actif → bindings @JsonbStatic découverts.
+        // ServiceLoader active → @JsonbStatic bindings discovered.
         champollionStatic = JsonbBuilder
                 .newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider")
                 .build();
 
-        // ServiceLoader bypassé → bindings statiques explicitement vides.
+        // ServiceLoader bypassed → static bindings explicitly empty.
         champollionRuntime = ((ChampollionJsonbBuilder) JsonbBuilder
                 .newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider"))
                 .withStaticBindings(List.of())

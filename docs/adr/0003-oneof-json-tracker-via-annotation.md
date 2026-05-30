@@ -1,68 +1,67 @@
-# ADR 0003 — `oneofGroup` sur `@ProtobufField` + tracker JSON HashMap stateless
+# ADR 0003 — `oneofGroup` on `@ProtobufField` + stateless JSON HashMap tracker
 
-## Statut
+## Status
 
-Accepté — 2026-05-22.
+Accepted — 2026-05-22.
 
-## Contexte
+## Context
 
-Spec proto3 JSON §oneof : un payload JSON ne peut pas contenir plusieurs
-property keys qui appartiennent au même groupe `oneof { ... }`. Le runner
-Google teste cela via `Required.Proto3.JsonInput.OneofFieldDuplicate.*` et
-attend `parse_error`.
+Proto3 JSON spec §oneof: a JSON payload cannot contain multiple
+property keys belonging to the same `oneof { ... }` group. Google's
+runner tests this via `Required.Proto3.JsonInput.OneofFieldDuplicate.*` and
+expects `parse_error`.
 
-Côté wire (binary) : pas de rejet — la spec autorise plusieurs valeurs d'un
-même oneof, **last-wins** (la dernière valeur lue gagne, les autres slots du
-même oneof sont clear).
+Wire (binary) side: no rejection — the spec allows multiple values for the
+same oneof, **last-wins** (the last value read wins, other slots of the
+same oneof are cleared).
 
-Champollion doit donc :
-- Côté JSON : rejet explicit du doublon.
-- Côté wire : merge last-wins, clear des autres slots du même groupe.
+Therefore, Champollion must:
+- JSON side: explicit rejection of duplicates.
+- Wire side: last-wins merge, clear other slots in the same group.
 
-## Décision
+## Decision
 
-1. **`@ProtobufField.oneofGroup() String default ""`** — annotation enrichie.
-   Tous les champs avec la même valeur non-vide forment un oneof groupe.
+1. **`@ProtobufField.oneofGroup() String default ""`** — enriched annotation.
+   All fields with the same non-empty value form a oneof group.
    ```java
    @ProtobufField(number = 111, type = UINT32, explicitPresence = true,
                   oneofGroup = "oneof_field") Integer oneof_uint32
    ```
 
-2. **Côté JSON (`ProtobufJsonRuntime.readMessage`)** — `HashMap<String,String>
-   seenOneofs` local au `readMessage`. Pour chaque property key non-null lu,
-   `put(oneofGroup, key)` ; si l'oneof était déjà set, throw `IOException`
-   avec mention du conflit. Les valeurs JSON `null` sont exclues du tracker
-   (cohérent avec "null = absent" §JSON canonical).
+2. **JSON side (`ProtobufJsonRuntime.readMessage`)** — `HashMap<String,String>
+   seenOneofs` local to `readMessage`. For each non-null property key read,
+   `put(oneofGroup, key)`; if the oneof was already set, throw `IOException`
+   mentioning the conflict. JSON `null` values are excluded from the tracker
+   (consistent with "null = absent" §JSON canonical).
 
-3. **Côté wire (`RuntimeBinding.readMessage`)** — avant d'écrire un slot
-   pour un field `oneofGroup` non-vide, clear tous les autres slots du même
-   groupe (`slots[other.componentIndex] = null; hasValue[other.componentIndex] = false`).
-   Implémente la sémantique "last-wins" de la spec.
+3. **Wire side (`RuntimeBinding.readMessage`)** — before writing a slot
+   for a field with non-empty `oneofGroup`, clear all other slots in the same
+   group (`slots[other.componentIndex] = null; hasValue[other.componentIndex] = false`).
+   Implements the spec's "last-wins" semantics.
 
-4. **Pas de `ThreadLocal`, pas de `synchronized`** — le tracker est local
-   au stack frame de `readMessage`, virtual-thread-safe par construction.
+4. **No `ThreadLocal`, no `synchronized`** — the tracker is local
+   to the `readMessage` stack frame, virtual-thread-safe by construction.
 
-## Conséquences
+## Consequences
 
-**Positives** :
-- Rejet JSON correct (couvre +5 tests Champollion + N tests conformance).
-- Wire last-wins correct (couvre `ValidDataOneof.X.MultipleValuesForDifferentField`).
-- Coût runtime nul (HashMap allocation ~zéro vu le nombre de fields oneof par
+**Positives**:
+- Correct JSON rejection (covers +5 Champollion tests + N conformance tests).
+- Correct wire last-wins (covers `ValidDataOneof.X.MultipleValuesForDifferentField`).
+- Zero runtime cost (HashMap allocation ~zero given the number of oneof fields per
   message).
-- Pas de modification des classes générées par APT — purement métadonnée
-  annotation.
+- No modification to APT-generated classes — purely annotation metadata.
 
-**Négatives** :
-- 5e paramètre `@ProtobufField` à connaître (déjà 4 : number, type, packed,
-  explicitPresence). Acceptable car oneof est rare.
-- Le pattern matching exhaustif sur le oneof n'est pas représenté en Java —
-  le consommateur doit checker chaque slot null. À industrialiser via sealed
-  interface dans une évolution future M6+.
+**Negatives**:
+- 5th `@ProtobufField` parameter to know (already 4: number, type, packed,
+  explicitPresence). Acceptable since oneof is rare.
+- Exhaustive pattern matching on oneof is not represented in Java —
+  consumer must check each slot for null. To be industrialized via sealed
+  interface in a future M6+ evolution.
 
-## Alternatives écartées
+## Rejected Alternatives
 
-| Option | Pourquoi écarté |
+| Option | Why rejected |
 |---|---|
-| Sealed interface `Oneof_X permits ...` au niveau record | Trop intrusif, complique l'API record |
-| Modeling `Optional<Choice>` avec sub-types | Java records ne supportent pas l'héritage |
-| Tracker en `ScopedValue` thread-confined | Inutile — un parser appelle `readMessage` synchroniquement, pas de partage de tracker |
+| Sealed interface `Oneof_X permits ...` at record level | Too intrusive, complicates record API |
+| Modeling `Optional<Choice>` with sub-types | Java records don't support inheritance |
+| Tracker in `ScopedValue` thread-confined | Unnecessary — a parser calls `readMessage` synchronously, no tracker sharing |

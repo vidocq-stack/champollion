@@ -1,21 +1,21 @@
 package io.vidocq.champollion.jsonp.internal;
 
 /**
- * Tokenizer JSON pull-based abstrait, RFC 8259 strict.
+ * Abstract pull-based JSON tokenizer, strict RFC 8259.
  *
- * <p>P10.2 — chaque sous-classe finale duplique {@link #next()} et ses helpers
- * pour permettre à HotSpot d'inliner statiquement {@code read()}/{@code peekRead()}
- * (monomorphic car appelés <em>au sein</em> d'une classe finale unique). Le
- * parent ne fournit que :</p>
+ * <p>P10.2 — each final subclass duplicates {@link #next()} and its helpers so
+ * HotSpot can statically inline {@code read()}/{@code peekRead()} (monomorphic
+ * because they are called <em>within</em> a single final class). The parent only
+ * provides:</p>
  * <ul>
- *   <li>les champs partagés (peek, line/column/offset, StringBuilder buffer) ;</li>
- *   <li>la signature {@link #next()} et {@link #close()} ;</li>
- *   <li>{@link #line()}/{@link #column()}/{@link #offset()} pour le diagnostic ;</li>
- *   <li>une fabrique d'exception {@link #error(String)} et un helper
- *       {@link #describe(int)} partagés entre les implémentations.</li>
+ *   <li>shared fields (peek, line/column/offset, StringBuilder buffer) ;</li>
+ *   <li>the {@link #next()} and {@link #close()} signatures ;</li>
+ *   <li>{@link #line()}/{@link #column()}/{@link #offset()} for diagnostics ;</li>
+ *   <li>an exception factory {@link #error(String)} and a shared helper
+ *       {@link #describe(int)} across implementations.</li>
  * </ul>
  *
- * <p>Pas de {@code synchronized}, pas de {@code ThreadLocal} —
+ * <p>No {@code synchronized}, no {@code ThreadLocal} —
  * virtual-thread-friendly.</p>
  */
 public abstract class JsonTokenizer {
@@ -24,7 +24,7 @@ public abstract class JsonTokenizer {
 
     protected final StringBuilder buffer = new StringBuilder(64);
 
-    /** Caractère pré-lu (pour le 1-char lookahead), ou {@code -2} si aucun. */
+    /** Pre-read character (for 1-char lookahead), or {@code -2} if none. */
     protected int peek = NO_PEEK;
     protected long line = 1;
     protected long column = 0;
@@ -32,10 +32,10 @@ public abstract class JsonTokenizer {
 
     JsonTokenizer() {}
 
-    /** Lit le prochain token. Whitespace RFC 8259 §2 sauté. */
+    /** Reads the next token. RFC 8259 §2 whitespace is skipped. */
     public abstract JsonToken next();
 
-    /** Ferme la source sous-jacente (Reader). No-op en mode String. */
+    /** Closes the underlying source (Reader). No-op in String mode. */
     abstract void close();
 
     public final long line() { return line; }

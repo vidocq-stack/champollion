@@ -166,7 +166,7 @@ class JsonProviderStubsTest {
 
         @Test
         void diff_with_pointer_escape() {
-            // Clé contenant '/' : doit être encodée en ~1 dans le pointer
+            // Key containing '/' : must be encoded as ~1 in the pointer
             JsonPatch d = Json.createDiff(obj("{\"a/b\":1}"), obj("{\"a/b\":2}"));
             assertEquals("/a~1b", d.toJsonArray().getJsonObject(0).getString("path"));
         }

@@ -125,7 +125,7 @@ public final class Workloads {
         return out;
     }
 
-    /** JSON sérialisé pour les benchmarks parser pull (sans binding). */
+    /** Serialized JSON for pull parser benchmarks (without binding). */
     public static String smallJson() {
         return "{\"id\":42,\"name\":\"Champollion\",\"active\":true}";
     }

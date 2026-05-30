@@ -106,10 +106,10 @@ class CodegenCustomizationTest {
         try (JsonGenerator g = Json.createGenerator(sw)) {
             s.staticBinding.write(g, inst);
         }
-        // description avec null inclus, title sans @JsonbNillable laissé tranquille (non-null ici).
+        // description with null included, title without @JsonbNillable left untouched (non-null here).
         assertEquals("{\"title\":\"Champollion\",\"description\":null}", sw.toString());
 
-        // Differential : runtime doit produire le même JSON.
+        // Differential : runtime must produce the same JSON.
         String runtimeJson = JsonbBuilder.create().toJson(inst, (Type) s.targetClass);
         assertEquals(runtimeJson, sw.toString());
     }
@@ -137,7 +137,7 @@ class CodegenCustomizationTest {
         }
         assertEquals("{\"user_id\":\"u1\",\"name\":\"Alice\"}", sw.toString());
 
-        // Differential : runtime doit produire le même JSON
+        // Differential : runtime must produce the same JSON
         String runtimeJson = JsonbBuilder.create().toJson(inst, (Type) s.targetClass);
         assertEquals(runtimeJson, sw.toString());
     }

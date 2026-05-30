@@ -32,14 +32,14 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Processeur d'annotations {@code @JsonbStatic} : génère pour chaque record annoté
- * un fichier source {@code <FQN>$$Binding.java} qui implémente
- * {@code io.vidocq.champollion.jsonb.spi.JsonbBinding<TargetType>} et accumule la
- * liste des bindings dans
+ * {@code @JsonbStatic} annotation processor: generates, for each annotated record,
+ * a source file {@code <FQN>$$Binding.java} that implements
+ * {@code io.vidocq.champollion.jsonb.spi.JsonbBinding<TargetType>} and accumulates
+ * the binding list in
  * {@code META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding}.
  *
- * <p>M5.2 : limité aux records dont les composants sont des types primitifs ou
- * {@link String}. Les containers (List/Map/Optional/Array) seront ajoutés en M5.3.</p>
+ * <p>M5.2: limited to records whose components are primitive types or
+ * {@link String}. Containers (List/Map/Optional/Array) will be added in M5.3.</p>
  */
 @SupportedAnnotationTypes("io.vidocq.champollion.jsonb.spi.JsonbStatic")
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
@@ -77,8 +77,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private void processRecord(TypeElement record) {
         String simpleName = record.getSimpleName().toString();
         PackageElement pkg = (PackageElement) record.getEnclosingElement();
-        // Nested types : on doit reconstruire le nom binaire avec '$' mais le source
-        // file a un nom dérivé du simple name. Pour M5.2, on n'accepte que les top-level.
+        // Nested types: we must reconstruct the binary name with '$' but the source
+        // file has a name derived from the simple name. For M5.2, only top-level types are accepted.
         if (!(pkg instanceof PackageElement)) {
             error(record, "@JsonbStatic only supported on top-level records in M5.2");
             return;
@@ -90,7 +90,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
 
         List<? extends RecordComponentElement> comps = record.getRecordComponents();
 
-        // Validation : composants supportés en M5.2.
+        // Validation: components supported in M5.2.
         for (var c : comps) {
             if (!isSupportedComponentType(c.asType())) {
                 error(record,
@@ -100,8 +100,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             }
         }
 
-        // Fast path : Class File API si tous les composants sont primitifs ou String.
-        // Évite la génération d'un .java intermédiaire et la re-compilation.
+        // Fast path: Class File API if all components are primitive or String.
+        // Avoids generating an intermediate .java file and recompiling it.
         if (BindingBytecodeEmitter.eligible(comps)) {
             try {
                 byte[] bytes = BindingBytecodeEmitter.emit(record, bindingFqn);
@@ -117,8 +117,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             }
         }
 
-        // Slow path : génération de sources Java pour les types complexes
-        // (containers, nested records). Sera migré vers bytecode au fur et à mesure.
+        // Slow path: generate Java sources for complex types
+        // (containers, nested records). Will be migrated to bytecode gradually.
         try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, record).openWriter();
              PrintWriter pw = new PrintWriter(w)) {
             emit(pw, pkgName, simpleName, bindingSimple, targetFqn, comps);
@@ -130,9 +130,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     }
 
     /**
-     * M5.5 : composants supportés = primitives, String, List&lt;X&gt;, Optional&lt;X&gt;,
-     * arrays primitifs, String[], Map&lt;String,X&gt;, et records annotés
-     * {@code @JsonbStatic} (références par {@code new <X>$$Binding()}).
+     * M5.5: supported components = primitives, String, List&lt;X&gt;, Optional&lt;X&gt;,
+     * primitive arrays, String[], Map&lt;String,X&gt;, and records annotated
+     * {@code @JsonbStatic} (referenced via {@code new <X>$$Binding()}).
      */
     private static boolean isSupportedComponentType(TypeMirror tm) {
         return switch (tm.getKind()) {
@@ -174,7 +174,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         };
     }
 
-    /** Types "feuille" autorisés à l'intérieur de containers : primitives wrappés, String. */
+    /** "Leaf" types allowed inside containers: boxed primitives, String. */
     private static boolean isLeafType(TypeMirror tm) {
         if (tm.getKind() == javax.lang.model.type.TypeKind.DECLARED) {
             String fqn = ((DeclaredType) tm).asElement().toString();
@@ -188,21 +188,21 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return false;
     }
 
-    /** Vrai si le type déclaré référence un record annoté {@code @JsonbStatic}. */
+    /** True if the declared type references a record annotated {@code @JsonbStatic}. */
     private static boolean isStaticRecord(DeclaredType dt) {
         var elem = dt.asElement();
         return elem.getKind() == javax.lang.model.element.ElementKind.RECORD
                 && elem.getAnnotation(JsonbStatic.class) != null;
     }
 
-    /** Vrai si le type déclaré est un enum (n'importe lequel — pas besoin d'annotation). */
+    /** True if the declared type is an enum (any enum — no annotation needed). */
     private static boolean isEnum(DeclaredType dt) {
         return dt.asElement().getKind() == javax.lang.model.element.ElementKind.ENUM;
     }
 
     /**
-     * Vrai si {@code tm} est un type complexe acceptable comme paramètre interne
-     * de container ou Map value : enum ou record {@code @JsonbStatic}.
+     * True if {@code tm} is an acceptable complex type as an internal container
+     * parameter or Map value: enum or {@code @JsonbStatic} record.
      */
     private static boolean isInnerComplex(TypeMirror tm) {
         if (tm.getKind() != javax.lang.model.type.TypeKind.DECLARED) return false;
@@ -210,7 +210,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return isEnum(dt) || isStaticRecord(dt);
     }
 
-    /** Nom binaire du binding généré pour un record statique : {@code <FQN>$$Binding}. */
+    /** Binary name of the generated binding for a static record: {@code <FQN>$$Binding}. */
     private static String bindingFqnOf(DeclaredType dt) {
         return ((TypeElement) dt.asElement()).getQualifiedName().toString() + "$$Binding";
     }
@@ -304,7 +304,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                 } else if (isEnum(dt)) {
                     pw.println("        if (" + accessor + " != null) g.write(\"" + name + "\", " + accessor + ".name());");
                 } else if (isStaticRecord(dt)) {
-                    // Nested @JsonbStatic record : délégation directe au binding généré du sous-type.
+                    // Nested @JsonbStatic record: direct delegation to the generated binding of the subtype.
                     String binding = bindingFqnOf(dt);
                     pw.println("        if (" + accessor + " != null) {");
                     pw.println("            g.writeKey(\"" + name + "\");");
@@ -369,9 +369,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     }
 
     /**
-     * Retourne une expression Java (sans {@code ;} final) qui émet {@code expr}
-     * dans le générateur courant {@code g}. Couvre String, leaves boxés, enums et
-     * records {@code @JsonbStatic}.
+     * Returns a Java expression (without the final {@code ;}) that emits
+     * {@code expr} into the current {@code g} generator. Covers String, boxed
+     * leaves, enums, and {@code @JsonbStatic} records.
      */
     private static String writeInline(String expr, TypeMirror tm) {
         if (tm.getKind() != javax.lang.model.type.TypeKind.DECLARED) {
@@ -465,9 +465,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
                     pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = " + f + ".valueOf(p.getString());");
                 } else if (isStaticRecord(dt)) {
-                    // Délégation à <X>$$Binding. Le binding peut être en bytecode (read
-                    // retourne Object) ou en source paramétré (read retourne T). On cast
-                    // explicitement pour couvrir les deux.
+                    // Delegation to <X>$$Binding. The binding may be bytecode (read
+                    // returns Object) or parameterized source (read returns T). Cast
+                    // explicitly to cover both.
                     String binding = bindingFqnOf(dt);
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
                     pw.println("                    if (_ev == JsonParser.Event.VALUE_NULL) " + target + " = null;");
@@ -558,7 +558,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         }
     }
 
-    /** Lit la valeur courante en tant que type leaf. {@code ev} = event déjà consommé pour cette valeur. */
+    /** Reads the current value as a leaf type. {@code ev} = event already consumed for this value. */
     private static String readLeaf(String ev, String p, String fqn) {
         return switch (fqn) {
             case "java.lang.String" -> p + ".getString()";
@@ -573,10 +573,10 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     }
 
     /**
-     * Retourne une expression Java qui lit une valeur depuis le parser {@code p},
-     * en supposant que l'event de tête {@code ev} a déjà été consommé. Pour les
-     * records statiques, renvoie une expression qui crée le binding et l'invoque
-     * via un {@code PrimedJsonParser}.
+     * Returns a Java expression that reads a value from parser {@code p},
+     * assuming the leading event {@code ev} has already been consumed. For
+     * static records, returns an expression that creates the binding and invokes
+     * it via a {@code PrimedJsonParser}.
      */
     private static String readInline(String ev, String p, TypeMirror tm) {
         if (tm.getKind() != javax.lang.model.type.TypeKind.DECLARED) {
@@ -586,8 +586,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         if (isStaticRecord(dt)) {
             String b = bindingFqnOf(dt);
             String targetFqn = ((TypeElement) dt.asElement()).getQualifiedName().toString();
-            // Cast explicite : le binding peut être en bytecode raw (Object read) ou
-            // source paramétré (T read). Le cast couvre les deux cas.
+            // Explicit cast: the binding may be raw bytecode (Object read) or
+            // parameterized source (T read). The cast covers both cases.
             return "(" + targetFqn + ") new " + b + "().read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(" + ev + ", " + p + "))";
         }
         if (isEnum(dt)) {
@@ -600,7 +600,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private void writeServicesFile() {
         Filer filer = processingEnv.getFiler();
         try {
-            // Lecture des services existants (pour append en multi-rounds / incrémental)
+            // Read existing services (to append across multi-rounds / incremental builds)
             Set<String> all = new LinkedHashSet<>();
             try {
                 FileObject existing = filer.getResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);

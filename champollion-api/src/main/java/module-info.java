@@ -1,7 +1,7 @@
 /**
- * API Champollion : re-exposition contrôlée des specs Jakarta JSON-P 2.1
- * et Jakarta JSON-B 3.0. Les SPI internes Champollion seront ajoutées au fur
- * et à mesure de leur implémentation.
+ * Champollion API: controlled re-exposure of the Jakarta JSON-P 2.1
+ * and Jakarta JSON-B 3.0 specs. Champollion internal SPIs will be added as
+ * their implementation progresses.
  */
 module io.vidocq.champollion.api {
     requires transitive jakarta.json;

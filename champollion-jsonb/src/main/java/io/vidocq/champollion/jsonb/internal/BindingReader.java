@@ -3,9 +3,9 @@ package io.vidocq.champollion.jsonb.internal;
 import jakarta.json.stream.JsonParser;
 
 /**
- * Lit une valeur Java depuis un {@link JsonParser}. À l'entrée, le parser est positionné
- * <em>juste avant</em> l'event correspondant à la valeur (le reader appelle {@code next()}
- * lui-même pour consommer l'event de tête).
+ * Reads a Java value from a {@link JsonParser}. On entry, the parser is positioned
+ * <em>just before</em> the event corresponding to the value (the reader calls
+ * {@code next()} itself to consume the leading event).
  */
 @FunctionalInterface
 interface BindingReader {

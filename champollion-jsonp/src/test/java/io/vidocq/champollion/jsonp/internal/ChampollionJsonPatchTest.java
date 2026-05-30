@@ -108,7 +108,7 @@ class ChampollionJsonPatchTest {
                         {"op":"test","path":"/foo/1","value":2}
                     ]
                     """);
-            // pas d'exception = succès
+            // no exception = success
             new ChampollionJsonPatch(p).apply(doc);
         }
 

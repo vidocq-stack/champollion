@@ -6,19 +6,18 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marque une interface Java comme service Protocol Buffers / gRPC.
+ * Marks a Java interface as a Protocol Buffers / gRPC service.
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/proto3/#services">Proto3 §Services</a>.</p>
  *
- * <p>Le runtime utilise les {@link ProtobufRpc} sur chaque méthode pour
- * récupérer le wire name, le type d'entrée et de sortie, et le mode
- * (unary vs streaming). chappe-grpc consomme ces métadonnées pour router
- * les RPC HTTP/2.</p>
+ * <p>The runtime uses {@link ProtobufRpc} on each method to retrieve the wire
+ * name, the input and output types, and the mode (unary vs streaming).
+ * chappe-grpc consumes these metadata to route HTTP/2 RPCs.</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface ProtobufService {
 
-    /** FullName proto (ex. {@code "my.pkg.FooService"}). Vide = nom simple. */
+    /** Proto FullName (e.g. {@code "my.pkg.FooService"}). Empty = simple name. */
     String value() default "";
 }

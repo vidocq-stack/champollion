@@ -45,7 +45,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Implémentation du Proto3 JSON Canonical Mapping. Branchée sur Jakarta JSON-P
+ * Implementation of the Proto3 JSON Canonical Mapping. Wired to Jakarta JSON-P
  * (fourni par {@code champollion-jsonp}) via {@code Json.createGenerator} et
  * {@code Json.createParser}.
  */
@@ -78,12 +78,12 @@ public final class ProtobufJsonRuntime {
     }
 
     private static void writeMessage(JsonBindingPlan plan, Object message, JsonGenerator gen) {
-        // Well-Known Types : encodage canonical spécifique (non objet JSON).
+        // Well-Known Types: specific canonical encoding (non-JSON object).
         if (writeWktTopLevel(message, gen)) return;
         gen.writeStartObject();
 
-        // M6.9 : récupérer le UnknownFieldSet pour ré-émettre les unknown enum values
-        // (spec proto3 JSON §enum : préservation + ré-émission en numeric).
+        // M6.9: retrieve the UnknownFieldSet to re-emit unknown enum values
+        // (proto3 JSON §enum spec: preservation + re-emission as numeric).
         io.vidocq.champollion.protobuf.UnknownFieldSet unknownFields =
                 readUnknownFieldSet(plan, message);
 
@@ -95,11 +95,11 @@ public final class ProtobufJsonRuntime {
                 throw new RuntimeException(t);
             }
 
-            // M6.9 : collecter les unknown enum values pour ce field number.
+            // M6.9: collect unknown enum values for this field number.
             java.util.List<Long> unknownEnumVarints =
                     fb.type == FieldType.ENUM ? unknownVarintsFor(unknownFields, fb.number) : null;
 
-            // Skip total : aucune valeur connue ET aucune unknown enum à émettre.
+            // Full skip: no known value AND no unknown enum to emit.
             if (value == null && unknownEnumVarints == null) continue;
 
             if (fb.type == FieldType.MAP) {
@@ -125,15 +125,15 @@ public final class ProtobufJsonRuntime {
                     }
                 }
                 if (unknownEnumVarints != null) {
-                    // M6.9 : append les unknown enum values numeric à l'array.
+                    // M6.9: append the numeric unknown enum values to the array.
                     for (Long v : unknownEnumVarints) gen.write(v.intValue());
                 }
                 gen.writeEnd();
             } else if (fb.type == FieldType.ENUM && unknownEnumVarints != null) {
-                // M6.9 : unknown enum value — la valeur a bien été set côté wire/JSON,
-                // juste non-mappable à un constant Java de l'enum local. Elle prime
-                // sur le default proto3 et doit être ré-émise numeric (last-wins si
-                // plusieurs occurrences wire).
+                // M6.9: unknown enum value — the value was indeed set on the wire/JSON side,
+                // just not mappable to a Java constant of the local enum. It takes precedence
+                // over the proto3 default and must be re-emitted numerically (last-wins if
+                // several wire occurrences).
                 gen.write(fb.jsonName,
                         unknownEnumVarints.get(unknownEnumVarints.size() - 1).intValue());
             } else if (!fb.explicitPresence && isDefault(fb, value)) {
@@ -145,7 +145,7 @@ public final class ProtobufJsonRuntime {
         gen.writeEnd();
     }
 
-    /** M6.9 : récupère le {@code UnknownFieldSet} du record si le composant existe. */
+    /** M6.9: gets the record {@code UnknownFieldSet} if the component exists. */
     private static io.vidocq.champollion.protobuf.UnknownFieldSet readUnknownFieldSet(
             JsonBindingPlan plan, Object message) {
         if (plan.unknownFieldsIndex < 0 || plan.unknownFieldsGetter == null) return null;
@@ -157,7 +157,7 @@ public final class ProtobufJsonRuntime {
         }
     }
 
-    /** M6.9 : varints (unknown enum values) pour un field number donné, ou {@code null}. */
+    /** M6.9: varints (unknown enum values) for a given field number, or {@code null}. */
     private static java.util.List<Long> unknownVarintsFor(
             io.vidocq.champollion.protobuf.UnknownFieldSet ufs, int fieldNumber) {
         if (ufs == null || ufs.isEmpty()) return null;
@@ -186,7 +186,7 @@ public final class ProtobufJsonRuntime {
         };
     }
 
-    /** Écrit une value de map selon son FieldType. Réutilise writeScalar du runtime. */
+    /** Writes a map value according to its FieldType. Reuses the runtime writeScalar. */
     private static void writeMapValue(FieldType type, Class<?> messageClass, Object value,
                                       JsonGenerator gen, String key) {
         if (value == null) {
@@ -221,20 +221,20 @@ public final class ProtobufJsonRuntime {
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case UINT32, FIXED32 -> {
-                // Proto3 JSON canonical : uint32 doit toujours apparaître comme
-                // entier non-négatif — un Java int "négatif" (= valeur > 2^31)
-                // doit être promu à long unsigned.
+                // Proto3 JSON canonical: uint32 must always appear as
+                // a non-negative integer — a "negative" Java int (= value > 2^31)
+                // must be promoted to an unsigned long.
                 long v = Integer.toUnsignedLong((int) value);
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case INT64, SINT64, SFIXED64 -> {
-                // Proto3 canonical : int64 signé toujours en string.
+                // Proto3 canonical: signed int64 always as a string.
                 String v = Long.toString((long) value);
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case UINT64, FIXED64 -> {
-                // Proto3 canonical : uint64 non-signé toujours en string,
-                // en représentation unsigned.
+                // Proto3 canonical: unsigned uint64 always as a string,
+                // in unsigned representation.
                 String v = Long.toUnsignedString((long) value);
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
@@ -279,7 +279,7 @@ public final class ProtobufJsonRuntime {
                 if (key != null) gen.write(key, v); else gen.write(v);
             }
             case MESSAGE -> {
-                // WKT en champ imbriqué : émettre la valeur canonical à plat (string/number).
+                // WKT as a nested field: emit the canonical flat value (string/number).
                 if (writeWktAsValue(value, gen, key)) return;
                 if (key != null) gen.writeStartObject(key); else gen.writeStartObject();
                 JsonBindingPlan nested = planFor(value.getClass());
@@ -292,8 +292,8 @@ public final class ProtobufJsonRuntime {
     // ============================================================ Well-Known Types
 
     /**
-     * Émet le message {@code message} comme top-level d'un document JSON s'il
-     * s'agit d'un WKT. Retourne {@code true} si géré.
+     * Emits the {@code message} as the top level of a JSON document if it
+     * is a WKT. Returns {@code true} if handled.
      */
     private static boolean writeWktTopLevel(Object message, JsonGenerator gen) {
         if (message instanceof Empty) {
@@ -355,7 +355,7 @@ public final class ProtobufJsonRuntime {
         gen.writeEnd();
     }
 
-    /** Émet une Value en respectant son oneof — null si tous les sub-fields sont null. */
+    /** Emits a Value while respecting its oneof — null if all sub-fields are null. */
     private static void writeValueDynamic(io.vidocq.champollion.protobuf.wkt.Value v,
                                           JsonGenerator gen, String key) {
         if (v == null) {
@@ -424,14 +424,14 @@ public final class ProtobufJsonRuntime {
     // ============================================================ Any JSON canonical
 
     /**
-     * Sérialise un {@link Any} selon le canonical mapping :
+     * Serializes an {@link Any} according to the canonical mapping:
      * <ul>
-     *   <li>Si le type wrappé est un WKT (Timestamp, Duration, etc.) →
+     *   <li>If the wrapped type is a WKT (Timestamp, Duration, etc.) →
      *       {@code {"@type":"...", "value":<wkt-form>}}</li>
      *   <li>Sinon → {@code {"@type":"...", ...champs aplatis}}</li>
-     *   <li>Type inconnu → fallback dégradé
+     *   <li>Unknown type → degraded fallback
      *       {@code {"@type":"...", "value":"<base64>"}} (non strictement
-     *       canonical mais utile pour la traversée opaque)</li>
+     *       canonical but useful for opaque traversal)</li>
      * </ul>
      */
     private static void writeAny(Any any, JsonGenerator gen, String key) {
@@ -450,13 +450,13 @@ public final class ProtobufJsonRuntime {
         gen.write("@type", typeUrl);
 
         if (type == null) {
-            // Fallback : type inconnu — émet la valeur base64.
+            // Fallback: unknown type — emits the base64 value.
             gen.write("value", java.util.Base64.getEncoder().encodeToString(any.value()));
             gen.writeEnd();
             return;
         }
 
-        // Décoder la valeur dans le type concret.
+        // Decode the value into the concrete type.
         Object wrapped;
         try {
             wrapped = Protobuf.parser(type).parseFrom(any.value());
@@ -465,12 +465,12 @@ public final class ProtobufJsonRuntime {
         }
 
         if (isWktClass(type) && type != Empty.class) {
-            // WKT : un seul champ "value" avec le format canonical du WKT.
+            // WKT: a single "value" field with the WKT canonical format.
             writeWktAsValue(wrapped, gen, "value");
         } else if (type == Empty.class) {
-            // Spec proto3 §any : Any wrappant Empty n'émet PAS de "value" — juste @type.
+            // Proto3 §any spec: Any wrapping Empty does NOT emit a "value" — only @type.
         } else {
-            // Message ordinaire : aplatir les champs au même niveau que @type.
+            // Ordinary message: flatten fields at the same level as @type.
             JsonBindingPlan plan = planFor(type);
             writeMessageBody(plan, wrapped, gen);
         }
@@ -479,25 +479,25 @@ public final class ProtobufJsonRuntime {
 
     /**
      * Lit un {@link Any} depuis un {@link JsonParser}. L'event {@code v}
-     * passé en paramètre est le {@code START_OBJECT} qui débute l'objet Any.
-     * On bufferise tout l'objet dans un {@link JsonObject} DOM pour
-     * pouvoir lire {@code @type} avant le reste — JSON est non-ordonné.
+     * passed as a parameter is the {@code START_OBJECT} that begins the Any object.
+     * We buffer the whole object in a {@link JsonObject} DOM so we can read
+     * {@code @type} before the rest — JSON is unordered.
      */
     private static Any readAny(JsonParser parser) throws java.io.IOException {
         return readAnyFromObject(parser.getObject());
     }
 
     private static Any readAnyFromObject(JsonObject obj) throws java.io.IOException {
-        // Spec : Any vide {} = Any default (type_url="", value=byte[0]).
+        // Spec: empty Any {} = default Any (type_url="", value=byte[0]).
         if (obj.isEmpty()) return new Any("", new byte[0]);
         if (!obj.containsKey("@type")) {
             throw new java.io.IOException("Any object must contain @type");
         }
         String typeUrl = obj.getString("@type");
-        // Spec proto3 §any : @type doit être de la forme '<base>/<full.name>'
-        // (typiquement type.googleapis.com/<full.name>). Pas de slash = invalide.
-        // Aussi : @type vide avec d'autres fields présents = invalide (un Any
-        // partial est ambigu).
+        // Proto3 §any spec: @type must be of the form '<base>/<full.name>'
+        // (typically type.googleapis.com/<full.name>). No slash = invalid.
+        // Also: empty @type with other fields present = invalid (a partial Any
+        // is ambiguous).
         if (typeUrl.indexOf('/') < 0) {
             if (typeUrl.isEmpty() && obj.size() == 1) {
                 // {"@type": ""} seul = Any default.
@@ -522,7 +522,7 @@ public final class ProtobufJsonRuntime {
         }
 
         if (isWktClass(type)) {
-            // WKT : un seul champ "value" à parser via la mécanique WKT
+            // WKT: a single "value" field to parse through the WKT machinery
             JsonValue v = obj.get("value");
             if (v == null) {
                 if (type == Empty.class) {
@@ -531,8 +531,8 @@ public final class ProtobufJsonRuntime {
                     throw new java.io.IOException("Any/" + fullName + " missing required 'value'");
                 }
             } else if (type == Any.class && v instanceof JsonObject jo) {
-                // Cas spécial : Any wrappant Any. Récurse en DOM pour éviter
-                // un re-tokenize via fromJsonString (qui peut boucler en streaming).
+                // Special case: Any wrapping Any. Recurse in DOM to avoid
+                // re-tokenizing via fromJsonString (which can loop in streaming).
                 Any nested = readAnyFromObject(jo);
                 valueBytes = Protobuf.toByteArray(nested);
             } else {
@@ -682,7 +682,7 @@ public final class ProtobufJsonRuntime {
                             + sec + "s " + nanos + "ns");
         }
         StringBuilder sb = new StringBuilder();
-        // Représentation négative : signe sur seconds OU nanos (proto garantit même signe).
+        // Negative representation: sign on seconds OR nanos (proto guarantees the same sign).
         boolean negative = sec < 0 || nanos < 0;
         if (negative) {
             sb.append('-');
@@ -692,11 +692,11 @@ public final class ProtobufJsonRuntime {
         sb.append(sec);
         if (nanos > 0) {
             sb.append('.');
-            // Précision adaptative : 3, 6 ou 9 chiffres selon ce qui est nécessaire.
+            // Adaptive precision: 3, 6 or 9 digits depending on what is needed.
             String s = String.format("%09d", nanos);
             int trim = s.length();
             while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
-            // Arrondi à un multiple de 3 (3, 6, ou 9 chiffres canonical).
+            // Rounded to a multiple of 3 (3, 6, or 9 canonical digits).
             int width = trim <= 3 ? 3 : (trim <= 6 ? 6 : 9);
             sb.append(s, 0, width);
         }
@@ -710,7 +710,7 @@ public final class ProtobufJsonRuntime {
         for (String path : m.paths()) {
             if (!first) sb.append(',');
             first = false;
-            // Conversion snake_case → camelCase sur chaque segment du path.
+            // Conversion snake_case → camelCase on each path segment.
             String[] segments = path.split("\\.");
             for (int i = 0; i < segments.length; i++) {
                 if (i > 0) sb.append('.');
@@ -721,23 +721,23 @@ public final class ProtobufJsonRuntime {
     }
 
     private static Timestamp parseTimestamp(String s) {
-        // RFC 3339 strict : majuscule T, suffixe Z (ou offset numérique).
+        // Strict RFC 3339: uppercase T, Z suffix (or numeric offset).
         // ISO_INSTANT de Java accepte lowercase via parseFlexible — on rejette explicitement.
         if (s.indexOf('t') >= 0) {
             throw new IllegalArgumentException("Timestamp T must be uppercase: " + s);
         }
-        // Suffixe Z accepté en majuscule uniquement (RFC 3339 §5.6 dit 'Z' or '±hh:mm').
-        // Pas de minuscule 'z'.
+        // Z suffix accepted in uppercase only (RFC 3339 §5.6 says 'Z' or '±hh:mm').
+        // No lowercase 'z'.
         if (s.indexOf('z') >= 0) {
             throw new IllegalArgumentException("Timestamp Z must be uppercase: " + s);
         }
-        // Le caractère 'T' doit être présent quelque part (RFC 3339 §5.6 date-time).
+        // The character 'T' must be present somewhere (RFC 3339 §5.6 date-time).
         if (s.indexOf('T') < 0) {
             throw new IllegalArgumentException("Timestamp missing T separator: " + s);
         }
         Instant instant = DateTimeFormatter.ISO_INSTANT.parse(s, Instant::from);
         Timestamp t = Timestamp.from(instant);
-        // Valide les bornes (même que la sérialisation).
+        // Validates the bounds (same as serialization).
         if (t.seconds() < TIMESTAMP_SECONDS_MIN || t.seconds() > TIMESTAMP_SECONDS_MAX) {
             throw new IllegalArgumentException(
                     "Timestamp out of range: " + s);
@@ -760,7 +760,7 @@ public final class ProtobufJsonRuntime {
         } else {
             sec = Long.parseLong(body.substring(0, dot));
             String frac = body.substring(dot + 1);
-            // Padder à 9 chiffres ou tronquer si plus long (les 9 premiers).
+            // Pad to 9 digits or truncate if longer (the first 9).
             if (frac.length() > 9) frac = frac.substring(0, 9);
             else while (frac.length() < 9) frac += "0";
             nanos = Integer.parseInt(frac);
@@ -775,7 +775,7 @@ public final class ProtobufJsonRuntime {
 
     private static FieldMask parseFieldMask(String s) {
         if (s.isEmpty()) return new FieldMask(List.of());
-        // Conversion inverse camelCase → snake_case sur chaque segment des paths.
+        // Reverse conversion camelCase → snake_case on each path segment.
         String[] paths = s.split(",");
         List<String> out = new ArrayList<>(paths.length);
         for (String p : paths) {
@@ -821,7 +821,7 @@ public final class ProtobufJsonRuntime {
                 writeScalar(fb, value, gen, fb.jsonName);
             }
         }
-        // Émet les unknown enum values stockées dans UnknownFieldSet (spec proto3 JSON §enum :
+        // Emits the unknown enum values stored in UnknownFieldSet (proto3 JSON §enum spec:
         // forward-compat numeric preservation).
         if (plan.unknownFieldsIndex >= 0) {
             try {
@@ -863,7 +863,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("Empty JSON for " + type.getSimpleName());
             }
             JsonParser.Event first = parser.next();
-            // WKT : la représentation top-level n'est pas un objet (sauf Empty).
+            // WKT: the top-level representation is not an object (except Empty).
             if (isWktClass(type) && type != Empty.class) {
                 return (T) readWktValue(type, parser, first);
             }
@@ -871,9 +871,9 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("Expected JSON object for " + type.getSimpleName() + ", got " + first);
             }
             if (type == Empty.class) {
-                // Consommer le END_OBJECT et retourner singleton.
+                // Consume the END_OBJECT and return the singleton.
                 while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {
-                    // skip champs inattendus
+                    // skip unexpected fields
                 }
                 return (T) Empty.INSTANCE;
             }
@@ -926,7 +926,7 @@ public final class ProtobufJsonRuntime {
         return new io.vidocq.champollion.protobuf.wkt.ListValue(values);
     }
 
-    /** Parse une JSON value en Value (dispatch sur le JSON event type). */
+    /** Parses a JSON value into a Value (dispatch on the JSON event type). */
     private static io.vidocq.champollion.protobuf.wkt.Value readValueDynamic(JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (v) {
             case VALUE_NULL -> io.vidocq.champollion.protobuf.wkt.Value.ofNull();
@@ -975,8 +975,8 @@ public final class ProtobufJsonRuntime {
             return readValueDynamic(parser, v);
         }
         if (type == io.vidocq.champollion.protobuf.wkt.NullValue.class) {
-            // Accept any JSON value (la spec dit que NullValue mappe à JSON null, mais
-            // les autres values sont aussi mapped à NULL_VALUE en cas d'invariant).
+            // Accept any JSON value (the spec says NullValue maps to JSON null, but
+            // the other values are also mapped to NULL_VALUE in case of invariant).
             if (v != JsonParser.Event.VALUE_NULL) {
                 throw new IOException("Expected JSON null for NullValue, got " + v);
             }
@@ -1040,7 +1040,7 @@ public final class ProtobufJsonRuntime {
         boolean[] hasValue = new boolean[plan.componentCount];
         java.util.HashMap<String, String> seenOneofs = new java.util.HashMap<>();
         // Side-channel pour preserver les unknown enum values (proto3 JSON §enum :
-        // les valeurs entières non mappées sont préservées et ré-émises numeric).
+        // unmapped integer values are preserved and re-emitted numerically).
         io.vidocq.champollion.protobuf.UnknownFieldSet.Builder unknownFieldsBuilder =
                 plan.unknownFieldsIndex >= 0
                         ? io.vidocq.champollion.protobuf.UnknownFieldSet.newBuilder()
@@ -1061,15 +1061,15 @@ public final class ProtobufJsonRuntime {
                 continue;
             }
             if (v == JsonParser.Event.VALUE_NULL) {
-                // Cas spécial WKT Value : null JSON → Value(null_value=NULL_VALUE)
-                // (spec §google.protobuf.Value). Pour les autres types, null = absent.
+                // Special WKT Value case: JSON null → Value(null_value=NULL_VALUE)
+                // (spec §google.protobuf.Value). For other types, null = absent.
                 if (fb.elementType == io.vidocq.champollion.protobuf.wkt.Value.class) {
                     slots[fb.componentIndex] = io.vidocq.champollion.protobuf.wkt.Value.ofNull();
                     hasValue[fb.componentIndex] = true;
                 }
                 continue;
             }
-            // Reject deux property keys du même oneofGroup
+            // Reject two property keys from the same oneofGroup
             if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
                 String already = seenOneofs.put(fb.oneofGroup, key);
                 if (already != null) {
@@ -1113,8 +1113,8 @@ public final class ProtobufJsonRuntime {
                         if (unknownFieldsBuilder != null) {
                             unknownFieldsBuilder.recordVarint(fb.number, uei.value());
                         }
-                        // Pas d'ajout dans la list — Java enum ne peut pas porter une
-                        // value inconnue. Le côté wire/JSON ré-émet via UnknownFieldSet.
+                        // No addition to the list — a Java enum cannot carry an
+                        // unknown value. The wire/JSON side re-emits via UnknownFieldSet.
                     } else {
                         list.add(scalar);
                     }
@@ -1125,7 +1125,7 @@ public final class ProtobufJsonRuntime {
                     if (unknownFieldsBuilder != null) {
                         unknownFieldsBuilder.recordVarint(fb.number, uei.value());
                     }
-                    // slots[idx] reste à null — sera défaulted ci-dessous.
+                    // slots[idx] stays null — will be defaulted below.
                 } else {
                     slots[fb.componentIndex] = scalar;
                     hasValue[fb.componentIndex] = true;
@@ -1133,19 +1133,19 @@ public final class ProtobufJsonRuntime {
             }
         }
 
-        // Slot UnknownFieldSet : injecte le builder s'il existe (preserve unknown enum + futures unknowns).
+        // UnknownFieldSet slot: inject the builder if present (preserve unknown enum + future unknowns).
         if (plan.unknownFieldsIndex >= 0) {
             slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
                     ? unknownFieldsBuilder.build()
                     : io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY;
         }
-        // Compléter les défauts proto3.
+        // Fill in proto3 defaults.
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
             if (i == plan.unknownFieldsIndex) continue;
             FieldBinding fb = plan.byComponentIndex[i];
             if (fb == null) {
-                // Composant sans @ProtobufField (ex. UnknownFieldSet). Default selon type.
+                // Component without @ProtobufField (e.g. UnknownFieldSet). Default by type.
                 Class<?> ct = plan.recordType.getRecordComponents()[i].getType();
                 if (ct == io.vidocq.champollion.protobuf.UnknownFieldSet.class) {
                     slots[i] = io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY;
@@ -1195,7 +1195,7 @@ public final class ProtobufJsonRuntime {
             case FLOAT -> {
                 Number n = readFloating(parser, v);
                 float f = n.floatValue();
-                // Une valeur non-special qui passe à l'infini lors du cast = out of range.
+                // A non-special value that overflows to infinity during the cast = out of range.
                 if (Float.isInfinite(f) && !Double.isInfinite(n.doubleValue())) {
                     throw new IOException("float JSON value out of range: " + n);
                 }
@@ -1204,8 +1204,8 @@ public final class ProtobufJsonRuntime {
             case DOUBLE -> {
                 Number n = readFloating(parser, v);
                 double d = n.doubleValue();
-                // Un BigDecimal hors-range double → Double.NEGATIVE/POSITIVE_INFINITY.
-                // On ne rejette que si l'input n'était pas explicitement "Infinity"/"-Infinity".
+                // A BigDecimal outside double range → Double.NEGATIVE/POSITIVE_INFINITY.
+                // We reject only if the input was not explicitly "Infinity"/"-Infinity".
                 if (Double.isInfinite(d) && n instanceof java.math.BigDecimal) {
                     throw new IOException("double JSON value out of range: " + n);
                 }
@@ -1230,14 +1230,14 @@ public final class ProtobufJsonRuntime {
                     for (Object c : constants) {
                         if (((Enum<?>) c).name().equals(name)) yield c;
                     }
-                    // Proto3 JSON canonical : enum unknown value est tolérée (forward-compat).
+                    // Proto3 JSON canonical: unknown enum value is tolerated (forward compat).
                     yield null;
                 }
                 if (v == JsonParser.Event.VALUE_NUMBER) {
-                    // Spec proto3 JSON §enum : value entière acceptée + unknown
-                    // value préservée numeric en re-sérialisation. Si EnumValueMap
-                    // ne mappe pas → retourne UnknownEnumInt(value), que le caller
-                    // store dans UnknownFieldSet pour ré-émission.
+                    // Proto3 JSON §enum spec: integer value accepted + unknown
+                    // value preserved numerically during reserialization. If EnumValueMap
+                    // does not map it → return UnknownEnumInt(value), which the caller
+                    // stores in UnknownFieldSet for re-emission.
                     int protoValue = parser.getInt();
                     Object mapped = EnumValueMap.forClass(fb.elementType).byValue(protoValue);
                     if (mapped != null) yield mapped;
@@ -1247,7 +1247,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("Expected enum value, got " + v);
             }
             case MESSAGE -> {
-                // WKT imbriqué : la valeur est un scalaire (string/number/bool) sauf Empty.
+                // Nested WKT: the value is a scalar (string/number/bool) except Empty.
                 if (isWktClass(fb.elementType) && fb.elementType != Empty.class) {
                     yield readWktValue(fb.elementType, parser, v);
                 }
@@ -1265,7 +1265,7 @@ public final class ProtobufJsonRuntime {
     }
 
     /** Accepte {@code 1}, {@code 1.0}, {@code 1e5}, {@code "1"} etc.
-     * Rejette les fractions réelles et hors-range INT32. */
+     * Rejects real fractions and out-of-range INT32 values. */
     private static int readInt32Range(JsonParser parser, JsonParser.Event v) throws IOException {
         java.math.BigDecimal bd = readBigDecimal(parser, v, "int32");
         try {
@@ -1322,10 +1322,10 @@ public final class ProtobufJsonRuntime {
         } else {
             throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
         }
-        // Early-reject : un BigDecimal avec une partie entière > 20 digits ne peut
-        // jamais représenter un uint64 (max 18446744073709551615, 20 digits).
-        // Évite que toBigIntegerExact() matérialise un nombre astronomique
-        // (ex. "1e536870000") et timeout la JVM.
+        // Early reject: a BigDecimal with an integer part > 20 digits can never
+        // represent a uint64 (max 18446744073709551615, 20 digits).
+        // Avoids toBigIntegerExact() materializing a gigantic number
+        // (e.g. "1e536870000") and timing out the JVM.
         int integerDigits = bd.precision() - bd.scale();
         if (integerDigits > 20) {
             throw new IOException(typeName + " value out of range (integerDigits=" + integerDigits + ")");
@@ -1356,7 +1356,7 @@ public final class ProtobufJsonRuntime {
                 else if (next == JsonParser.Event.END_OBJECT || next == JsonParser.Event.END_ARRAY) depth--;
             }
         }
-        // scalar : déjà consommé par parser.next()
+        // scalar: already consumed by parser.next()
     }
 
     // ============================================================ Plan
@@ -1378,8 +1378,8 @@ public final class ProtobufJsonRuntime {
 
     private static Object defaultFor(FieldBinding fb) {
         if (fb.repeated) return List.of();
-        // explicitPresence + type non-primitive : un champ absent reste null
-        // (sémantique oneof / proto2 EXPLICIT). Cohérent avec RuntimeBinding.defaultFor.
+        // explicitPresence + non-primitive type: an absent field remains null
+        // (oneof / proto2 EXPLICIT semantics). Consistent with RuntimeBinding.defaultFor.
         if (fb.explicitPresence && !fb.elementType.isPrimitive()) {
             return null;
         }

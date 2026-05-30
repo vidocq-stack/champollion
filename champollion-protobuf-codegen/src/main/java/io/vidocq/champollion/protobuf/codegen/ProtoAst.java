@@ -4,15 +4,15 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * AST minimal d'un fichier {@code .proto} (proto3 / Editions 2023).
+ * Minimal AST of a {@code .proto} file (proto3 / Editions 2023).
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/proto3-spec/">Proto3 Language Spec</a>
- * et <a href="https://protobuf.dev/editions/spec/">Editions Spec</a>.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/proto3-spec/">Proto3 Language Spec</a>
+ * and <a href="https://protobuf.dev/editions/spec/">Editions Spec</a>.</p>
  *
- * <p>M2.1 — couvre {@code syntax} / {@code edition}, {@code package},
- * {@code import}, {@code message}, scalaires, {@code repeated}, nested message
- * et {@code enum}. {@code service}, {@code oneof}, {@code map}, options
- * complexes, et extensions reportés à M2.2/M2.3.</p>
+ * <p>M2.1 — covers {@code syntax} / {@code edition}, {@code package},
+ * {@code import}, {@code message}, scalars, {@code repeated}, nested message
+ * and {@code enum}. {@code service}, {@code oneof}, {@code map}, complex
+ * options, and extensions deferred to M2.2/M2.3.</p>
  */
 public final class ProtoAst {
 
@@ -27,13 +27,13 @@ public final class ProtoAst {
         }
     }
 
-    /** Path d'un import. {@link #publicImport()} = {@code import public "x.proto";}. */
+    /** An import path. {@link #publicImport()} = {@code import public "x.proto";}. */
     public record ImportDecl(String path, boolean publicImport, boolean weakImport) {}
 
-    /** Une option simple key = value (string ou identifier ou number). */
+    /** A simple key = value option (string, identifier, or number). */
     public record OptionEntry(String name, String value) {}
 
-    /** Définition d'un champ dans un message. */
+    /** Field definition in a message. */
     public record FieldDecl(
             String name,
             int number,
@@ -43,10 +43,10 @@ public final class ProtoAst {
     public enum FieldKind { SINGULAR, OPTIONAL, REPEATED }
 
     /**
-     * Référence à un type. Soit un scalaire ({@code int32}, {@code string}, etc.),
-     * soit un identifiant (référence à un autre message/enum dans le même fichier
-     * ou un fichier importé). Le résolveur sémantique (M2.2) liera ces refs
-     * vers des {@link MessageDecl} / {@link EnumDecl}.
+     * Type reference. Either a scalar ({@code int32}, {@code string}, etc.),
+     * or an identifier (reference to another message/enum in the same file or
+     * an imported file). The semantic resolver (M2.2) will bind these refs to
+     * {@link MessageDecl} / {@link EnumDecl}.
      */
     public sealed interface FieldTypeRef permits ScalarType, NamedType {}
 
@@ -83,7 +83,7 @@ public final class ProtoAst {
             options = List.copyOf(options);
         }
 
-        /** Constructeur de compat (sans options) — call-sites pré-M4.2. */
+        /** Compatibility constructor (without options) — pre-M4.2 call sites. */
         public MessageDecl(String name, List<FieldDecl> fields,
                            List<MessageDecl> nestedMessages, List<EnumDecl> nestedEnums) {
             this(name, fields, nestedMessages, nestedEnums, List.of());

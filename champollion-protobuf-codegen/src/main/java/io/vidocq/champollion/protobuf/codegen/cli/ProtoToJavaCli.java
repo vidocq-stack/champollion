@@ -13,17 +13,17 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * CLI {@code .proto → records Java annotés}. Pendant standalone du Mojo
- * {@code champollion-protobuf:generate} pour les contextes où Maven 4 model 4.0.0
- * ne peut pas charger le plugin (cf. {@code champollion-protobuf-tck}).
+ * CLI {@code .proto → annotated Java records}. Standalone companion to the Mojo
+ * {@code champollion-protobuf:generate} for environments where Maven 4 model 4.0.0
+ * cannot load the plugin (cf. {@code champollion-protobuf-tck}).
  *
- * <p>Usage : {@code java -cp <classpath> io.vidocq.champollion.protobuf.codegen.cli.ProtoToJavaCli
+ * <p>Usage: {@code java -cp <classpath> io.vidocq.champollion.protobuf.codegen.cli.ProtoToJavaCli
  *           <sourceDir> <outputDir> <javaPackage> [--static-parser]}.</p>
  *
- * <p>Scanne récursivement {@code sourceDir} pour les {@code *.proto}, résout
- * cross-fichiers via {@link SchemaResolver#resolveAll}, émet via
+ * <p>Recursively scans {@code sourceDir} for {@code *.proto}, resolves
+ * cross-file references via {@link SchemaResolver#resolveAll}, emits via
  * {@link JavaEmitter#emit(io.vidocq.champollion.protobuf.Descriptors.FileDescriptor)},
- * écrit chaque source dans {@code outputDir/<package>/<Class>.java}.</p>
+ * writes each source to {@code outputDir/<package>/<Class>.java}.</p>
  */
 public final class ProtoToJavaCli {
 

@@ -1,8 +1,8 @@
 /**
- * Codegen Protobuf : APT {@code @ProtobufStatic} + parseur {@code .proto}.
+ * Protobuf codegen: {@code @ProtobufStatic} APT + {@code .proto} parser.
  *
- * <p>Squelette M1 ; implémentations réelles en M2 ({@code .proto → Java} via
- * Class-File API) et M3 (mode statique sur records annotés).</p>
+ * <p>M1 skeleton; real implementations in M2 ({@code .proto → Java} via
+ * Class-File API) and M3 (static mode on annotated records).</p>
  */
 module io.vidocq.champollion.protobuf.codegen {
     requires java.compiler;
@@ -11,7 +11,7 @@ module io.vidocq.champollion.protobuf.codegen {
     exports io.vidocq.champollion.protobuf.codegen;
     exports io.vidocq.champollion.protobuf.codegen.cli;
 
-    // APT @ProtobufStatic : activé par javac via ServiceLoader.
+    // @ProtobufStatic APT: activated by javac via ServiceLoader.
     provides javax.annotation.processing.Processor
             with io.vidocq.champollion.protobuf.codegen.ProtobufStaticProcessor;
 }

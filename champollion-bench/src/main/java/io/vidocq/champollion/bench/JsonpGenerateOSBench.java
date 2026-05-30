@@ -13,12 +13,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Benchmark JSON-P generator push avec cible <strong>non bufferisée</strong>
- * ({@link OutputStreamWriter} sur un {@link OutputStream} qui jette les bytes).
+ * Benchmark JSON-P generator push with <strong>unbuffered</strong> target
+ * ({@link OutputStreamWriter} on an {@link OutputStream} that discards bytes).
  *
- * <p>C'est le cas réel REST (Cassini → entityStream). Mesure le gain de
- * l'optimisation P2 ({@code BufferedWriter} interne dans Champollion) qui
- * n'apparaît pas avec {@link StringWriter} (déjà bufferisé en mémoire).</p>
+ * <p>This is the real REST case (Cassini → entityStream). Measures the benefit of
+ * optimization P2 ({@code BufferedWriter} inside Champollion) which does not
+ * appear with {@link StringWriter} (already buffered in memory).</p>
  */
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -34,7 +34,7 @@ public class JsonpGenerateOSBench {
     private JsonProvider champollion;
     private JsonProvider parsson;
 
-    /** {@link OutputStream} no-op pour éliminer le coût d'écriture sur disque/réseau. */
+    /** {@link OutputStream} no-op to eliminate disk/network write cost. */
     private static final class NullOutputStream extends OutputStream {
         @Override public void write(int b) { /* no-op */ }
         @Override public void write(byte[] b, int off, int len) { /* no-op */ }

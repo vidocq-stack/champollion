@@ -3,9 +3,9 @@ package io.vidocq.champollion.jsonp.internal;
 import jakarta.json.JsonString;
 
 /**
- * Implémentation immuable de {@link JsonString}. Spec Jakarta JSON-P §4.4.
+ * Immutable {@link JsonString} implementation. Jakarta JSON-P §4.4.
  *
- * @param value chaîne décodée (escapes déjà résolus, pas de quotes englobantes)
+ * @param value decoded string (escapes already resolved, no surrounding quotes)
  */
 public record ChampollionJsonString(String value) implements JsonString {
 

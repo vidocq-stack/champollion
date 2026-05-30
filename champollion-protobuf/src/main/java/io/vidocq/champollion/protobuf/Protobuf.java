@@ -10,14 +10,14 @@ import java.util.Objects;
 import java.util.ServiceLoader;
 
 /**
- * Point d'entrée pour la sérialisation et la désérialisation Protocol Buffers.
+ * Entry point for Protocol Buffers serialization and deserialization.
  *
- * <p>API stable, JPMS-friendly. Les implémentations runtime sont fournies par
- * {@link RuntimeBinding} (introspection reflective + cache par {@link Class}).
- * Le mode statique (codegen via {@code champollion-protobuf-codegen}) sera
- * exposé via {@link java.util.ServiceLoader} en M3.</p>
+ * <p>Stable, JPMS-friendly API. Runtime implementations are provided by
+ * {@link RuntimeBinding} (reflective introspection + cache by {@link Class}).
+ * The static mode (codegen via {@code champollion-protobuf-codegen}) will be
+ * exposed via {@link java.util.ServiceLoader} in M3.</p>
  *
- * <p>Exemple :</p>
+ * <p>Example:</p>
  * <pre>{@code
  * @ProtobufMessage
  * record Person(@ProtobufField(number = 1, type = FieldType.STRING) String name,
@@ -33,9 +33,9 @@ public final class Protobuf {
 
     public static <T> Parser<T> parser(Class<T> type) {
         Objects.requireNonNull(type, "type");
-        // Mode statique préféré : un ParserProvider chargé par ServiceLoader
-        // (produit par l'APT @ProtobufStatic) peut fournir un parser sans
-        // réflexion, compatible AOT.
+        // Preferred static mode: a ParserProvider loaded by ServiceLoader
+        // (produced by the {@code @ProtobufStatic} APT) can provide a parser without
+        // reflection, AOT-compatible.
         for (ParserProvider p : ServiceLoader.load(ParserProvider.class)) {
             Parser<T> candidate = p.parserFor(type);
             if (candidate != null) return candidate;
@@ -44,9 +44,9 @@ public final class Protobuf {
     }
 
     /**
-     * Force le résolveur runtime reflectif ({@code MethodHandles}), même si un
-     * {@code ParserProvider} statique est disponible via {@link ServiceLoader}.
-     * Utile pour le bench différentiel (M3.3) ou les outils de diagnostic.
+     * Forces the reflective runtime resolver ({@code MethodHandles}), even if a
+     * static {@code ParserProvider} is available via {@link ServiceLoader}.
+     * Useful for differential benchmarking (M3.3) or diagnostic tools.
      */
     public static <T> Parser<T> runtimeParser(Class<T> type) {
         Objects.requireNonNull(type, "type");

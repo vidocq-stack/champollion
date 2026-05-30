@@ -6,16 +6,16 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 
 /**
- * Marker pour les types sérialisables en Protocol Buffers.
+ * Marker for types serializable as Protocol Buffers.
  *
- * <p>Les méthodes par défaut délèguent à {@link Protobuf} qui résout
- * (cache concurrent) un {@code BindingPlan} via réflexion sur les
- * {@link ProtobufField} des record components.</p>
+ * <p>The default methods delegate to {@link Protobuf}, which resolves
+ * (via a concurrent cache) a {@code BindingPlan} through reflection on the
+ * {@link ProtobufField} annotations of the record components.</p>
  *
- * <p>Records annotés {@link ProtobufMessage} : implémenter {@code Message}
- * n'est pas obligatoire — {@link Protobuf#toByteArray(Object)} fonctionne
- * aussi sur des records non-implémentants — mais c'est l'idiome recommandé
- * pour bénéficier des méthodes par défaut.</p>
+ * <p>For records annotated {@link ProtobufMessage}, implementing {@code Message}
+ * is not mandatory — {@link Protobuf#toByteArray(Object)} also works on records
+ * that do not implement it — but this is the recommended idiom to benefit from
+ * the default methods.</p>
  */
 public interface Message {
 

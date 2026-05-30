@@ -1,36 +1,36 @@
-# Champollion — État de la situation
+# Champollion — Current status
 
-> Synthèse de l'avancement au 2026-05-01. Pour le plan détaillé phase par phase, voir `ROADMAP.md`.
-> Pour les conventions et contraintes, voir `CLAUDE.md`.
+> Progress summary as of 2026-05-01. For the phase-by-phase plan, see `ROADMAP.md`.
+> For conventions and constraints, see `CLAUDE.md`.
 
-## Méta
+## Meta
 
-- **Branche** : `main`
-- **Build** : `mvn clean install -DskipTests` ✅ sur 8 modules (parent + 7 sous-modules)
-- **Tests** : **290/290** ✅ (`mvn test` sur le reactor)
-- **TCK JSON-P 2.1** : 69/197 PASS (35 %) — premier run progressif, voir TCK.md
-- **TCK JSON-B 3.0** : 75/295 PASS (25 %) — premier run baseline
-- **Discipline** : TDD strict tenu sur tous les commits, citation RFC dans les `@DisplayName`
+- **Branch**: `main`
+- **Build**: `mvn clean install -DskipTests` ✅ on 8 modules (parent + 7 submodules)
+- **Tests**: **290/290** ✅ (`mvn test` on the reactor)
+- **JSON-P 2.1 TCK**: 69/197 PASS (35%) — first incremental run, see `TCK.md`
+- **JSON-B 3.0 TCK**: 75/295 PASS (25%) — first baseline run
+- **Discipline**: strict TDD on every commit, RFC citation in `@DisplayName`
 
 ## Modules
 
-| Module | État | Notes |
+| Module | Status | Notes |
 |---|---|---|
-| `champollion-api` | ✅ | Re-expose `jakarta.json` + `jakarta.json.bind`. Pas encore de SPI propre exportée (à ajouter quand on aura un point d'extension à figer). |
-| `champollion-jsonp` | ✅ **complet pour la spec publique** | 161 tests. Streaming + object model + builders + Reader/Writer + Pointer + Patch + MergePatch + ServiceLoader. |
-| `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. toJson + fromJson runtime opérationnels (primitives, java.time, UUID, enum, records, POJOs, containers). SPI publique `JsonbBinding<T>` + `@JsonbStatic` exposée, ServiceLoader, lookup-first, fallback runtime. |
-| `champollion-codegen-apt` | ✅ **MVP fonctionnel** | 18 tests. APT `JsonbStaticProcessor` génère un `JsonbBinding<T>` par record annoté `@JsonbStatic` + ServiceLoader file. Couvre primitives + String + enums + List<E> + Optional<E> + Map<String,V> + arrays primitifs + String[] + nested records `@JsonbStatic`. Differential testing automatisé static vs runtime. |
-| `champollion-codegen-maven-plugin` | ✅ **actif** (`packaging=maven-plugin`) | 3 tests. Mojo `generate` qui écrit des triggers `<FQN>$$Trigger.java` annotés `@JsonbStatic` puis lance `javac` avec le `JsonbStaticProcessor` sur le classpath compile du projet hôte. `maven-plugin-plugin 4.0.0-beta-2` supporte Java 25. |
-| `champollion-bench` | 🟡 vide | POM JMH prêt, aucun benchmark écrit. |
-| `champollion-examples` | 🟡 vide | POM prêt, aucun exemple écrit. |
-| `champollion-tck` | ✅ **créé** (hors reactor) | Module hors reactor (POM Model 4.0.0). Profils `-Pjsonp-tck` (JUnit 5) et `-Pjsonb-tck` (TestNG). Scripts shell `run-official-tck-{jsonp-2.1,jsonb-3.0}.sh` à la racine. Skip propre (exit 78) si TCK officiel absent. |
+| `champollion-api` | ✅ | Re-exposes `jakarta.json` + `jakarta.json.bind`. No public SPI exported yet (to be added when we have a stable extension point). |
+| `champollion-jsonp` | ✅ **complete for the public spec** | 161 tests. Streaming + object model + builders + Reader/Writer + Pointer + Patch + MergePatch + ServiceLoader. |
+| `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. Runtime `toJson` + `fromJson` operational (primitives, `java.time`, UUID, enum, records, POJOs, containers). Public SPI `JsonbBinding<T>` + `@JsonbStatic` exposed, ServiceLoader, lookup-first, runtime fallback. |
+| `champollion-codegen-apt` | ✅ **functional MVP** | 18 tests. `JsonbStaticProcessor` APT generates one `JsonbBinding<T>` per `@JsonbStatic` record + ServiceLoader file. Covers primitives + String + enums + `List<E>` + `Optional<E>` + `Map<String,V>` + primitive arrays + `String[]` + nested `@JsonbStatic` records. Automated differential testing static vs runtime. |
+| `champollion-codegen-maven-plugin` | ✅ **active** (`packaging=maven-plugin`) | 3 tests. `generate` mojo writes `<FQN>$$Trigger.java` triggers annotated `@JsonbStatic`, then runs `javac` with `JsonbStaticProcessor` on the host project compile classpath. `maven-plugin-plugin 4.0.0-beta-2` supports Java 25. |
+| `champollion-bench` | 🟡 empty | JMH POM ready, no benchmark written yet. |
+| `champollion-examples` | 🟡 empty | POM ready, no example written yet. |
+| `champollion-tck` | ✅ **created** (out of reactor) | Out-of-reactor module (Model 4.0.0 POM). Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Root shell scripts `run-official-tck-{jsonp-2.1,jsonb-3.0}.sh`. Clean skip (exit 78) if the official TCK is unavailable. |
 
-## Avancement par phase (cf. ROADMAP.md)
+## Progress by phase (see `ROADMAP.md`)
 
-| Phase | Périmètre | État |
+| Phase | Scope | Status |
 |---|---|---|
-| M0 | Bootstrap multi-module, JPMS, ServiceLoader | ✅ |
-| M1.1 | Tokenizer JSON-P RFC 8259 | ✅ 19 tests |
+| M0 | Multi-module bootstrap, JPMS, ServiceLoader | ✅ |
+| M1.1 | JSON-P RFC 8259 tokenizer | ✅ 19 tests |
 | M1.2 | JsonParser pull (events) | ✅ 21 tests |
 | M1.3 | JsonGenerator push | ✅ 27 tests |
 | M1.4 | JsonProvider + ServiceLoader | ✅ 10 tests |
@@ -39,109 +39,109 @@
 | M3.1 | JsonPointer RFC 6901 | ✅ 18 tests |
 | M3.2 | JsonPatch RFC 6902 (12 ops, A.1..A.10 + copy + dash) | ✅ 16 tests |
 | M3.3 | JsonMergePatch RFC 7396 + diff | ✅ 13 tests |
-| **M4.1** | Jsonb.toJson runtime — primitives + records | ✅ 14 tests |
-| **M4.2** | Jsonb.fromJson runtime symétrique | ✅ 16 tests |
+| **M4.1** | Runtime `Jsonb.toJson` — primitives + records | ✅ 14 tests |
+| **M4.2** | Symmetric runtime `Jsonb.fromJson` | ✅ 16 tests |
 | **M4.3-write** | Containers (List/Set/Map/Array/Optional) | ✅ 16 tests |
-| **M3.4** | `Json.createDiff` (JsonPatch diff) | ❌ reporté |
+| **M3.4** | `Json.createDiff` (JsonPatch diff) | ❌ deferred |
 | **M4.4a** | `@JsonbProperty` + `@JsonbTransient` runtime | ✅ 6 tests |
-| **M4.4b** | `@JsonbProperty` + `@JsonbTransient` bytecode APT | ✅ 3 tests |
+| **M4.4b** | `@JsonbProperty` + `@JsonbTransient` APT bytecode | ✅ 3 tests |
 | **M4.4c** | `@JsonbNillable` runtime + bytecode | ✅ 3 tests |
-| **M4.4d** | `@JsonbDateFormat` runtime (java.time) | ✅ 3 tests |
+| **M4.4d** | `@JsonbDateFormat` runtime (`java.time`) | ✅ 3 tests |
 | **M4.4e** | `@JsonbCreator` runtime (ctor + static factory) | ✅ 2 tests |
 | **M4.4f** | `@JsonbTypeAdapter` runtime | ✅ 3 tests |
-| **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ pas commencé |
+| **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ not started |
 | **M4.6** | POJO JavaBean conventions (getters/setters) | ✅ 6 tests |
-| **M4.7** | JsonbConfig (FORMATTING, NULL_VALUES, DATE_FORMAT) | ✅ 6 tests |
-| **M4.5** | Polymorphisme `@JsonbTypeInfo`/`@JsonbSubtype` | ✅ 5 tests (records, MVP) |
-| **M5.1** | SPI `JsonbBinding` + lookup-first | ✅ 6 tests |
-| **M5.2** | `@JsonbStatic` + APT `JsonbStaticProcessor` | ✅ 4 tests |
+| **M4.7** | `JsonbConfig` (`FORMATTING`, `NULL_VALUES`, `DATE_FORMAT`) | ✅ 6 tests |
+| **M4.5** | `@JsonbTypeInfo` / `@JsonbSubtype` polymorphism | ✅ 5 tests (records, MVP) |
+| **M5.1** | `JsonbBinding` SPI + lookup-first | ✅ 6 tests |
+| **M5.2** | `@JsonbStatic` + `JsonbStaticProcessor` APT | ✅ 4 tests |
 | **M5.3** | APT containers (List/Optional/Arrays) | ✅ 4 tests |
-| **M5.4** | Differential testing static vs runtime | ✅ 3 tests |
-| **M5.5** | APT — Map<String,X> + nested records | ✅ 4 tests |
-| **M5.6** | APT — enums comme leaf type | ✅ 3 tests |
-| **M5.7** | APT bytecode direct (Class File API JDK 25) | ✅ records primitives + String + enums |
-| **M5.8** | Maven plugin `champollion-codegen-maven-plugin` actif | ✅ — 3 tests |
-| **M5.9** | APT bytecode étendu : arrays primitifs + `String[]` + `Optional<X>` | ✅ |
-| **M5.10** | APT bytecode List<X>, Map<String,V>, nested @JsonbStatic | ✅ — **fast path bytecode 100 %** |
+| **M5.4** | Static vs runtime differential testing | ✅ 3 tests |
+| **M5.5** | APT — `Map<String,X>` + nested records | ✅ 4 tests |
+| **M5.6** | APT — enums as leaf type | ✅ 3 tests |
+| **M5.7** | Direct APT bytecode (Class File API JDK 25) | ✅ primitives + String + enums in records |
+| **M5.8** | Active `champollion-codegen-maven-plugin` | ✅ — 3 tests |
+| **M5.9** | Extended APT bytecode: primitive arrays + `String[]` + `Optional<X>` | ✅ |
+| **M5.10** | APT bytecode `List<X>`, `Map<String,V>`, nested `@JsonbStatic` | ✅ — **100% bytecode fast path** |
 | **M5.11** | Pre-encoded property names + `writeKeyRaw` fast path | ✅ |
-| **M5.12** | Validation AOT par inspection bytecode (zero reflection) | ✅ — 5 tests |
-| **M6.1** | Module `champollion-tck` hors reactor | ✅ |
-| **M6.2** | Script `run-official-tck-jsonp-2.1.sh` | ✅ |
-| **M6.3** | Script `run-official-tck-jsonb-3.0.sh` | ✅ |
-| **M6.4** | Mode `--static` du TCK | ❌ reporté (non critique) |
+| **M5.12** | AOT validation by bytecode inspection (zero reflection) | ✅ — 5 tests |
+| **M6.1** | Out-of-reactor `champollion-tck` module | ✅ |
+| **M6.2** | `run-official-tck-jsonp-2.1.sh` | ✅ |
+| **M6.3** | `run-official-tck-jsonb-3.0.sh` | ✅ |
+| **M6.4** | `--static` TCK mode | ❌ deferred (not critical) |
 | **M6.5** | `TCK.md` instructions + challenges | ✅ |
-| **M6.6** | `install-tck.sh` — téléchargement + install M2 auto | ✅ |
-| **M6.7** | TCK first run + premiers fixes (M2.x stubs + M3.4) | ✅ baseline 65→69 PASS sur JSON-P |
-| **M6.8** | Analyse FAIL méthodique (sources TCK) | ❌ chantier — voir TCK.md |
-| **M7** | Intégration Cassini (swap Yasson → Champollion) | ❌ pas commencé |
+| **M6.6** | `install-tck.sh` — auto download + install in M2 | ✅ |
+| **M6.7** | First TCK run + first fixes (M2.x stubs + M3.4) | ✅ baseline 65→69 PASS on JSON-P |
+| **M6.8** | Methodical FAIL analysis (TCK sources) | ❌ ongoing — see `TCK.md` |
+| **M7** | Cassini integration (Yasson → Champollion swap) | ❌ not started |
 
-## Reste à faire
+## Remaining work
 
-### Court terme — finir M3 et M4
+### Short term — finish M3 and M4
 
-- **M3.4** `Json.createDiff(JsonStructure, JsonStructure)` retournant un `JsonPatch` (RFC 6902 diff). Aujourd'hui marqué `UnsupportedOperationException` dans `ChampollionJsonProvider`. Algorithme non-trivial : il faut comparer deux structures et émettre la séquence minimale d'opérations `add/remove/replace/move/copy/test`.
-- **M4.4 — Customization JSON-B 3.0** :
-  - `@JsonbProperty(name)` — renommage de propriété
-  - `@JsonbTransient` — exclusion d'une propriété
-  - `@JsonbDateFormat`, `@JsonbNumberFormat` — formats spécifiques
-  - `@JsonbAdapter` / `JsonbAdapter<T,R>` — adaptateurs personnalisés
-  - `@JsonbCreator` — factory method explicite (au-delà du ctor canonique des records)
-  - `@JsonbVisibility` — modifier la stratégie de propriétés
-  - `JsonbConfig` properties : `JSONB_NULL_VALUES`, `JSONB_FORMATTING`, `JSONB_LOCALE`, `JSONB_DATE_FORMAT`, naming strategy
-- **M4.5 — Polymorphisme** : `@JsonbTypeInfo` + `@JsonbSubtype`, nouveauté JSON-B 3.0. Aujourd'hui non supporté.
-- **POJO setters** : la lecture POJO actuelle ne gère que les champs publics. Étendre aux setters conventionnels (`setX`/`getX`) pour les bean classiques.
+- **M3.4** `Json.createDiff(JsonStructure, JsonStructure)` returning a `JsonPatch` (RFC 6902 diff). It is currently `UnsupportedOperationException` in `ChampollionJsonProvider`. The algorithm is non-trivial: compare two structures and emit the minimal sequence of `add/remove/replace/move/copy/test` operations.
+- **M4.4 — JSON-B 3.0 customization**:
+  - `@JsonbProperty(name)` — property rename
+  - `@JsonbTransient` — property exclusion
+  - `@JsonbDateFormat`, `@JsonbNumberFormat` — custom formats
+  - `@JsonbAdapter` / `JsonbAdapter<T,R>` — custom adapters
+  - `@JsonbCreator` — explicit factory method (beyond the canonical record constructor)
+  - `@JsonbVisibility` — property strategy override
+  - `JsonbConfig` properties: `JSONB_NULL_VALUES`, `JSONB_FORMATTING`, `JSONB_LOCALE`, `JSONB_DATE_FORMAT`, naming strategy
+- **M4.5 — Polymorphism**: `@JsonbTypeInfo` + `@JsonbSubtype`, new in JSON-B 3.0. Not supported yet.
+- **POJO setters**: current POJO reading only handles public fields. Extend to conventional setters (`setX`/`getX`) for classic beans.
 
-### Moyen terme — M5 (codegen statique) — partiellement livré
+### Medium term — M5 (static codegen) — partially delivered
 
-**Livré :**
-- ✅ SPI `JsonbBinding<T>` exposée (`champollion-jsonb.spi`) + `PrimedJsonParser` utility
-- ✅ Annotation `@JsonbStatic` (`champollion-jsonb.spi`, `RetentionPolicy.CLASS`)
-- ✅ **APT `JsonbStaticProcessor` 100 % bytecode** (Class File API JDK 25, `Filer.createClassFile`) sur le subset complet :
+**Delivered:**
+- ✅ `JsonbBinding<T>` SPI (`champollion-jsonb.spi`) + `PrimedJsonParser` utility
+- ✅ `@JsonbStatic` annotation (`champollion-jsonb.spi`, `RetentionPolicy.CLASS`)
+- ✅ **100% bytecode `JsonbStaticProcessor`** (Class File API JDK 25, `Filer.createClassFile`) on the full subset:
   - primitives (8 types), String, enums
-  - arrays primitifs (`int[]`, `long[]`, `double[]`, `boolean[]`), `String[]`
-  - `Optional<X>`, `List<X>`, `Map<String,V>` où X/V ∈ scalaire / enum / nested record `@JsonbStatic`
-  - nested records `@JsonbStatic` comme composants directs
-  - Le slow path source reste implémenté comme fallback mais n'est plus déclenché par les tests actuels.
-- ✅ `ChampollionJsonb` lookup-first sur les bindings statiques, fallback runtime introspectif
-- ✅ Differential testing automatisé runtime vs static
-- ✅ Couverture types : primitives, String, enums, List<E>, Optional<E>, Map<String,V>, arrays primitifs, String[], nested records `@JsonbStatic` (référence directe par `new <X>$$Binding()`)
+  - primitive arrays (`int[]`, `long[]`, `double[]`, `boolean[]`), `String[]`
+  - `Optional<X>`, `List<X>`, `Map<String,V>` where X/V ∈ scalar / enum / nested `@JsonbStatic` record
+  - nested `@JsonbStatic` records as direct components
+  - The source slow path remains implemented as fallback but is no longer exercised by the current tests.
+- ✅ `ChampollionJsonb` lookup-first on static bindings, introspective runtime fallback
+- ✅ Automated runtime-vs-static differential testing
+- ✅ Type coverage: primitives, String, enums, List<E>, Optional<E>, Map<String,V>, primitive arrays, `String[]`, nested `@JsonbStatic` records (direct reference by `new <X>$$Binding()`)
 
-**À faire :**
-- **M5.13 (optionnel)** Validation `native-image` end-to-end avec GraalVM installé. La validation par inspection bytecode (M5.12) suffit déjà pour le contrat ; un test `native-image` ne ferait que confirmer pratiquement.
+**To do:**
+- **M5.13 (optional)** End-to-end `native-image` validation with GraalVM installed. Bytecode inspection validation (M5.12) already satisfies the contract; a `native-image` test would only confirm it in practice.
 
-### Moyen terme — Tests d'envergure
+### Medium term — broader tests
 
-- **Corpus JSONTestSuite** (nst/JSONTestSuite) intégré dans `champollion-jsonp/src/test/resources/` pour un harness RFC 8259 indépendant du TCK.
-- **JMH bench** dans `champollion-bench` : comparatif throughput/latence/allocs vs Parsson, Yasson, Jackson.
-- **Exemples** dans `champollion-examples` : démonstration runtime vs codegen statique, intégration avec `Json.*` et `JsonbBuilder`, exemples d'adaptateurs custom.
+- **JSONTestSuite corpus** (`nst/JSONTestSuite`) integrated into `champollion-jsonp/src/test/resources/` for an RFC 8259 harness independent of the TCK.
+- **JMH benchmark** in `champollion-bench`: throughput/latency/allocs comparison vs Parsson, Yasson, Jackson.
+- **Examples** in `champollion-examples`: runtime vs static codegen demo, integration with `Json.*` and `JsonbBuilder`, custom adapter examples.
 
-### Long terme — M6 (TCK)
+### Long term — M6 (TCK)
 
-- Créer `champollion-tck` **hors reactor** (POM Model 4.0.0 standalone, contrainte ShrinkWrap héritée de `cassini-tck`/`foy-tck`).
-- Installer en M2 local les TCK officiels :
+- Create `champollion-tck` **outside the reactor** (standalone Model 4.0.0 POM, ShrinkWrap constraint inherited from `cassini-tck`/`foy-tck`).
+- Install the official TCKs in the local M2:
   - `jakarta.json:jakarta-json-tck:2.1.x`
   - `jakarta.json.bind:jakarta-json-bind-tck:3.0.x`
-- Scripts `run-official-tck-jsonp-2.1.sh` et `run-official-tck-jsonb-3.0.sh` (smoke / all / `-Dtest=`).
-- `TCK.md` documentant les éventuels challenges (tests désactivés avec citation spec).
-- **Mode statique** : exécuter le TCK aussi avec les fixtures recompilées via APT pour valider la cohérence du codegen.
-- **Contrat dur** : 100 % PASS sur les deux TCK avant merge structurel.
+- Scripts `run-official-tck-jsonp-2.1.sh` and `run-official-tck-jsonb-3.0.sh` (smoke / all / `-Dtest=`).
+- `TCK.md` documenting any challenges (disabled tests with spec citations).
+- **Static mode**: run the TCK also with fixtures recompiled through APT to validate codegen consistency.
+- **Hard contract**: 100% PASS on both TCKs before any structural merge.
 
-### Long terme — M7 (intégration écosystème Vidocq)
+### Long term — M7 (Vidocq ecosystem integration)
 
-- Adapter `cassini-champollion` côté Cassini : `MessageBodyReader/Writer<JsonValue>` et `<Object>` via JSON-B Champollion. Remplace Parsson + Yasson dans Cassini.
-- Adapter `chappe-champollion` (optionnel) : `BodyHandler` JSON pour Chappe non-JAX-RS.
-- `docs/integration-cassini.md` et `docs/integration-chappe.md`.
-- Bench end-to-end Cassini + Champollion vs Cassini + Yasson.
+- Adapt Cassini side `cassini-champollion`: `MessageBodyReader/Writer<JsonValue>` and `<Object>` via Champollion JSON-B. Replace Parsson + Yasson in Cassini.
+- Optional `chappe-champollion` adapter: JSON `BodyHandler` for non-JAX-RS Chappe.
+- `docs/integration-cassini.md` and `docs/integration-chappe.md`.
+- End-to-end benchmark Cassini + Champollion vs Cassini + Yasson.
 
-## Décisions ouvertes (re-confirmées)
+## Open decisions (re-confirmed)
 
-- Mode statique dans **2 artifacts séparés** : `champollion-codegen-apt` (JDK pur) + `champollion-codegen-maven-plugin` (orchestrateur). ✅ acté.
-- **Runtime reflectif gardé en fallback** quand aucune factory statique n'est trouvée. ✅ acté.
-- `java.lang.foreign` pour le scanner UTF-8 : différé à post-M5.
-- Polymorphisme `@JsonbTypeInfo` en mode statique : nécessite un sealed-tree connu à la compilation. À traiter en M5.
+- Static mode in **2 separate artifacts**: `champollion-codegen-apt` (pure JDK) + `champollion-codegen-maven-plugin` (orchestrator). ✅ decided.
+- **Reflective runtime kept as fallback** when no static factory is found. ✅ decided.
+- `java.lang.foreign` for the UTF-8 scanner: deferred to post-M5.
+- `@JsonbTypeInfo` polymorphism in static mode: requires a compile-time-known sealed tree. To be addressed in M5.
 
-## Risques actifs
+## Active risks
 
-- **maven-plugin-plugin / Java 25** : ASM 9.x intégré à 3.15.1 ne lit pas major 69. Bloquant pour M5 tant qu'une 3.16+ compatible n'est pas publiée. Workaround actuel : `packaging=jar` pour le squelette.
-- **JSONTestSuite cas tordus** : conformance RFC 8259 stricte n'est pas encore validée par un corpus externe — risque de régression sur des cas marginaux (ex : escape unicode surrogates). À couvrir avant M6.
-- **POJO sans champs publics** : impossible aujourd'hui de lire/écrire les beans classiques avec getters/setters privés. Bloquant pour le TCK Yasson-style. À traiter en M4.4.
+- **`maven-plugin-plugin` / Java 25**: ASM 9.x bundled with 3.15.1 does not read major 69. Blocking for M5 until a compatible 3.16+ is released. Current workaround: `packaging=jar` for the skeleton.
+- **JSONTestSuite edge cases**: strict RFC 8259 conformance is not yet validated by an external corpus — regression risk on marginal cases (e.g. Unicode surrogate escapes). To be covered before M6.
+- **POJOs without public fields**: classic beans with private getters/setters cannot be read/written today. Blocking for the Yasson-style TCK. To be handled in M4.4.

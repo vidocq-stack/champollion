@@ -15,14 +15,14 @@ import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
- * Parser pull-based Jakarta JSON-P 2.1, fondé sur le {@link JsonTokenizer}.
+ * Pull-based Jakarta JSON-P 2.1 parser, based on {@link JsonTokenizer}.
  *
- * <p>Le parser maintient une pile de scopes ({@link Scope}) et une machine d'état
- * minimaliste : à chaque appel à {@link #next()} il consomme un ou plusieurs tokens
- * et émet exactement un {@link Event}.</p>
+ * <p>The parser maintains a stack of scopes ({@link Scope}) and a minimal state
+ * machine: on each {@link #next()} call it consumes one or more tokens and emits
+ * exactly one {@link Event}.</p>
  *
- * <p>Les méthodes d'accès aux valeurs ({@code getString}, {@code getInt}, etc.) lisent
- * les buffers internes {@code lastString} / {@code lastNumber} positionnés par {@code next()}.</p>
+ * <p>The value accessors ({@code getString}, {@code getInt}, etc.) read the
+ * internal buffers {@code lastString} / {@code lastNumber} populated by {@code next()}.</p>
  */
 public final class ChampollionJsonParser implements JsonParser {
 
@@ -30,9 +30,9 @@ public final class ChampollionJsonParser implements JsonParser {
                          ARRAY_START, ARRAY_VALUE, ARRAY_COMMA, DONE }
 
     private JsonTokenizer tokenizer;
-    // Capacité initiale 4 — la profondeur de nesting moyenne d'un JSON de
-    // production reste largement sous 8 ; le défaut ArrayDeque (16) alloue un
-    // backing array inutilement grand sur le hot path read.
+    // Initial capacity 4 — the average nesting depth of production JSON stays
+    // well below 8; the default ArrayDeque (16) allocates an unnecessarily
+    // large backing array on the read hot path.
     private final Deque<Scope> scopes = new ArrayDeque<>(4);
 
     private Event next;
@@ -46,24 +46,24 @@ public final class ChampollionJsonParser implements JsonParser {
         this.scopes.push(Scope.ROOT);
     }
 
-    /** P10.1 — fast-path String : aucun Reader, aucun char[] intermédiaire. */
+    /** P10.1 — String fast path: no Reader, no intermediate char[]. */
     public ChampollionJsonParser(String src) {
         this.tokenizer = new JsonStringTokenizer(src);
         this.scopes.push(Scope.ROOT);
     }
 
     /**
-     * Recycle ce parser pour un nouveau {@link Reader}. Le tokenizer est
-     * ré-alloué (instance light : ~32 B + char[BUF_SIZE]) pour conserver le
-     * {@code final Reader} qui permet à HotSpot d'inliner {@code read()}
-     * dans la boucle scan ASCII. Ne ferme <em>pas</em> l'ancien reader.
+     * Recycles this parser for a new {@link Reader}. The tokenizer is
+     * reallocated (light instance: ~32 B + char[BUF_SIZE]) to preserve the
+     * {@code final Reader} that lets HotSpot inline {@code read()} in the
+     * ASCII scan loop. Does <em>not</em> close the old reader.
      */
     public void reset(Reader newReader) {
         this.tokenizer = new JsonReaderTokenizer(newReader);
         clearState();
     }
 
-    /** P10.1 — variante {@code reset(String)} : tokenizer en mode String direct. */
+    /** P10.1 — {@code reset(String)} variant: tokenizer in direct String mode. */
     public void reset(String src) {
         this.tokenizer = new JsonStringTokenizer(src);
         clearState();
@@ -96,7 +96,7 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     private Event computeNext() {
-        // ROOT post-value : on attend EOF ou on lève
+        // ROOT post-value: wait for EOF or throw
         if (scopes.peek() == Scope.DONE) {
             JsonToken trailing = tokenizer.next();
             if (trailing == JsonToken.Eof.INSTANCE) return null;
@@ -125,7 +125,7 @@ public final class ChampollionJsonParser implements JsonParser {
         }
         Event e = consumeValueToken(t, /*topLevel*/ true);
         if (e == null) throw parsing("Unexpected token at root");
-        // Si la racine n'a pas ouvert de scope, on a fini.
+        // If the root did not open a scope, we are done.
         if (scopes.peek() == Scope.ROOT) {
             scopes.pop();
             scopes.push(Scope.DONE);
@@ -218,8 +218,8 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     /**
-     * Consomme un token de valeur et émet l'event correspondant. Met à jour la pile.
-     * Retourne {@code null} si le token n'est pas un token de valeur.
+     * Consumes a value token and emits the corresponding event. Updates the stack.
+     * Returns {@code null} if the token is not a value token.
      */
     private Event consumeValueToken(JsonToken t, boolean topLevel) {
         if (t == JsonToken.StartObject.INSTANCE) {
@@ -248,18 +248,18 @@ public final class ChampollionJsonParser implements JsonParser {
         return null;
     }
 
-    /** Après consommation d'une valeur primitive (ou ouverture d'un container), met à jour la pile. */
+    /** After consuming a primitive value (or opening a container), updates the stack. */
     private void replaceTopForValueConsumed() {
         Scope top = scopes.peek();
         switch (top) {
             case OBJECT_VALUE -> { scopes.pop(); scopes.push(Scope.OBJECT_COMMA); }
             case ARRAY_START, ARRAY_VALUE -> { scopes.pop(); scopes.push(Scope.ARRAY_COMMA); }
-            case ROOT -> { /* géré par parseRootValue après retour */ }
+            case ROOT -> { /* handled by parseRootValue after return */ }
             default -> {}
         }
     }
 
-    /** Après fermeture d'un container, on retombe dans le scope parent et on bascule en COMMA. */
+    /** After closing a container, returns to the parent scope and switches to COMMA. */
     private void transitionAfterValue() {
         Scope top = scopes.peek();
         switch (top) {
@@ -309,10 +309,11 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public JsonValue getValue() {
-        // Spec §3.10 (2.1) : retourne la valeur à la position courante. Pour
-        // START_OBJECT/START_ARRAY, équivaut à getObject()/getArray(). Pour KEY_NAME,
-        // retourne la string du nom. Pour VALUE_*, le JsonValue scalaire correspondant.
-        // Si aucun event n'a encore été lu, on avance automatiquement (cas TCK 2.1).
+        // Spec §3.10 (2.1): returns the value at the current position. For
+        // START_OBJECT/START_ARRAY, this is equivalent to getObject()/getArray().
+        // For KEY_NAME, returns the key string. For VALUE_*, the corresponding
+        // scalar JsonValue. If no event has been read yet, advance automatically
+        // (TCK 2.1 case).
         if (lastEvent == null) {
             if (!hasNext()) {
                 throw new IllegalStateException("getValue() : empty input");
@@ -332,9 +333,9 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public JsonObject getObject() {
-        // §3.10.2.1 — accepter aussi un parser fresh (pas encore next-é) : on
-        // pre-next pour atteindre START_OBJECT (compat TCK Jersey + JsonbDeserializer
-        // customs qui appellent getObject() directement).
+        // §3.10.2.1 — also accept a fresh parser (not yet next'ed): pre-next to
+        // reach START_OBJECT (TCK Jersey compatibility + custom JsonbDeserializer
+        // code that calls getObject() directly).
         if (lastEvent == null) {
             Event ev = next();
             if (ev != Event.START_OBJECT) {
@@ -358,7 +359,7 @@ public final class ChampollionJsonParser implements JsonParser {
         return readArrayElements();
     }
 
-    /** Lit les members jusqu'à END_OBJECT (le START_OBJECT initial est déjà consommé). */
+    /** Reads members until END_OBJECT (the initial START_OBJECT has already been consumed). */
     private JsonObject readObjectMembers() {
         var map = new java.util.LinkedHashMap<String, JsonValue>();
         while (true) {
@@ -373,7 +374,7 @@ public final class ChampollionJsonParser implements JsonParser {
         }
     }
 
-    /** Lit les éléments jusqu'à END_ARRAY (le START_ARRAY initial est déjà consommé). */
+    /** Reads elements until END_ARRAY (the initial START_ARRAY has already been consumed). */
     private JsonArray readArrayElements() {
         var list = new java.util.ArrayList<JsonValue>();
         while (true) {
@@ -383,7 +384,7 @@ public final class ChampollionJsonParser implements JsonParser {
         }
     }
 
-    /** Construit un JsonValue à partir de l'event courant (déjà lu). */
+    /** Builds a JsonValue from the current (already read) event. */
     private JsonValue readScalarOrStructure(Event e) {
         return switch (e) {
             case START_OBJECT -> readObjectMembers();
@@ -401,7 +402,7 @@ public final class ChampollionJsonParser implements JsonParser {
         if (lastEvent != Event.START_ARRAY) {
             throw new IllegalStateException("getArrayStream() requires last event = START_ARRAY, got " + lastEvent);
         }
-        // Implémentation simple : lit tout l'array en mémoire puis stream dessus.
+        // Simple implementation: reads the whole array into memory, then streams over it.
         return readArrayElements().stream().map(v -> v);
     }
 
@@ -413,9 +414,8 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public Stream<JsonValue> getValueStream() {
-        // Spec §3.10 : getValueStream() doit être appelé au niveau racine du
-        // document avant tout next(). Si on est dans un object/array, throw
-        // IllegalStateException.
+        // Spec §3.10: getValueStream() must be called at the document root before
+        // any next(). If we are inside an object/array, throw IllegalStateException.
         if (lastEvent != null) {
             throw new IllegalStateException("getValueStream() must be called before any next() at root level");
         }
@@ -441,8 +441,8 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public void close() {
-        // Spec §3.6 : ferme le Reader/InputStream sous-jacent ; propage IOException
-        // en JsonException.
+        // Spec §3.6: closes the underlying Reader/InputStream; propagates
+        // IOException as JsonException.
         scopes.clear();
         scopes.push(Scope.DONE);
         tokenizer.close();

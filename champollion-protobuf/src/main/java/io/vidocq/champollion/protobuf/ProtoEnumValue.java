@@ -6,26 +6,25 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Mappe une constante d'enum Java vers son entier proto correspondant.
+ * Maps a Java enum constant to its corresponding proto integer.
  *
- * <p>Spec : <a href="https://protobuf.dev/programming-guides/proto3/#enum">
- * Proto3 §Enumerations</a>. Les valeurs proto sont des {@code int32} signés
- * ; par défaut Champollion utilise {@code ordinal()} (0, 1, 2, ...), mais
- * cette annotation permet d'override :</p>
+ * <p>Spec: <a href="https://protobuf.dev/programming-guides/proto3/#enum">
+ * Proto3 §Enumerations</a>. Proto values are signed {@code int32}s;
+ * by default Champollion uses {@code ordinal()} (0, 1, 2, ...), but
+ * this annotation lets you override it:</p>
  *
  * <ul>
- *   <li><b>Valeurs négatives</b> (ex. proto {@code NEG = -1;}) que
- *       {@code ordinal()} ne peut pas représenter.</li>
- *   <li><b>Enum aliasing</b> ({@code option allow_alias = true;}) où plusieurs
- *       constantes Java pointent vers la même valeur proto. Lors de la
- *       désérialisation, le runtime retourne la première constante déclarée
- *       avec cette valeur.</li>
+ *   <li><b>Negative values</b> (e.g. proto {@code NEG = -1;}) that
+ *       {@code ordinal()} cannot represent.</li>
+ *   <li><b>Enum aliasing</b> ({@code option allow_alias = true;}) where multiple
+ *       Java constants map to the same proto value. During deserialization,
+ *       the runtime returns the first declared constant for that value.</li>
  * </ul>
  *
  * <p>Usage :</p>
  * <pre>{@code
  * public enum NestedEnum {
- *     FOO,                         // value = 0 (ordinal par défaut)
+ *     FOO,                         // value = 0 (default ordinal)
  *     BAR,                         // value = 1
  *     BAZ,                         // value = 2
  *     @ProtoEnumValue(-1) NEG      // value = -1 (override)
@@ -35,16 +34,16 @@ import java.lang.annotation.Target;
  *     ALIAS_FOO,                          // value = 0
  *     ALIAS_BAR,                          // value = 1
  *     ALIAS_BAZ,                          // value = 2
- *     @ProtoEnumValue(2) MOO,             // alias de ALIAS_BAZ
- *     @ProtoEnumValue(2) moo,             // alias casse-différente
+ *     @ProtoEnumValue(2) MOO,             // alias of ALIAS_BAZ
+ *     @ProtoEnumValue(2) moo,             // different-cased alias
  * }
  * }</pre>
  *
- * <p>Si l'annotation est absente, la valeur proto utilisée est
- * {@code constant.ordinal()} (rétrocompatible avec les enums déjà déclarés).</p>
+ * <p>If the annotation is absent, the proto value used is
+ * {@code constant.ordinal()} (backward-compatible with enums already declared).</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD) // les constants d'enum sont des fields statiques
+@Target(ElementType.FIELD) // enum constants are static fields
 public @interface ProtoEnumValue {
     int value();
 }

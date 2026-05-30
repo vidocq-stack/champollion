@@ -8,12 +8,12 @@ import java.util.Map;
 import java.util.ServiceLoader;
 
 /**
- * Index immuable des {@link JsonbBinding} statiques disponibles au runtime, par
- * {@link Class}. Construction one-shot à partir d'une liste explicite ou via
+ * Immutable index of runtime-available static {@link JsonbBinding}s, keyed by
+ * {@link Class}. One-shot construction from an explicit list or via
  * {@link ServiceLoader}.
  *
- * <p>Stratégie de collision : <em>premier inscrit gagne</em> (ordre déterministe
- * de la source). Cohérent avec la sémantique {@code provides ... with} JPMS.</p>
+ * <p>Collision strategy: <em>first registered wins</em> (deterministic source
+ * order). Consistent with JPMS {@code provides ... with} semantics.</p>
  */
 final class StaticBindings {
 

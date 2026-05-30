@@ -1,8 +1,8 @@
 import javax.annotation.processing.Processor;
 
 /**
- * Annotation Processor Champollion : génère un {@code <FQN>$$Binding} pour
- * chaque type annoté {@code @JsonbStatic}.
+ * Champollion annotation processor: generates a {@code <FQN>$$Binding} for
+ * each type annotated with {@code @JsonbStatic}.
  */
 module io.vidocq.champollion.codegen.apt {
     requires java.compiler;

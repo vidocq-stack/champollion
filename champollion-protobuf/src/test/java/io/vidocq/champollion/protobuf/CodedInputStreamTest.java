@@ -198,11 +198,11 @@ class CodedInputStreamTest {
 
         @Test
         void negative_length_throws() {
-            // varint qui décode en valeur dont la traduction signée < 0
-            // -1 en varint = 10 octets 0xFF...0x01. read_raw_varint32 va le caster en int
-            // donc on aura un nombre. Mais size négatif → exception explicite via readBytes.
+            // varint that decodes to a value whose signed interpretation < 0
+            // -1 in varint = 10 bytes 0xFF...0x01. read_raw_varint32 will cast it as int
+            // so we get a number. But negative size → explicit exception via readBytes.
             CodedInputStream in = from(0xFF, 0xFF, 0xFF, 0xFF, 0x0F);
-            // Cette suite encode 0xFFFFFFFF (varint32) qui en signed int = -1.
+            // This sequence encodes 0xFFFFFFFF (varint32) which as signed int = -1.
             assertThrows(MalformedProtobufException.class, in::readBytes);
         }
     }

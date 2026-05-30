@@ -5,7 +5,7 @@ import jakarta.json.bind.JsonbException;
 import jakarta.json.bind.spi.JsonbProvider;
 
 /**
- * Provider Jakarta JSON Binding 3.0 — point d'entrée ServiceLoader.
+ * Jakarta JSON Binding 3.0 provider — ServiceLoader entry point.
  */
 public final class ChampollionJsonbProvider extends JsonbProvider {
 

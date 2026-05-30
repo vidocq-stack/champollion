@@ -12,15 +12,15 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Modèle réflexif des types Protocol Buffers (alignement mental sur
+ * Reflexive model of Protocol Buffers types (mentally aligned with
  * {@code com.google.protobuf.Descriptors}).
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#file-descriptor-set">descriptor.proto</a>.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#file-descriptor-set">descriptor.proto</a>.</p>
  *
- * <p>M1.4 — data model + synthèse via {@link #forRecord(Class)} sur des records
- * annotés {@link ProtobufMessage}. Le bootstrap auto-décrivant
- * ({@code descriptor.proto} comme {@code FileDescriptorProto}) viendra avec
- * le codegen M2.</p>
+ * <p>M1.4 — data model + synthesis via {@link #forRecord(Class)} for records
+ * annotated {@link ProtobufMessage}. The self-describing bootstrap
+ * ({@code descriptor.proto} as {@code FileDescriptorProto}) will come with
+ * M2 codegen.</p>
  */
 public final class Descriptors {
 
@@ -29,9 +29,9 @@ public final class Descriptors {
     private Descriptors() {}
 
     /**
-     * Synthétise un {@link Descriptor} à partir d'un record annoté
-     * {@link ProtobufMessage} ; identique à la résolution faite par le runtime
-     * binding mais exposée comme méta-information stable, JSON-friendly.
+     * Synthesizes a {@link Descriptor} from a record annotated
+     * {@link ProtobufMessage}; identical to the resolution done by the runtime
+     * binding but exposed as stable, JSON-friendly meta-information.
      */
     public static Descriptor forRecord(Class<?> recordClass) {
         Objects.requireNonNull(recordClass, "recordClass");
@@ -109,12 +109,12 @@ public final class Descriptors {
     public enum Syntax { PROTO2, PROTO3, EDITION_2023 }
 
     /**
-     * Edition 2023 {@code google.protobuf.FeatureSet} — surcouche d'attributs
-     * configurable par fichier/message/champ qui remplace les conventions
-     * implicites de proto2/proto3.
+     * Edition 2023 {@code google.protobuf.FeatureSet} — attribute overlay
+     * configurable by file/message/field that replaces the implicit proto2/proto3
+     * conventions.
      *
-     * <p>Spec : <a href="https://protobuf.dev/editions/features/">Edition Features</a>.
-     * Defaults M4.1 = équivalent proto3.</p>
+     * <p>Spec: <a href="https://protobuf.dev/editions/features/">Edition Features</a>.
+     * M4.1 defaults = proto3 equivalent.</p>
      */
     public record Features(
             FieldPresence fieldPresence,
@@ -134,7 +134,7 @@ public final class Descriptors {
                 RepeatedFieldEncoding.EXPANDED, Utf8Validation.NONE,
                 MessageEncoding.LENGTH_PREFIXED, JsonFormat.LEGACY_BEST_EFFORT);
 
-        /** Edition 2023 = mêmes defaults que proto3, modulables par feature. */
+        /** Edition 2023 = same defaults as proto3, adjustable by feature. */
         public static final Features EDITION_2023_DEFAULTS = PROTO3_DEFAULTS;
     }
 
@@ -146,9 +146,9 @@ public final class Descriptors {
     public enum JsonFormat { ALLOW, LEGACY_BEST_EFFORT }
 
     /**
-     * Cardinalité — {@code IMPLICIT} = proto3 default (pas de présence
-     * explicite), {@code EXPLICIT} = proto2 / Editions {@code field_presence=EXPLICIT},
-     * {@code REPEATED} = liste, {@code REQUIRED} = legacy proto2.
+     * Cardinality — {@code IMPLICIT} = proto3 default (no explicit presence),
+     * {@code EXPLICIT} = proto2 / Editions {@code field_presence=EXPLICIT},
+     * {@code REPEATED} = list, {@code REQUIRED} = legacy proto2.
      */
     public enum Cardinality { IMPLICIT, EXPLICIT, REPEATED, REQUIRED }
 
@@ -169,7 +169,7 @@ public final class Descriptors {
             services = List.copyOf(services);
         }
 
-        /** Constructeur de compat (sans services), conserve les call-sites M1.4. */
+        /** Compatibility constructor (without services), keeps M1.4 call sites. */
         public FileDescriptor(String name, String packageName, Syntax syntax,
                               List<Descriptor> messageTypes, List<EnumDescriptor> enumTypes) {
             this(name, packageName, syntax, messageTypes, enumTypes, List.of());
@@ -280,7 +280,7 @@ public final class Descriptors {
             features = features == null ? Features.PROTO3_DEFAULTS : features;
         }
 
-        /** Constructeur de compat (sans features) — defaults proto3. */
+        /** Compatibility constructor (without features) — proto3 defaults. */
         public FieldDescriptor(String name, String jsonName, int number,
                                FieldType type, Cardinality cardinality, boolean packed,
                                String messageTypeName, String enumTypeName) {

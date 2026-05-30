@@ -8,11 +8,11 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import java.util.List;
 
 /**
- * {@code google.protobuf.FieldMask} — projection sur un sous-ensemble de champs.
+ * {@code google.protobuf.FieldMask} — projection over a subset of fields.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#field-mask">FieldMask</a>.
- * JSON canonical : une seule string virgule-séparée avec les paths convertis
- * en {@code lowerCamelCase}, ex. {@code "user.firstName,user.address.zipCode"}.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#field-mask">FieldMask</a>.
+ * Canonical JSON: a single comma-separated string with paths converted
+ * to {@code lowerCamelCase}, e.g. {@code "user.firstName,user.address.zipCode"}.</p>
  */
 @ProtobufMessage("google.protobuf.FieldMask")
 public record FieldMask(

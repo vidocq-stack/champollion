@@ -1,61 +1,61 @@
-# ADR 0004 — Protocole `conformance_test_runner` Google + `--failure_list`
+# ADR 0004 — Google `conformance_test_runner` protocol + `--failure_list`
 
-## Statut
+## Status
 
-Accepté — 2026-05-22.
+Accepted — 2026-05-22.
 
-## Contexte
+## Context
 
-Le `conformance_test_runner` Google (compilé via CMake depuis
-`protocolbuffers/protobuf` v35.0, cf. M5.4) communique avec l'implémentation
-testée par un pipe stdin/stdout. Le protocole exact n'est pas trivialement
-documenté et a été reverse-engineering au cours de M5.4.
+Google's `conformance_test_runner` (compiled via CMake from
+`protocolbuffers/protobuf` v35.0, cf. M5.4) communicates with the tested
+implementation via stdin/stdout pipe. The exact protocol is not trivially
+documented and was reverse-engineered during M5.4.
 
-## Décision — Protocole exact
+## Decision — Exact Protocol
 
-1. **Length-prefix LITTLE-ENDIAN, pas big-endian** comme la documentation
-   pourrait laisser penser. Le runner écrit `[4 octets length LE][protobuf
-   ConformanceRequest bytes]` sur stdin du child. Champollion fait l'inverse
-   en sortie.
+1. **Length-prefix LITTLE-ENDIAN, not big-endian** as the documentation
+   might suggest. The runner writes `[4 bytes length LE][protobuf
+   ConformanceRequest bytes]` to the child's stdin. Champollion does the reverse
+   on output.
 
-2. **`fork_pipe_runner`** fork le wrapper à chaque test (pas long-lived).
-   La JVM démarre en ~70 ms avec AppCDS — assez rapide pour 2600 tests
-   séquentiels.
+2. **`fork_pipe_runner`** forks the wrapper for each test (not long-lived).
+   The JVM starts in ~70 ms with AppCDS — fast enough for 2600 sequential
+   tests.
 
-3. **Tag séparateur `--` non supporté.** Le runner moderne accepte uniquement
-   `runner [options] <program>` (program en dernier). On utilise un wrapper
-   bash `target/run-runner.sh` qui `exec java -cp …`.
+3. **Separator tag `--` not supported.** The modern runner only accepts
+   `runner [options] <program>` (program last). We use a bash wrapper
+   `target/run-runner.sh` that does `exec java -cp …`.
 
-4. **Classpath complet via `mvn dependency:build-classpath`.** Le `java -jar
-   tck-jar` ne charge pas les deps externes (NoClassDefFoundError sur
-   `Message`, `jakarta.json-api`, etc.). Le script génère
-   `target/conformance-classpath.txt` et l'utilise pour `java -cp`.
+4. **Complete classpath via `mvn dependency:build-classpath`.** The `java -jar
+   tck-jar` doesn't load external deps (NoClassDefFoundError on
+   `Message`, `jakarta.json-api`, etc.). The script generates
+   `target/conformance-classpath.txt` and uses it for `java -cp`.
 
-5. **`--failure_list FILE`** — fichier texte avec un nom de test par ligne,
-   `#` pour commentaires. Tests listés = expected failures, comptés
-   séparément dans la sortie `CONFORMANCE SUITE PASSED: N successes, …
+5. **`--failure_list FILE`** — text file with one test name per line,
+   `#` for comments. Listed tests = expected failures, counted
+   separately in output `CONFORMANCE SUITE PASSED: N successes, …
    M expected failures, 0 unexpected failures`.
 
-## Conséquences
+## Consequences
 
-**Positives** :
-- Wrapper Java stateless, reproductible. Une seule commande
+**Positives**:
+- Stateless, reproducible Java wrapper. Single command
   `./run-official-conformance-protobuf.sh smoke` → exit 0 = 100% PASS.
-- La failure-list est versionnée — review explicite des "expected failures"
-  à chaque PR (`git diff conformance-failure-list.txt`).
-- Le mode dégradé (sans `CONFORMANCE_TEST_RUNNER` env var) reste opérationnel
-  — utile pour les contributeurs qui n'ont pas le runner builded localement.
+- Failure-list is versioned — explicit "expected failures" review
+  on each PR (`git diff conformance-failure-list.txt`).
+- Degraded mode (without `CONFORMANCE_TEST_RUNNER` env var) remains operational
+  — useful for contributors who don't have the runner built locally.
 
-**Négatives** :
-- Le format `--failure_list` n'est pas documenté côté Google ; sa stabilité
-  inter-version n'est pas garantie. Mitigation : re-run mensuel + alerte si
+**Negatives**:
+- The `--failure_list` format is not documented on Google's side; its
+  cross-version stability is not guaranteed. Mitigation: monthly re-run + alert on
   divergence.
 
-## Alternatives écartées
+## Rejected Alternatives
 
-| Option | Pourquoi écarté |
+| Option | Why rejected |
 |---|---|
-| Big-endian length-prefix | Démontré faux par le timeout 30s observé en M5.4 |
-| Long-lived JVM process | `fork_pipe_runner` ne le supporte pas ; il fork à chaque test |
-| Fat jar avec toutes les deps | Lourd (~30 MB), inutile vu le `java -cp` |
-| `failure_list` inline dans le wrapper | Perdrait la review explicite via git diff |
+| Big-endian length-prefix | Proven wrong by the 30s timeout observed in M5.4 |
+| Long-lived JVM process | `fork_pipe_runner` doesn't support it; it forks for each test |
+| Fat jar with all deps | Heavy (~30 MB), unnecessary given `java -cp` |
+| `failure_list` inline in wrapper | Would lose explicit review via git diff |

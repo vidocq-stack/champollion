@@ -54,7 +54,7 @@ class GenerateProtoMojoStaticParserTest {
         GenerateProtoMojo mojo = new GenerateProtoMojo();
         mojo.setSourceDirectory(src.toFile());
         mojo.setOutputDirectory(out.toFile());
-        // staticParser non set → défaut false
+        // staticParser not set → default false
         mojo.execute();
 
         String content = Files.readString(out.resolve("io/example/Person.java"));

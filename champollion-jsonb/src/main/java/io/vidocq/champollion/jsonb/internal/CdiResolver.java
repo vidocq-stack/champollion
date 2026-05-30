@@ -5,19 +5,18 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
 /**
- * Résolveur d'instance pour les beans JSON-B (Adapter / Serializer / Deserializer)
- * conformément à la spec Jakarta JSON-B 3.0 §5 :
+ * Instance resolver for JSON-B beans (Adapter / Serializer / Deserializer)
+ * according to Jakarta JSON-B 3.0 §5:
  *
  * <blockquote>If the CDI container is available, the JSON Binding implementation
  * MUST resolve adapters, serializers and deserializers as CDI beans before
  * falling back to no-arg instantiation.</blockquote>
  *
- * <p>Le lookup CDI est fait par réflexion via {@link MethodHandle} (résolus une
- * seule fois au chargement de la classe) afin de <strong>ne pas créer de
- * dépendance runtime hard</strong> sur {@code jakarta.enterprise.cdi-api}. Si CDI
- * n'est pas sur le classpath, ou si {@code CDI.current()} jette
- * {@link IllegalStateException} (pas de container actif), on retombe sur
- * l'instanciation sans-arg via le constructeur déclaré.</p>
+ * <p>The CDI lookup is performed reflectively via {@link MethodHandle} (resolved
+ * once at class load time) so as to <strong>avoid a hard runtime dependency</strong>
+ * on {@code jakarta.enterprise.cdi-api}. If CDI is not on the classpath, or if
+ * {@code CDI.current()} throws {@link IllegalStateException} (no active container),
+ * we fall back to no-arg instantiation via the declared constructor.</p>
  */
 final class CdiResolver {
 
@@ -45,7 +44,7 @@ final class CdiResolver {
             isAmbiguous = lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class));
             available = true;
         } catch (Throwable ignore) {
-            // CDI absent du classpath — fallback newInstance sera systématique.
+            // CDI absent from the classpath — fallback newInstance will always be used.
         }
         CDI_CURRENT = current;
         CDI_SELECT = select;
@@ -58,17 +57,16 @@ final class CdiResolver {
     private CdiResolver() {}
 
     /**
-     * Résout une instance de {@code beanClass} via CDI si disponible, sinon via
-     * le constructeur sans-arg.
+     * Resolves an instance of {@code beanClass} via CDI if available, otherwise
+     * via the no-arg constructor.
      */
     @SuppressWarnings("unchecked")
     static <T> T resolve(Class<T> beanClass) throws ReflectiveOperationException {
-        // Pré-check static : ne tenter CDI que si la classe est explicitement
-        // un managed bean (annotée @*Scoped, @Singleton, ou ayant @Inject).
-        // Sans ce filtre, un container CDI avec bean-discovery-mode=all peut
-        // produire des instances "synthétiques" pour des classes ordinaires
-        // (Deserializer/Adapter state-free du TCK) et altérer l'état du parser
-        // dans les chemins critiques.
+        // Static pre-check: only attempt CDI if the class is explicitly a managed
+        // bean (annotated with @*Scoped, @Singleton, or bearing @Inject).
+        // Without this filter, a CDI container with bean-discovery-mode=all can
+        // produce "synthetic" instances for ordinary classes (state-free TCK
+        // Deserializer/Adapter) and alter parser state in critical paths.
         if (CDI_AVAILABLE && isLikelyManagedBean(beanClass)) {
             try {
                 Object cdi = CDI_CURRENT.invoke();
@@ -80,17 +78,17 @@ final class CdiResolver {
                     if (bean != null) return (T) bean;
                 }
             } catch (Throwable t) {
-                // Container non démarré → fallback newInstance.
+                // Container not started → fallback newInstance.
             }
         }
         return newInstanceFallback(beanClass);
     }
 
     /**
-     * Heuristique conservatrice : la classe est un managed bean si elle porte
-     * une annotation {@code jakarta.enterprise.context.*Scoped},
-     * {@code jakarta.inject.Singleton}, ou si l'un de ses membres porte
-     * {@code jakarta.inject.Inject} (field, constructor, ou setter).
+     * Conservative heuristic: the class is a managed bean if it carries a
+     * {@code jakarta.enterprise.context.*Scoped} annotation,
+     * {@code jakarta.inject.Singleton}, or if one of its members carries
+     * {@code jakarta.inject.Inject} (field, constructor, or setter).
      */
     private static boolean isLikelyManagedBean(Class<?> cls) {
         for (var ann : cls.getAnnotations()) {

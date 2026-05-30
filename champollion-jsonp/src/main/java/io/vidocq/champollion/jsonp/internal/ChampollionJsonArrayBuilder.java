@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Builder mutable de {@link JsonArray}. {@link #build()} produit une vue immuable.
- * Spec Jakarta JSON-P §4.8.
+ * Mutable {@link JsonArray} builder. {@link #build()} produces an immutable view.
+ * Jakarta JSON-P §4.8.
  */
 public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
 
@@ -179,13 +179,13 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArray build() {
-        // Spec 2.1 §4.8 : build() retourne le résultat ET réinitialise le builder.
+        // Spec 2.1 §4.8: build() returns the result AND resets the builder.
         var snapshot = List.copyOf(values);
         values.clear();
         return ChampollionJsonArray.of(snapshot);
     }
 
-    /** Pratique interne pour les conversions de Collection<JsonValue>. */
+    /** Internal convenience for Collection<JsonValue> conversions. */
     public ChampollionJsonArrayBuilder addAll(Collection<? extends JsonValue> all) {
         values.addAll(all);
         return this;

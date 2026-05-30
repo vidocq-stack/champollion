@@ -31,17 +31,17 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * Implémentation Champollion de {@link JsonProvider}. Point d'entrée principal de
- * Jakarta JSON-P 2.1 : tout passe par {@code Json.create*} qui délègue à ce provider
- * via le ServiceLoader.
+ * Champollion implementation of {@link JsonProvider}. Main Jakarta JSON-P 2.1
+ * entry point: everything goes through {@code Json.create*}, which delegates to
+ * this provider via the ServiceLoader.
  *
- * <p>Décodage des {@link InputStream} : RFC 8259 §8.1 — UTF-8 par défaut, sans BOM.
- * Le BOM est laissé à la charge de la lecture si présent (le scanner le rejettera
- * comme caractère invalide à la racine, conformément à la spec).</p>
+ * <p>Decoding of {@link InputStream}s: RFC 8259 §8.1 — UTF-8 by default, without
+ * BOM. If present, BOM handling is left to the reader (the scanner will reject it
+ * as an invalid root character, as required by the spec).</p>
  */
 public final class ChampollionJsonProvider extends JsonProvider {
 
-    /** Facteurs de configuration. M1.4 : minimal — pretty printing. À enrichir au fil de l'eau. */
+    /** Configuration factor. M1.4: minimal — pretty printing. To be expanded over time. */
     public static final String PRETTY_PRINTING = JsonGenerator.PRETTY_PRINTING;
 
     public ChampollionJsonProvider() {}
@@ -53,9 +53,9 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     /**
-     * Filtre {@code config} pour ne garder que les properties supportées par le
-     * provider (Spec §3.x : {@code getConfigInUse()} ne doit lister que les
-     * properties effectivement reconnues).
+     * Filters {@code config} to keep only the properties supported by the
+     * provider (Spec §3.x: {@code getConfigInUse()} must list only the actually
+     * recognized properties).
      */
     private static Map<String, ?> filterSupported(Map<String, ?> config, java.util.Set<String> supported) {
         if (config == null || config.isEmpty()) return Collections.emptyMap();
@@ -71,10 +71,10 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     /**
-     * Auto-detection de l'encodage selon RFC 8259 §8.1. Lit les 4 premiers octets
-     * (BOM ou heuristique) puis crée le {@link Reader} avec le bon Charset. Le flux
-     * sous-jacent est wrappé dans un {@link java.io.PushbackInputStream} qui rend
-     * les octets non-BOM disponibles à la lecture.
+     * Auto-detects the encoding according to RFC 8259 §8.1. Reads the first 4 bytes
+     * (BOM or heuristic) then creates the {@link Reader} with the correct Charset.
+     * The underlying stream is wrapped in a {@link java.io.PushbackInputStream}
+     * that makes non-BOM bytes available for reading.
      */
     private static Reader autoDetectingReader(InputStream raw) {
         var pb = new java.io.PushbackInputStream(raw, 4);
@@ -86,7 +86,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 if (n < 0) break;
                 read += n;
             }
-            // BOM ?
+            // BOM?
             if (read >= 4 && head[0] == 0x00 && head[1] == 0x00
                     && (head[2] & 0xff) == 0xFE && (head[3] & 0xff) == 0xFF) {
                 return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
@@ -108,13 +108,13 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 pb.unread(head, 3, read - 3);
                 return new InputStreamReader(pb, StandardCharsets.UTF_8);
             }
-            // Pas de BOM : heuristique RFC 8259 §8.1 sur les 4 premiers octets.
-            // Le premier caractère JSON significatif est ASCII (whitespace ou structurel).
-            // Si head[0] == 0 et head[1] == 0 → UTF-32BE
-            // Si head[1] == 0 et head[3] == 0 → UTF-16LE
-            // Si head[0] == 0 et head[2] == 0 → UTF-16BE
-            // Si head[1] == 0 et head[2] == 0 → UTF-32LE
-            // Sinon → UTF-8
+            // No BOM: RFC 8259 §8.1 heuristic on the first 4 bytes.
+            // The first significant JSON character is ASCII (whitespace or structural).
+            // If head[0] == 0 and head[1] == 0 → UTF-32BE
+            // If head[1] == 0 and head[3] == 0 → UTF-16LE
+            // If head[0] == 0 and head[2] == 0 → UTF-16BE
+            // If head[1] == 0 and head[2] == 0 → UTF-32LE
+            // Otherwise → UTF-8
             if (read > 0) pb.unread(head, 0, read);
             if (read >= 4 && head[0] == 0 && head[1] == 0) {
                 return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
@@ -128,9 +128,9 @@ public final class ChampollionJsonProvider extends JsonProvider {
             if (read >= 2 && head[1] == 0) {
                 return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
             }
-            // RFC 8259 §8.1 : un JSON valide ne peut pas commencer par 0x00 en UTF-8 ;
-            // si head[0] == 0 et qu'on n'a pas pu déterminer l'encoding (< 2 octets de
-            // contexte ou pattern ambigu), on lève JsonException.
+            // RFC 8259 §8.1: valid JSON cannot start with 0x00 in UTF-8;
+            // if head[0] == 0 and the encoding cannot be determined (< 2 bytes of
+            // context or ambiguous pattern), throw JsonException.
             if (read >= 1 && head[0] == 0) {
                 throw new jakarta.json.JsonException("Cannot determine JSON encoding");
             }
@@ -155,7 +155,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonParserFactory createParserFactory(Map<String, ?> config) {
-        // Aucune property supportée par JsonParserFactory en JSON-P 2.1.
+        // No properties supported by JsonParserFactory in JSON-P 2.1.
         Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
         return new JsonParserFactory() {
             @Override public JsonParser createParser(Reader reader) { return new ChampollionJsonParser(reader); }
@@ -284,7 +284,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return b;
     }
 
-    /** Convertit une valeur arbitraire (récupérée d'une Map) en JsonValue. */
+    /** Converts an arbitrary value (retrieved from a Map) into a JsonValue. */
     private static JsonValue toJsonValue(Object v) {
         if (v == null) return JsonValue.NULL;
         if (v instanceof JsonValue jv) return jv;
@@ -373,7 +373,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
             }
             return ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(d));
         }
-        // Fallback : utilise toString() qui doit produire un littéral numérique.
+        // Fallback: use toString(), which should produce a numeric literal.
         return ChampollionJsonNumber.of(new java.math.BigDecimal(value.toString()));
     }
 
@@ -408,7 +408,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonBuilderFactory createBuilderFactory(Map<String, ?> config) {
-        // Aucune property supportée par JsonBuilderFactory en JSON-P 2.1.
+        // No properties supported by JsonBuilderFactory in JSON-P 2.1.
         Map<String, ?> snapshot = filterSupported(config, java.util.Set.of());
         ChampollionJsonProvider self = this;
         return new JsonBuilderFactory() {
@@ -431,9 +431,10 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     /**
-     * Wrapper qui flush l'OutputStream sous-jacent après écriture, parce que les
-     * {@link OutputStreamWriter} bufferisent sans flush automatique côté byte stream.
-     * Sans cela, {@code ByteArrayOutputStream} retournerait une chaîne vide après close().
+     * Wrapper that flushes the underlying OutputStream after writing, because
+     * {@link OutputStreamWriter}s buffer without automatically flushing the byte
+     * stream. Without this, {@code ByteArrayOutputStream} would return an empty
+     * string after close().
      */
     private record FlushingJsonWriter(ChampollionJsonWriter delegate, OutputStream out) implements JsonWriter {
         @Override public void writeArray(JsonArray array) {

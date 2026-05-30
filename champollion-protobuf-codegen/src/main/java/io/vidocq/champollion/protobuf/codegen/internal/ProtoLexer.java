@@ -8,15 +8,15 @@ import java.util.List;
  *
  * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/proto3-spec/#lexical_elements">Proto3 §Lexical Elements</a>.</p>
  *
- * <p>Reconnaît :</p>
+ * <p>Recognizes:</p>
  * <ul>
  *   <li>identifiers : {@code [A-Za-z_][A-Za-z0-9_]*}</li>
  *   <li>full identifiers : {@code Foo.Bar.Baz}</li>
- *   <li>integer literals : décimal, hex {@code 0x...}, octal {@code 0...}</li>
- *   <li>float literals : optionnel pour M2.1</li>
- *   <li>string literals : {@code "..."} ou {@code '...'} avec escapes basiques</li>
+ *   <li>integer literals: decimal, hex {@code 0x...}, octal {@code 0...}</li>
+ *   <li>float literals: optional for M2.1</li>
+ *   <li>string literals: {@code "..."} or {@code '...'} with basic escapes</li>
  *   <li>punctuation : {@code = ; { } [ ] ( ) , .}</li>
- *   <li>line comments {@code //...} et block comments {@code /* ... *}{@code /} skip silencieusement</li>
+ *   <li>line comments {@code //...} and block comments {@code /* ... *}{@code /} are skipped silently</li>
  * </ul>
  */
 public final class ProtoLexer {
@@ -100,7 +100,7 @@ public final class ProtoLexer {
 
     private Token readIntLiteral(int startLine, int startCol) {
         int start = pos;
-        // Détection hex 0x...
+        // Hex detection 0x...
         if (src.charAt(pos) == '0' && pos + 1 < src.length()
                 && (src.charAt(pos + 1) == 'x' || src.charAt(pos + 1) == 'X')) {
             advance(); advance();

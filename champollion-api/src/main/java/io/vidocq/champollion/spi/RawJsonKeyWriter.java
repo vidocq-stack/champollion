@@ -1,18 +1,18 @@
 package io.vidocq.champollion.spi;
 
 /**
- * SPI optionnelle implémentée par les {@link jakarta.json.stream.JsonGenerator}
- * Champollion pour permettre aux outils de codegen statique de bypasser l'escape
- * RFC 8259 §7 sur les noms de propriétés connus à la compilation.
+ * Optional SPI implemented by Champollion {@link jakarta.json.stream.JsonGenerator}
+ * instances to let static codegen tools bypass RFC 8259 §7 escaping for property
+ * names known at compile time.
  *
- * <p>Le contrat : {@link #writeKeyRaw(String)} accepte une chaîne déjà entourée
- * de guillemets et déjà escape, et l'écrit telle quelle dans le flux, en gérant
- * la virgule de séparation et le {@code :} comme {@link
+ * <p>Contract: {@link #writeKeyRaw(String)} accepts a string already wrapped
+ * in quotes and already escaped, and writes it as-is to the stream, handling
+ * the separator comma and {@code :} like {@link
  * jakarta.json.stream.JsonGenerator#writeKey(String)}.</p>
  *
- * <p>Usage typique côté binding statique généré :</p>
+ * <p>Typical usage on the generated static binding side:</p>
  * <pre>{@code
- * private static final String K_x = "\"x\"";  // pré-encoded à la compile
+ * private static final String K_x = "\"x\"";  // pre-encoded at compile time
  *
  * public void write(JsonGenerator g, Coord v) {
  *     g.writeStartObject();
@@ -29,25 +29,25 @@ package io.vidocq.champollion.spi;
 public interface RawJsonKeyWriter {
 
     /**
-     * Écrit un nom de propriété pré-encodé dans le flux.
+     * Writes a pre-encoded property name to the stream.
      *
-     * @param preQuotedKey la chaîne {@code "<name>"} avec guillemets et escape
-     *                     RFC 8259 §7 déjà appliqué
+     * @param preQuotedKey the {@code "<name>"} string with quotes and RFC 8259 §7
+     *                     escaping already applied
      */
     void writeKeyRaw(String preQuotedKey);
 
     /**
-     * Variante fusionnée : le fragment fourni inclut <em>déjà</em> le {@code :}
-     * final ({@code "name":}). Permet au generator d'émettre key + colon en un
-     * unique {@code Writer.write(String)} au lieu de deux appels séparés —
-     * payant sur les hot loops avec petites clés ASCII.
+     * Merged variant: the supplied fragment already includes the final
+     * {@code :} ({@code "name":}). Lets the generator emit key + colon in one
+     * {@code Writer.write(String)} call instead of two separate calls — useful
+     * on hot loops with small ASCII keys.
      *
-     * <p>Implémentation par défaut : délègue à {@link #writeKeyRaw(String)} en
-     * extrayant le fragment sans le colon, puis émet le colon séparément. Les
-     * implémentations Champollion override pour la voie rapide.</p>
+     * <p>Default implementation: delegates to {@link #writeKeyRaw(String)} by
+     * extracting the fragment without the colon, then emits the colon separately.
+     * Champollion implementations override this for the fast path.</p>
      *
-     * @param preQuotedKeyWithColon la chaîne {@code "<name>":} (guillemets +
-     *                              escape + colon final)
+     * @param preQuotedKeyWithColon the {@code "<name>":} string (quotes +
+     *                              escaping + final colon)
      */
     default void writeKeyRawWithColon(String preQuotedKeyWithColon) {
         int n = preQuotedKeyWithColon.length();

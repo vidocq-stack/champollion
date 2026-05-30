@@ -8,16 +8,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Collecte les champs lus du wire dont le schéma local ignore le numéro.
+ * Collects wire fields whose number is ignored by the local schema.
  *
- * <p>Forward-compat exigée par Edition 2023 (§Unknown Fields) : un message
- * sérialisé par une version récente du schéma doit pouvoir transiter par une
- * version plus ancienne du code sans perte. Chaque champ inconnu est stocké
- * avec son numéro et son wire type d'origine, et ré-émis tel quel au moment
- * du {@code writeTo}.</p>
+ * <p>Forward compatibility required by Edition 2023 (§Unknown Fields): a message
+ * serialized by a newer version of the schema must be able to pass through an
+ * older version of the code without loss. Each unknown field is stored
+ * with its original number and wire type, and re-emitted as-is when
+ * {@code writeTo} is called.</p>
  *
- * <p>Immutable. {@link Builder} pour la construction ; {@link #writeTo(CodedOutputStream)}
- * réémet les champs dans l'ordre d'insertion.</p>
+ * <p>Immutable. {@link Builder} for construction; {@link #writeTo(CodedOutputStream)}
+ * re-emits fields in insertion order.</p>
  */
 public final class UnknownFieldSet {
 
@@ -25,10 +25,10 @@ public final class UnknownFieldSet {
 
     private final Map<Integer, Field> fields;
     /**
-     * Liste flat des occurrences dans l'ordre exact où elles ont été lues du wire.
-     * Permet de re-émettre {@link #writeTo(CodedOutputStream)} en préservant
-     * l'ordre per-occurrence (exigé par {@code UnknownOrdering} de la conformance
-     * Google).
+     * Flat list of occurrences in the exact order they were read from the wire.
+     * Lets {@link #writeTo(CodedOutputStream)} re-emit while preserving
+     * per-occurrence order (required by the Google conformance {@code UnknownOrdering}
+     * test).
      */
     private final List<RawEntry> orderedEntries;
 
@@ -50,8 +50,8 @@ public final class UnknownFieldSet {
     }
 
     /**
-     * Réémet tous les champs inconnus stockés. L'ordre préservé est l'ordre
-     * <b>per-occurrence</b> exact d'origine sur la wire (cf. {@link #orderedEntries}).
+     * Re-emits all stored unknown fields. The preserved order is the
+     * exact original <b>per-occurrence</b> order on the wire (cf. {@link #orderedEntries}).
      */
     public void writeTo(CodedOutputStream out) throws IOException {
         for (RawEntry e : orderedEntries) {
@@ -59,7 +59,7 @@ public final class UnknownFieldSet {
         }
     }
 
-    /** Taille en octets nécessaire pour réémettre les champs inconnus. */
+    /** Size in bytes needed to re-emit unknown fields. */
     public int getSerializedSize() {
         int total = 0;
         for (RawEntry e : orderedEntries) {
@@ -83,10 +83,10 @@ public final class UnknownFieldSet {
     }
 
     /**
-     * Aggrégateur par numéro de champ : tous les wire types observés pour un
-     * même numéro sont concaténés dans des listes parallèles (un même numéro
-     * peut apparaître plusieurs fois avec des wire types différents, ex.
-     * passage packed → expanded entre versions du schéma).
+     * Field-number aggregator: all observed wire types for a
+     * given number are concatenated into parallel lists (the same number
+     * can appear multiple times with different wire types, e.g.
+     * transition from packed → expanded between schema versions).
      */
     public static final class Field {
         private final List<Long> varints;
@@ -171,9 +171,9 @@ public final class UnknownFieldSet {
     }
 
     /**
-     * Construction d'un {@link UnknownFieldSet}. Implémente l'interface
-     * {@link CodedInputStream.UnknownFieldRecorder} pour être branchée
-     * directement sur {@code skipField(tag, recorder)}.
+     * Builds an {@link UnknownFieldSet}. Implements the
+     * {@link CodedInputStream.UnknownFieldRecorder} interface to plug directly
+     * into {@code skipField(tag, recorder)}.
      */
     public static final class Builder implements CodedInputStream.UnknownFieldRecorder {
         private final Map<Integer, FieldBuilder> fields = new LinkedHashMap<>();
@@ -219,7 +219,7 @@ public final class UnknownFieldSet {
         }
     }
 
-    /** Une seule occurrence wire d'un field inconnu, dans son ordre d'arrivée. */
+    /** A single wire occurrence of an unknown field, in arrival order. */
     private record RawEntry(int fieldNumber, int wireType,
                             long varintOrFixed64, int fixed32,
                             byte[] lengthDelimited) {

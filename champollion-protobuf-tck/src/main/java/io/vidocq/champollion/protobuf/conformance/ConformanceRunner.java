@@ -29,24 +29,24 @@ import java.util.Map;
  *
  * <p>Spec : <a href="https://github.com/protocolbuffers/protobuf/blob/main/conformance/README.md">conformance/README.md</a>.</p>
  *
- * <p>Protocole : un test runner externe pipe sur {@code stdin}
+ * <p>Protocol: an external test runner pipes to {@code stdin}
  * {@code [4-byte BIG-ENDIAN length][ConformanceRequest protobuf bytes]}
- * et attend en réponse sur {@code stdout}
+ * and expects a response on {@code stdout}
  * {@code [4-byte BIG-ENDIAN length][ConformanceResponse protobuf bytes]}.
- * Fin de session = stdin EOF.</p>
+ * End of session = stdin EOF.</p>
  *
- * <p>M1.6 squelette : la majorité des tests ciblent le type proto3
- * {@code TestAllTypesProto3} qui n'est pas encore mappé en records (le codegen
- * {@code .proto → java} viendra en M2). En attendant, on renvoie {@code skipped}
- * pour tout {@code message_type} inconnu et on traite les cas spéciaux
- * "round-trip vide" comme PASS. L'infrastructure pipe/protocol est
- * opérationnelle et prête à recevoir M2.</p>
+ * <p>M1.6 skeleton: most tests target the proto3 type
+ * {@code TestAllTypesProto3} which is not yet mapped to records (the
+ * {@code .proto → java} codegen will come in M2). In the meantime, we return {@code skipped}
+ * for any unknown {@code message_type} and handle the special cases
+ * "empty round-trip" as PASS. The pipe/protocol infrastructure is
+ * operational and ready for M2.</p>
  */
 public final class ConformanceRunner {
 
     /**
-     * Registry des messages connus indexé par proto fullName (valeur de
-     * {@link ProtobufMessage#value()}). Ajouter ici tout nouveau type généré.
+     * Registry of known messages indexed by proto fullName (value of
+     * {@link ProtobufMessage#value()}). Add any newly generated type here.
      */
     private static final Map<String, Class<?>> KNOWN_TYPES = new HashMap<>();
     static {
@@ -54,7 +54,7 @@ public final class ConformanceRunner {
         register(NestedMessageT.class);
         register(TestAllTypesProto2.class);
         register(NestedMessageP2.class);
-        // Enregistre aussi dans le TypeRegistry pour Any.@type roundtrip.
+        // Also register in the TypeRegistry for Any.@type roundtrip.
         io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(TestAllTypesProto3.class);
         io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(TestAllTypesProto2.class);
         io.vidocq.champollion.protobuf.wkt.TypeRegistry.register(NestedMessageT.class);
@@ -69,7 +69,7 @@ public final class ConformanceRunner {
         register(io.vidocq.champollion.protobuf.wkt.Struct.class);
         register(io.vidocq.champollion.protobuf.wkt.Value.class);
         register(io.vidocq.champollion.protobuf.wkt.ListValue.class);
-        // NullValue est un enum sans @ProtobufMessage → ne peut pas être register top-level.
+        // NullValue is an enum without @ProtobufMessage → cannot be registered top-level.
         register(Wrappers.DoubleValue.class);
         register(Wrappers.FloatValue.class);
         register(Wrappers.Int64Value.class);
@@ -107,9 +107,9 @@ public final class ConformanceRunner {
             if (read != 4) {
                 throw new IOException("Truncated length prefix (got " + read + " bytes)");
             }
-            // Le runner Google encode la longueur en LITTLE-endian (cf.
+            // The Google runner encodes the length in LITTLE-endian (cf.
             // conformance_test_runner.cc fork_pipe_runner WriteFd / ReadFd) —
-            // contrairement à ce que suggère parfois la doc.
+            // contrary to what the documentation sometimes suggests.
             int len = (lenBuf[0] & 0xFF)
                     | ((lenBuf[1] & 0xFF) << 8)
                     | ((lenBuf[2] & 0xFF) << 16)

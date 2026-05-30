@@ -15,9 +15,9 @@ import java.util.Objects;
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/encoding/">Protocol Buffers Encoding</a>.</p>
  *
- * <p>Deux implémentations concrètes : array-backed (rapide, copie minimale) et
- * stream-backed (wraps {@link OutputStream}). Nomenclature mentalement alignée
- * sur {@code com.google.protobuf.CodedOutputStream}.</p>
+ * <p>Two concrete implementations: array-backed (fast, minimal copy) and
+ * stream-backed (wraps {@link OutputStream}). Naming is mentally aligned
+ * with {@code com.google.protobuf.CodedOutputStream}.</p>
  */
 public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEncoder,
                                                        CodedOutputStream.StreamEncoder {
@@ -52,15 +52,15 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
     // ------------------------------------------------------------------ Varints
 
     /**
-     * Encode {@code value} en varint sur 1 à 10 octets (MSB = continuation bit).
+     * Encodes {@code value} as a varint over 1 to 10 bytes (MSB = continuation bit).
      *
      * <p>Spec §1 Base 128 Varints — chaque octet contient 7 bits de payload (low
      * 7 bits) + 1 bit de continuation (high bit).</p>
      */
     public final void writeRawVarint32(int value) throws IOException {
-        // Encode {@code value} sur 1 à 5 octets en interprétant value comme unsigned 32-bit.
-        // Le sign-extension à 10 octets exigé pour un {@code int32} négatif est appliqué
-        // par {@link #writeInt32NoTag(int)} qui délègue alors à {@link #writeRawVarint64(long)}.
+        // Encodes {@code value} over 1 to 5 bytes by interpreting value as unsigned 32-bit.
+        // The 10-byte sign extension required for a negative {@code int32} is applied
+        // by {@link #writeInt32NoTag(int)}, which then delegates to {@link #writeRawVarint64(long)}.
         while (true) {
             if ((value & ~0x7F) == 0) {
                 writeRawByte(value);
@@ -118,7 +118,7 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
         writeRawVarint32(WireFormat.makeTag(fieldNumber, wireType));
     }
 
-    // ------------------------------------------------------------------ Scalaires typés
+    // ------------------------------------------------------------------ Typed scalars
 
     public final void writeInt32NoTag(int value) throws IOException {
         if (value >= 0) {
@@ -186,11 +186,11 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
     }
 
     /**
-     * Encode {@code value} en UTF-8 strict — toute séquence UTF-16 mal formée
-     * (surrogate non-pairé) lève {@link MalformedProtobufException}.
+     * Encodes {@code value} as strict UTF-8 — any malformed UTF-16 sequence
+     * (unpaired surrogate) throws {@link MalformedProtobufException}.
      *
-     * <p>Cohérent avec {@code features.utf8_validation = VERIFY} (défaut proto3 / Edition
-     * 2023) et avec la conformance Google {@code Required.Proto3.ProtobufOutput.InvalidUtf8}.</p>
+     * <p>Consistent with {@code features.utf8_validation = VERIFY} (proto3 default / Edition
+     * 2023) and with Google conformance {@code Required.Proto3.ProtobufOutput.InvalidUtf8}.</p>
      */
     public final void writeStringNoTag(String value) throws IOException {
         CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
@@ -289,9 +289,9 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
         writeStringNoTag(value);
     }
 
-    // ------------------------------------------------------------------ Tailles précalculées
+    // ------------------------------------------------------------------ Precomputed sizes
 
-    /** Nombre d'octets nécessaires pour encoder {@code value} en varint. */
+    /** Number of bytes required to encode {@code value} as a varint. */
     public static int computeRawVarint32Size(int value) {
         if ((value & (~0 << 7)) == 0) return 1;
         if ((value & (~0 << 14)) == 0) return 2;
@@ -321,11 +321,11 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
     public abstract void writeRawBytes(byte[] value, int offset, int length) throws IOException;
 
     /**
-     * Force l'écriture des octets bufférisés vers le flux sous-jacent (si applicable).
+     * Forces buffered bytes to be written to the underlying stream (if applicable).
      */
     public abstract void flush() throws IOException;
 
-    /** Position courante depuis le début du buffer (pour {@link ArrayEncoder}). */
+    /** Current position from the start of the buffer (for {@link ArrayEncoder}). */
     public abstract int getTotalBytesWritten();
 
     // ================================================================== Impls
@@ -365,7 +365,7 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
 
         @Override
         public void flush() {
-            // no-op : tout est déjà dans le buffer caller-owned.
+            // no-op: everything is already in the caller-owned buffer.
         }
 
         @Override
@@ -404,7 +404,7 @@ public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEn
                 totalBytesWritten += length;
                 return;
             }
-            // Vide le buffer puis écrit le bloc directement.
+            // Empties the buffer and then writes the block directly.
             int firstChunk = buffer.length - position;
             System.arraycopy(value, off, buffer, position, firstChunk);
             position = buffer.length;

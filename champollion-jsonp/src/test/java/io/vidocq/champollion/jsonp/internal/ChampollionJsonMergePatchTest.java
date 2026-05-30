@@ -100,7 +100,7 @@ class ChampollionJsonMergePatchTest {
                 apply("{\"a\":[{\"b\":\"c\"}]}", "{\"a\":[1]}"));
     }
 
-    /** diff(source, target) doit produire un patch qui appliqué à source donne target. */
+    /** diff(source, target) must produce a patch which when applied to source yields target. */
     @Test
     void diff_then_apply_recovers_target() {
         var source = read("{\"a\":1,\"b\":2,\"c\":{\"x\":1}}");

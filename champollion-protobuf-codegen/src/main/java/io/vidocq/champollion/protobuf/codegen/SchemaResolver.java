@@ -25,30 +25,30 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Résolveur sémantique : convertit un {@link ProtoFile} (AST syntaxique
- * produit par {@link io.vidocq.champollion.protobuf.codegen.internal.ProtoParser})
- * en {@link Descriptors.FileDescriptor} (modèle réflexif stable).
+ * Semantic resolver: converts a {@link ProtoFile} (syntax AST produced by
+ * {@link io.vidocq.champollion.protobuf.codegen.internal.ProtoParser})
+ * into a {@link Descriptors.FileDescriptor} (stable reflective model).
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/proto3-spec/#identifiers">Proto3 §Type Lookup</a>.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/proto3-spec/#identifiers">Proto3 §Type Lookup</a>.</p>
  *
- * <p>Règles de lookup proto3 / Editions appliquées :</p>
+ * <p>Applied proto3 / Editions lookup rules:</p>
  * <ul>
- *   <li>nom commençant par {@code .} → fully-qualified depuis la racine
- *       (ex. {@code .google.protobuf.Timestamp})</li>
- *   <li>nom non-qualifié → cherché de la portée locale (message courant,
- *       puis enclosing messages, puis fichier, puis imports)</li>
- *   <li>conflit entre {@link MessageDecl} et {@link EnumDecl} interdit</li>
+ *   <li>name starting with {@code .} → fully qualified from the root
+ *       (e.g. {@code .google.protobuf.Timestamp})</li>
+ *   <li>unqualified name → searched from the local scope (current message,
+ *       then enclosing messages, then file, then imports)</li>
+ *   <li>conflict between {@link MessageDecl} and {@link EnumDecl} is forbidden</li>
  * </ul>
  *
- * <p>Les imports ne sont pas suivis en M2.2 : seuls les types définis dans
- * le {@link ProtoFile} courant sont résolus. Le multi-file resolver viendra
- * avec M2.3 ({@link SchemaResolver#resolve(List)}).</p>
+ * <p>Imports are not followed in M2.2: only the types defined in the current
+ * {@link ProtoFile} are resolved. The multi-file resolver will come with
+ * M2.3 ({@link SchemaResolver#resolve(List)}).</p>
  */
 public final class SchemaResolver {
 
     private SchemaResolver() {}
 
-    /** Résout un seul fichier (pas de cross-file imports). */
+    /** Resolves a single file (no cross-file imports). */
     public static Descriptors.FileDescriptor resolve(ProtoFile file) {
         Map<String, Symbol> table = new LinkedHashMap<>();
         indexFile(file, table);
@@ -56,18 +56,17 @@ public final class SchemaResolver {
     }
 
     /**
-     * Résolution multi-file. La table de symboles est construite par walk de
-     * tous les fichiers (chaque message/enum est indexé par son fullName, le
-     * package proto étant le préfixe). Les références cross-file dans
-     * {@link NamedType} sont résolues contre cette table commune.
+     * Multi-file resolution. The symbol table is built by walking all files
+     * (each message/enum is indexed by its fullName, with the proto package as
+     * the prefix). Cross-file references in {@link NamedType} are resolved
+     * against this shared table.
      *
-     * <p>Note M2.5 : les imports ne sont pas exigés pour pouvoir référencer
-     * un type cross-file — la résolution est globale. Le check strict
-     * "tout type référencé doit provenir d'un import déclaré" sera ajouté
-     * en M2.6 quand on traitera la stricte séparation des namespaces.</p>
+     * <p>Note M2.5: imports are not required in order to reference a cross-file
+     * type — resolution is global. The strict check
+     * "every referenced type must come from a declared import" will be added
+     * in M2.6 when we handle strict namespace separation.</p>
      *
-     * @return map {@code fileName → FileDescriptor} préservant l'ordre
-     *         d'insertion des sources.
+     * @return map {@code fileName → FileDescriptor} preserving source insertion order.
      */
     public static Map<String, Descriptors.FileDescriptor> resolveAll(Collection<ProtoFile> files) {
         Objects.requireNonNull(files, "files");
@@ -136,7 +135,7 @@ public final class SchemaResolver {
                 case "utf8_validation" -> uv = Descriptors.Utf8Validation.valueOf(v);
                 case "message_encoding" -> me = Descriptors.MessageEncoding.valueOf(v);
                 case "json_format" -> jf = Descriptors.JsonFormat.valueOf(v);
-                default -> { /* feature inconnue — silencieusement ignorée */ }
+                default -> { /* unknown feature — silently ignored */ }
             }
         }
         return new Descriptors.Features(fp, et, rfe, uv, me, jf);
@@ -207,7 +206,7 @@ public final class SchemaResolver {
         if (reference.startsWith(".")) {
             return table.get(reference.substring(1));
         }
-        // Recherche locale → puis remontée des scopes parents → racine
+        // Local search → then walk up parent scopes → root
         String scope = currentScope;
         while (true) {
             String candidate = join(scope, reference);
@@ -271,7 +270,7 @@ public final class SchemaResolver {
             }
         }
 
-        // packed dépend désormais de la feature repeated_field_encoding
+        // packed now depends on the repeated_field_encoding feature
         boolean packed = card == Descriptors.Cardinality.REPEATED
                 && type.packable()
                 && inherited.repeatedFieldEncoding() == Descriptors.RepeatedFieldEncoding.PACKED;
@@ -289,7 +288,7 @@ public final class SchemaResolver {
 
     private static String canonicalFullName(String scope, String simpleName,
                                             String referenceUsed, Map<String, Symbol> table) {
-        // Re-fait le lookup pour retrouver le full name exact dans la table.
+        // Runs the lookup again to recover the exact full name in the table.
         if (referenceUsed.startsWith(".")) return referenceUsed.substring(1);
         String s = scope;
         while (true) {
@@ -299,7 +298,7 @@ public final class SchemaResolver {
             int dot = s.lastIndexOf('.');
             s = (dot < 0) ? "" : s.substring(0, dot);
         }
-        // Fallback : nom simple
+        // Fallback: simple name
         return simpleName;
     }
 
@@ -338,7 +337,7 @@ public final class SchemaResolver {
             case Proto3 ignored -> Descriptors.Syntax.PROTO3;
             case Edition e -> "2023".equals(e.name())
                     ? Descriptors.Syntax.EDITION_2023
-                    : Descriptors.Syntax.EDITION_2023; // toutes les éditions à venir mappées ici
+                    : Descriptors.Syntax.EDITION_2023; // all future editions mapped here
         };
     }
 

@@ -1,15 +1,15 @@
 package io.vidocq.champollion.protobuf;
 
 /**
- * Constantes et utilitaires du wire format Protocol Buffers.
+ * Protocol Buffers wire-format constants and utilities.
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/encoding/">Protocol Buffers Encoding</a>.</p>
  *
- * <p>Un tag est encodé comme {@code varint((field_number << 3) | wire_type)} ;
- * les wire types valides en proto3 / Editions 2023 sont {@link #WIRETYPE_VARINT},
+ * <p>A tag is encoded as {@code varint((field_number << 3) | wire_type)};
+ * valid proto3 / Editions 2023 wire types are {@link #WIRETYPE_VARINT},
  * {@link #WIRETYPE_FIXED64}, {@link #WIRETYPE_LENGTH_DELIMITED}, {@link #WIRETYPE_FIXED32}.
- * {@link #WIRETYPE_START_GROUP} / {@link #WIRETYPE_END_GROUP} sont conservés pour
- * compat proto2 et la feature {@code message_encoding=DELIMITED} d'Editions 2023.</p>
+ * {@link #WIRETYPE_START_GROUP} / {@link #WIRETYPE_END_GROUP} are kept for
+ * proto2 compatibility and the {@code message_encoding=DELIMITED} feature in Editions 2023.</p>
  */
 public final class WireFormat {
 
@@ -23,14 +23,14 @@ public final class WireFormat {
     public static final int TAG_TYPE_BITS = 3;
     public static final int TAG_TYPE_MASK = (1 << TAG_TYPE_BITS) - 1;
 
-    /** Plus petit field_number légal (spec §2). */
+    /** Smallest legal field_number (spec §2). */
     public static final int FIRST_FIELD_NUMBER = 1;
-    /** Plus grand field_number légal : 2^29 - 1 (spec §2). */
+    /** Largest legal field_number: 2^29 - 1 (spec §2). */
     public static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
 
     private WireFormat() {}
 
-    /** {@code (fieldNumber << 3) | wireType}, prêt à être encodé en varint. */
+    /** {@code (fieldNumber << 3) | wireType}, ready to be encoded as a varint. */
     public static int makeTag(int fieldNumber, int wireType) {
         return (fieldNumber << TAG_TYPE_BITS) | wireType;
     }

@@ -6,16 +6,16 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Indique au codegen statique ({@code champollion-protobuf-codegen} APT) qu'un
- * {@code Parser<T>} dédié, sans réflexion, doit être généré pour ce type.
+ * Tells the static codegen ({@code champollion-protobuf-codegen} APT) that a
+ * dedicated {@code Parser<T>} without reflection must be generated for this type.
  *
- * <p>Le record doit aussi porter {@link ProtobufMessage} et ses champs
- * {@link ProtobufField}. Le parser généré est enregistré via
- * {@link java.util.ServiceLoader} comme un {@link ParserProvider} — au runtime
- * {@code Protobuf.parser(Class)} préférera ce parser au runtime reflectif.</p>
+ * <p>The record must also carry {@link ProtobufMessage} and its fields
+ * {@link ProtobufField}. The generated parser is registered via
+ * {@link java.util.ServiceLoader} as a {@link ParserProvider} — at runtime
+ * {@code Protobuf.parser(Class)} will prefer this parser over the reflective runtime.</p>
  *
- * <p>Avantage AOT (GraalVM, Leyden CDS) : aucun {@code MethodHandles},
- * aucune introspection — toute la résolution est faite à la compilation.</p>
+ * <p>AOT advantage (GraalVM, Leyden CDS): no {@code MethodHandles},
+ * no introspection — all resolution is done at compile time.</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)

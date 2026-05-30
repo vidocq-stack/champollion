@@ -7,25 +7,25 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Cache de mappings {@code Java enum constant ↔ proto int value}.
+ * Cache of mappings {@code Java enum constant ↔ proto int value}.
  *
- * <p>Construit une fois par {@code Class<? extends Enum<?>>}, partagé entre
- * tous les call-sites (read/write/scalarSize/JSON). Garde deux maps :</p>
+ * <p>Built once per {@code Class<? extends Enum<?>>}, shared between
+ * all call sites (read/write/scalarSize/JSON). Keeps two maps:</p>
  *
  * <ul>
- *   <li>{@code int → Enum<?>} : utilisé en lecture (wire ou JSON) pour
- *       résoudre une valeur entière reçue vers la constante Java. En cas
- *       d'aliasing, la première constante déclarée gagne.</li>
- *   <li>{@code Enum<?> → int} : utilisé en écriture pour récupérer la valeur
- *       proto à émettre depuis une instance d'enum.</li>
+ *   <li>{@code int → Enum<?>} : used in reads (wire or JSON) to
+ *       resolve an incoming integer value to the Java constant. In case of
+ *       aliasing, the first declared constant wins.</li>
+ *   <li>{@code Enum<?> → int} : used in writes to recover the proto value
+ *       to emit from an enum instance.</li>
  * </ul>
  *
- * <p>Source du mapping :</p>
+ * <p>Mapping source:</p>
  * <ol>
- *   <li>Si la constante porte {@link ProtoEnumValue}, sa {@code value()} est
- *       utilisée (peut être négative, et peut être identique à une autre
- *       pour de l'aliasing).</li>
- *   <li>Sinon, fallback sur {@link Enum#ordinal()} (rétro-compat).</li>
+ *   <li>If the constant carries {@link ProtoEnumValue}, its {@code value()} is
+ *       used (may be negative, and may be identical to another one
+ *       for aliasing).</li>
+ *   <li>Otherwise, fallback to {@link Enum#ordinal()} (backward compat).</li>
  * </ol>
  */
 public final class EnumValueMap {
@@ -65,19 +65,19 @@ public final class EnumValueMap {
                 value = e.ordinal();
             }
             enumToInt.put(e, value);
-            // En cas d'aliasing, la première constante déclarée gagne (putIfAbsent).
+            // In case of aliasing, the first declared constant wins (putIfAbsent).
             intToEnum.putIfAbsent(value, e);
         }
         return new EnumValueMap(intToEnum, enumToInt);
     }
 
-    /** Retourne la constante d'enum correspondant à {@code value}, ou {@code null}
-     * si non mappée (unknown value — proto3 forward-compat). */
+    /** Returns the enum constant corresponding to {@code value}, or {@code null}
+     * if unmapped (unknown value — proto3 forward compat). */
     public Enum<?> byValue(int value) {
         return intToEnum.get(value);
     }
 
-    /** Retourne la valeur proto correspondant à {@code constant}. */
+    /** Returns the proto value corresponding to {@code constant}. */
     public int valueOf(Enum<?> constant) {
         Integer v = enumToInt.get(constant);
         return v != null ? v : constant.ordinal();

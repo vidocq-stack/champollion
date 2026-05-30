@@ -1,22 +1,22 @@
 package io.vidocq.champollion.protobuf;
 
 /**
- * SPI {@link java.util.ServiceLoader} pour fournir des {@link Parser}
- * pré-compilés (mode statique APT).
+ * SPI {@link java.util.ServiceLoader} to provide precompiled {@link Parser}
+ * instances (APT static mode).
  *
- * <p>Chaque module qui ajoute des classes annotées {@link ProtobufStatic}
- * contribue un implémentation de {@code ParserProvider} via le service file
+ * <p>Each module that adds classes annotated {@link ProtobufStatic}
+ * contributes an implementation of {@code ParserProvider} via the service file
  * {@code META-INF/services/io.vidocq.champollion.protobuf.ParserProvider}.</p>
  *
- * <p>{@link Protobuf#parser(Class)} consulte les providers dans l'ordre du
- * ServiceLoader. Le premier qui retourne un parser non-null est utilisé.
- * Si aucun ne matche, le runtime reflectif M1.3 prend le relais.</p>
+ * <p>{@link Protobuf#parser(Class)} consults providers in {@link ServiceLoader}
+ * order. The first one that returns a non-null parser is used.
+ * If none match, the M1.3 reflective runtime takes over.</p>
  */
 public interface ParserProvider {
 
     /**
-     * @return un {@link Parser} pour {@code type}, ou {@code null} si ce
-     * provider ne sait pas le gérer.
+     * @return a {@link Parser} for {@code type}, or {@code null} if this
+     * provider cannot handle it.
      */
     <T> Parser<T> parserFor(Class<T> type);
 }

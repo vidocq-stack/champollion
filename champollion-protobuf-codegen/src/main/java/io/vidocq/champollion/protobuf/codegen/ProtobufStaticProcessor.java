@@ -34,30 +34,30 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Annotation Processor pour {@link ProtobufStatic}.
+ * Annotation processor for {@link ProtobufStatic}.
  *
- * <p>Pour chaque record annoté, génère deux sources :</p>
+ * <p>For each annotated record, generates two sources:</p>
  * <ul>
- *   <li>{@code <FQN>$$Parser.java} — implémente {@code Parser<T>} via un
- *       switch sur le {@code field_number} sans réflexion, MethodHandles,
- *       ni ClassLoader lookup. Compatible AOT (GraalVM, Leyden CDS).</li>
- *   <li>{@code <FQN>$$ParserProvider.java} — implémente
- *       {@code ParserProvider}, retourne le parser ci-dessus si le type
- *       demandé matche, sinon {@code null}.</li>
+ *   <li>{@code <FQN>$$Parser.java} — implements {@code Parser<T>} via a
+ *       switch on the {@code field_number} without reflection, MethodHandles,
+ *       or ClassLoader lookup. AOT-compatible (GraalVM, Leyden CDS).</li>
+ *   <li>{@code <FQN>$$ParserProvider.java} — implements
+ *       {@code ParserProvider}, returns the parser above if the requested
+ *       type matches, otherwise {@code null}.</li>
  * </ul>
  *
- * <p>En fin de traitement, écrit le service file
+ * <p>At the end of processing, writes the service file
  * {@code META-INF/services/io.vidocq.champollion.protobuf.ParserProvider}
- * avec une ligne par provider généré ; le runtime
- * {@link io.vidocq.champollion.protobuf.Protobuf#parser(Class)} préfère
- * ces providers au runtime reflectif.</p>
+ * with one line per generated provider; the runtime
+ * {@link io.vidocq.champollion.protobuf.Protobuf#parser(Class)} prefers
+ * these providers over the reflective runtime.</p>
  *
- * <p>M3.1 — couvre scalaires (int32/int64/uint32/uint64/sint32/sint64,
- * fixed32/64, sfixed32/64, float, double, bool, string, bytes), enum
- * (via {@code values()[ordinal]}) et repeated scalaire (packed lu via
- * {@code pushLimit}, expanded toléré). Messages imbriqués délégués à
- * {@code Protobuf.parser(NestedClass.class)} pour récursivité — cela
- * laisse le runtime résoudre via ServiceLoader si le nested est aussi
+ * <p>M3.1 — covers scalars (int32/int64/uint32/uint64/sint32/sint64,
+ * fixed32/64, sfixed32/64, float, double, bool, string, bytes), enums
+ * (via {@code values()[ordinal]}) and repeated scalars (packed read via
+ * {@code pushLimit}, expanded tolerated). Nested messages are delegated to
+ * {@code Protobuf.parser(NestedClass.class)} for recursion — this lets the
+ * runtime resolve via ServiceLoader if the nested type is also
  * {@code @ProtobufStatic}.</p>
  */
 @SupportedAnnotationTypes("io.vidocq.champollion.protobuf.ProtobufStatic")
@@ -157,7 +157,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("                default: in.skipField(tag);");
             pw.println("            }");
             pw.println("        }");
-            // Construction du record
+            // Record construction
             pw.print("        return new " + simple + "(");
             boolean first = true;
             for (RecordComponentElement rc : comps) {
@@ -168,7 +168,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println(");");
             pw.println("    }");
             pw.println();
-            // Helper pour les nested messages : limit + recursion guard.
+            // Helper for nested messages: limit + recursion guard.
             pw.println("    private static <X> X readNested(Class<X> cls, CodedInputStream in) throws IOException {");
             pw.println("        int sz = in.readRawVarint32();");
             pw.println("        int ol = in.pushLimit(sz);");
@@ -179,7 +179,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("        return result;");
             pw.println("    }");
             pw.println();
-            // Helper enum-lenient (proto3 forward-compat : valeurs unknown → null).
+            // Lenient enum helper (proto3 forward-compat: unknown values → null).
             pw.println("    private static <E> E lookupEnumOrNull(E[] values, int ordinal) {");
             pw.println("        if (ordinal < 0 || ordinal >= values.length) return null;");
             pw.println("        return values[ordinal];");
@@ -216,7 +216,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
     }
 
     private void writeServiceFile(Filer filer) throws IOException {
-        // Lire l'existant s'il y en a un (incrémental compile).
+        // Read the existing one if there is one (incremental compile).
         Set<String> all = new LinkedHashSet<>(providers);
         try {
             FileObject existing = filer.getResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
@@ -229,7 +229,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                 }
             }
         } catch (IOException ignored) {
-            // Pas de service file existant — on en crée un.
+            // No existing service file — create one.
         }
         FileObject out = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
         try (Writer w = out.openWriter()) {
@@ -256,9 +256,9 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             return "java.util.List<" + boxIfPrimitive(elem) + "> " + name
                     + " = new java.util.ArrayList<>();";
         }
-        // Si le record component est un type wrapper boxé (Integer, Long, etc.)
-        // OU si @ProtobufField(explicitPresence=true), on initialise à null —
-        // sémantique de proto2/Edition 2023 'EXPLICIT' / oneof.
+        // If the record component is a boxed wrapper type (Integer, Long, etc.)
+        // OR if @ProtobufField(explicitPresence=true), initialize to null —
+        // proto2 / Edition 2023 'EXPLICIT' / oneof semantics.
         boolean boxedOrExplicit = pf.explicitPresence()
                 || (tm.getKind().name().equals("DECLARED") && isWrapperType(tm));
         if (boxedOrExplicit) {
@@ -294,8 +294,8 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
         if (repeated) {
             String elem = listElementJavaType(tm);
             if (pf.type().packable()) {
-                // Packed payload : un seul tag LEN, payload = concat ; tolère
-                // aussi la forme expanded (un tag par valeur).
+                // Packed payload: a single LEN tag, payload = concatenation; tolerates
+                // the expanded form as well (one tag per value).
                 pw.println("                    if (wt == WireFormat.WIRETYPE_LENGTH_DELIMITED) {");
                 pw.println("                        int sz = in.readRawVarint32();");
                 pw.println("                        int ol = in.pushLimit(sz);");
@@ -334,7 +334,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case BYTES -> "in.readBytes()";
             case ENUM -> "lookupEnumOrNull(" + javaElemType + ".values(), in.readEnum())";
             case MESSAGE -> "readNested(" + javaElemType + ".class, in)";
-            // MAP non supporté en static codegen — le runtime reflectif gère ces fields.
+            // MAP is not supported in static codegen — the reflective runtime handles these fields.
             case MAP -> "/* MAP handled by runtime */null";
         };
     }

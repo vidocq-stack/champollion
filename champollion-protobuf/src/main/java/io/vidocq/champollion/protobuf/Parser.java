@@ -4,11 +4,11 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Désérialise des octets Protocol Buffers en une instance de {@code T}.
+ * Deserializes Protocol Buffers bytes into an instance of {@code T}.
  *
- * <p>Implémentations obtenues via {@link Protobuf#parser(Class)} (résolution
- * runtime reflectif, cachée par {@link Class}) ou via le codegen statique
- * {@code champollion-protobuf-codegen} (chargé via {@link java.util.ServiceLoader}).</p>
+ * <p>Implementations are obtained via {@link Protobuf#parser(Class)} (reflective
+ * runtime resolution, cached by {@link Class}) or via the static codegen
+ * {@code champollion-protobuf-codegen} (loaded via {@link java.util.ServiceLoader}).</p>
  */
 public interface Parser<T> {
 

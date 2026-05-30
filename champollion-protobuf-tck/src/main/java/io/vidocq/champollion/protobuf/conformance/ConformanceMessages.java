@@ -6,12 +6,12 @@ import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
 /**
- * Mapping Java des messages définis dans {@code conformance.proto} Google.
+ * Java mapping of the messages defined in Google's {@code conformance.proto}.
  *
- * <p>Source upstream :
+ * <p>Upstream source:
  * <a href="https://github.com/protocolbuffers/protobuf/blob/main/conformance/conformance.proto">conformance.proto</a>.
- * Numéros et types repris à l'identique (les valeurs des oneof se distinguent
- * uniquement par leur {@code field_number}).</p>
+ * Field numbers and types are reproduced as-is (oneof values are distinguished
+ * solely by their {@code field_number}).</p>
  */
 public final class ConformanceMessages {
 
@@ -29,8 +29,8 @@ public final class ConformanceMessages {
     }
 
     /**
-     * {@code conformance.ConformanceRequest}. Le {@code oneof payload} est
-     * représenté par 4 champs ; un seul est non-default à la fois.
+     * {@code conformance.ConformanceRequest}. The {@code oneof payload} is
+     * represented by 4 fields; only one is non-default at a time.
      */
     @ProtobufMessage
     public record ConformanceRequest(
@@ -58,15 +58,15 @@ public final class ConformanceMessages {
     }
 
     /**
-     * {@code conformance.ConformanceResponse}. Le {@code oneof result} d'origine
-     * est représenté par 8 champs ; un seul est non-{@code null} à la fois.
+     * {@code conformance.ConformanceResponse}. The original {@code oneof result}
+     * is represented by 8 fields; only one is non-{@code null} at a time.
      *
-     * <p>{@code explicitPresence=true} sur tous : nécessaire pour que des
-     * payloads <em>vides</em> (ex. {@code protobuf_payload = new byte[0]} quand
-     * le message protobuf encodé est entièrement default) ne soient pas omis,
-     * sinon le runner Google interprète comme "no payload set" et termine sur
-     * {@code unknown payload type: 0}. Les autres factories utilisent {@code null}
-     * pour les champs non sélectionnés afin que {@code writeMessage} les saute
+     * <p>{@code explicitPresence=true} on all: required so that
+     * <em>empty</em> payloads (e.g. {@code protobuf_payload = new byte[0]} when
+     * the encoded protobuf message is entirely default) are not omitted,
+     * otherwise the Google runner interprets as "no payload set" and fails with
+     * {@code unknown payload type: 0}. The other factories use {@code null}
+     * for non-selected fields so that {@code writeMessage} skips them
      * (cf. {@code if (value == null) continue;}).</p>
      */
     @ProtobufMessage

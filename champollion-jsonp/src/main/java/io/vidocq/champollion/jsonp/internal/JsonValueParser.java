@@ -17,12 +17,12 @@ import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
- * Parser qui itère sur une {@link jakarta.json.JsonStructure} ou un {@link JsonValue}
- * en mémoire et émet les {@link JsonParser.Event} correspondants, comme si la
- * structure avait été lue depuis un Reader.
+ * Parser that iterates over an in-memory {@link jakarta.json.JsonStructure} or
+ * {@link JsonValue} and emits the corresponding {@link JsonParser.Event}s, as if
+ * the structure had been read from a Reader.
  *
- * <p>Spec §3.4 : utilisé par {@code Json.createParserFactory().createParser(JsonObject)}
- * et {@code .createParser(JsonArray)}.</p>
+ * <p>Spec §3.4: used by {@code Json.createParserFactory().createParser(JsonObject)}
+ * and {@code .createParser(JsonArray)}.</p>
  */
 public final class JsonValueParser implements JsonParser {
 
@@ -94,7 +94,7 @@ public final class JsonValueParser implements JsonParser {
         return scalarEvent(vf.value);
     }
 
-    /** Pousse la valeur sur la stack et émet le bon event de début. */
+    /** Pushes the value onto the stack and emits the correct start event. */
     private Event enterValue(JsonValue v) {
         if (v instanceof JsonObject o) {
             stack.push(new ObjectFrame(o, true));
@@ -146,7 +146,7 @@ public final class JsonValueParser implements JsonParser {
             if (!hasNext()) throw new IllegalStateException();
             next();
         }
-        // Pour les events scalaires, retourne le JsonValue correspondant.
+        // For scalar events, return the corresponding JsonValue.
         return switch (lastEvent) {
             case VALUE_STRING -> new ChampollionJsonString(lastString);
             case VALUE_NUMBER -> lastNumber;
@@ -155,8 +155,8 @@ public final class JsonValueParser implements JsonParser {
             case VALUE_NULL -> JsonValue.NULL;
             case KEY_NAME -> new ChampollionJsonString(lastString);
             case START_OBJECT, START_ARRAY -> {
-                // Le frame courant est entré ; on doit retourner sa structure complète.
-                // Stratégie : extraire le JsonValue du frame top (avant pop).
+                // The current frame has been entered; return its complete structure.
+                // Strategy: extract the JsonValue from the top frame (before pop).
                 Frame top = stack.peek();
                 yield switch (top) {
                     case ObjectFrame of -> { stack.pop(); skipToEnd(of); yield of.source; }
@@ -169,9 +169,9 @@ public final class JsonValueParser implements JsonParser {
     }
 
     private void skipToEnd(Frame f) {
-        // Le frame actuel a été popé ; on fait avancer le state pour qu'il soit
-        // cohérent avec la sortie du conteneur (on "consomme" les éléments restants).
-        // Comme le state interne ne dépend pas, c'est suffisant de marquer END.
+        // The current frame has been popped; advance state so it stays consistent
+        // with leaving the container (we "consume" the remaining elements).
+        // Since the internal state does not depend on it, marking END is enough.
         if (f instanceof ObjectFrame) lastEvent = Event.END_OBJECT;
         else lastEvent = Event.END_ARRAY;
     }

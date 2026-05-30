@@ -26,18 +26,18 @@ import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
 /**
- * Mojo Champollion : pour les classes JSON-B fournies dans la liste {@code <targets>},
- * génère un binding statique {@code <FQN>$$Binding} via {@code champollion-codegen-apt}
- * sans nécessiter d'annoter le source — utile pour les types externes ou hérités.
+ * Champollion Mojo: for JSON-B classes listed in {@code <targets>}, generates a
+ * static {@code <FQN>$$Binding} via {@code champollion-codegen-apt} without
+ * requiring source annotations — useful for external or inherited types.
  *
- * <p>Le Mojo génère à la volée un fichier source proxy {@code <FQN>$$Trigger.java}
- * annoté {@code @JsonbStatic} qui hérite/wrapper le type cible, puis lance le
- * {@code javac} avec le {@code JsonbStaticProcessor} actif. Les classes générées
- * sont placées dans {@code outputDirectory} qui est ajouté aux sources du projet.</p>
+ * <p>The Mojo generates an on-the-fly proxy source file {@code <FQN>$$Trigger.java}
+ * annotated with {@code @JsonbStatic} that extends/wraps the target type, then
+ * launches {@code javac} with the {@code JsonbStaticProcessor} enabled. Generated
+ * classes are placed in {@code outputDirectory}, which is added to the project sources.</p>
  *
- * <p>Pour les classes annotées {@code @JsonbStatic} directement dans les sources
- * du projet, ce plugin n'est pas nécessaire — l'APT s'active automatiquement
- * pendant la compilation principale.</p>
+ * <p>For classes annotated with {@code @JsonbStatic} directly in the project
+ * sources, this plugin is not needed — the APT activates automatically during the
+ * main compilation.</p>
  */
 @Mojo(name = "generate",
         defaultPhase = LifecyclePhase.GENERATE_SOURCES,
@@ -49,13 +49,13 @@ public class GenerateMojo extends AbstractMojo {
     private MavenProject project;
 
     /**
-     * Liste des FQN des records à scanner et pour lesquels générer un binding.
-     * Les types doivent être présents sur le classpath compile.
+     * List of record FQNs to scan and for which to generate a binding.
+     * The types must be present on the compile classpath.
      */
     @Parameter
     private List<String> targets = new ArrayList<>();
 
-    /** Répertoire de sortie pour les sources générées (proxies + bindings). */
+    /** Output directory for generated sources (proxies + bindings). */
     @Parameter(defaultValue = "${project.build.directory}/generated-sources/champollion")
     private File outputDirectory;
 
@@ -72,17 +72,17 @@ public class GenerateMojo extends AbstractMojo {
             Path sourceTriggers = outputDirectory.toPath().resolve("triggers");
             Files.createDirectories(sourceTriggers);
 
-            // Pour chaque target, génère un trigger annoté @JsonbStatic qui re-déclare
-            // les composants du record (proxy minimaliste). Plus simple : on suppose que
-            // l'utilisateur peut référencer le type via un import et qu'on génère un
-            // record-trigger qui pointe dessus.
-            // M5.8 MVP : on génère des "shadow records" annotés @JsonbStatic qui
-            // re-déclarent les composants d'un record ciblé. L'utilisateur fournit un
-            // FQN pleine forme, et on s'attend à ce que le record cible soit accessible.
+            // For each target, generate a trigger annotated with @JsonbStatic that
+            // redeclares the record components (minimal proxy). Simpler: assume the
+            // user can reference the type via an import and generate a record trigger
+            // that points to it.
+            // M5.8 MVP: generate "shadow records" annotated with @JsonbStatic that
+            // redeclare the components of a targeted record. The user provides a fully
+            // qualified name, and the target record is expected to be accessible.
             //
-            // Pour rester gérable, M5.8 livre l'infrastructure et la phase generate-sources :
-            // l'extension dynamique (introspection de chaque target pour générer les
-            // shadow records) sera enrichie au fur et à mesure des cas d'usage réels.
+            // To keep things manageable, M5.8 ships the infrastructure and the
+            // generate-sources phase: the dynamic extension (introspection of each
+            // target to generate the shadow records) will grow with real use cases.
 
             List<Path> triggerSources = new ArrayList<>();
             for (String fqn : targets) {
@@ -99,13 +99,14 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
-     * Émet un fichier {@code <Pkg>.<Simple>$$Trigger.java} annoté {@code @JsonbStatic}
-     * qui pointe vers un record cible accessible. M5.8 MVP : trigger vide, l'APT
-     * verra l'annotation et générera le binding pour le record déclaré.
+     * Emits a {@code <Pkg>.<Simple>$$Trigger.java} file annotated with
+     * {@code @JsonbStatic} that points to an accessible target record. M5.8 MVP:
+     * empty trigger, the APT sees the annotation and generates the binding for the
+     * declared record.
      *
-     * <p>Note : ce MVP suppose que l'utilisateur a annoté le record cible
-     * directement. La voie "scan tous les records du classpath" sera ajoutée plus
-     * tard quand on aura besoin de couvrir les types externes.</p>
+     * <p>Note: this MVP assumes the user annotated the target record directly. The
+     * "scan all records on the classpath" path will be added later when external
+     * types need to be covered.</p>
      */
     static Path emitTrigger(Path triggersDir, String fqn) throws IOException {
         int dot = fqn.lastIndexOf('.');
@@ -129,8 +130,8 @@ public class GenerateMojo extends AbstractMojo {
     }
 
     /**
-     * Lance le compilateur Java sur les sources trigger, avec le
-     * {@code JsonbStaticProcessor} actif et le classpath compile du projet hôte.
+     * Launches the Java compiler on the trigger sources, with the
+     * {@code JsonbStaticProcessor} enabled and the host project's compile classpath.
      */
     private void runApt(List<Path> sources) throws MojoExecutionException, IOException {
         if (sources.isEmpty()) return;
@@ -142,9 +143,8 @@ public class GenerateMojo extends AbstractMojo {
         try (StandardJavaFileManager fm = compiler.getStandardFileManager(null, null, StandardCharsets.UTF_8)) {
             fm.setLocation(StandardLocation.CLASS_OUTPUT, List.of(outputDirectory));
 
-            // Classpath du projet hôte. getCompileClasspathElements peut lever
-            // une checked exception sur certaines versions Maven : on capture
-            // largement pour rester portable.
+            // Host project's classpath. getCompileClasspathElements can throw a
+            // checked exception on some Maven versions: catch broadly to stay portable.
             List<File> cp = new ArrayList<>();
             try {
                 for (Object e : project.getCompileClasspathElements()) {
@@ -169,7 +169,7 @@ public class GenerateMojo extends AbstractMojo {
         }
     }
 
-    /** Hooks pour les tests : injection programmatique. */
+    /** Test hooks: programmatic injection. */
     void setProject(MavenProject p) { this.project = p; }
     void setTargets(List<String> t) { this.targets = t; }
     void setOutputDirectory(File f) { this.outputDirectory = f; }

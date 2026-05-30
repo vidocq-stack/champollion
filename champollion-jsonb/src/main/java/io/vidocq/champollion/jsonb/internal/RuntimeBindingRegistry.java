@@ -21,11 +21,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Registre des {@link BindingWriter} résolus à la première rencontre d'un type.
+ * Registry of {@link BindingWriter}s resolved the first time a type is seen.
  *
- * <p>Cache : {@link ClassValue} pour amortir le coût de la réflexion. Pour les types
- * paramétrés (collections génériques, M4.3), un {@code ConcurrentHashMap<Type, ...>}
- * sera ajouté en complément.</p>
+ * <p>Cache: {@link ClassValue} to amortize reflection cost. For parameterized
+ * types (generic collections, M4.3), a {@code ConcurrentHashMap<Type, ...>}
+ * will be added alongside it.</p>
  */
 final class RuntimeBindingRegistry {
 
@@ -95,7 +95,7 @@ final class RuntimeBindingRegistry {
 
     BindingWriter writerFor(Type t) {
         if (t == null) return dynamicWriter();
-        // Adapter ou Serializer global enregistré pour ce type : court-circuit.
+        // Registered global adapter or serializer for this type: short-circuit.
         Class<?> raw = rawOf(t);
         var adapterWriter = adapterWriterFor(raw);
         if (adapterWriter != null) return adapterWriter;
@@ -106,7 +106,7 @@ final class RuntimeBindingRegistry {
             if (c == Object.class) return dynamicWriter();
             if (c.isInterface() && !java.util.Map.class.isAssignableFrom(c)
                     && !java.util.Collection.class.isAssignableFrom(c)) {
-                // Interface générique (ex. TypeContainer<T>) : différer au runtime via la classe concrète.
+                // Generic interface (e.g. TypeContainer<T>): defer to runtime via the concrete class.
                 return dynamicWriter();
             }
             return cache.get(c);
@@ -122,14 +122,15 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Cherche un adapter global enregistré via {@code JsonbConfig.withAdapters} dont
-     * le type {@code Original} est assignable depuis {@code raw}. Renvoie un writer
-     * qui invoque {@code adaptToJson} puis délègue au writer du type {@code Adapted}.
+     * Looks up a global adapter registered via {@code JsonbConfig.withAdapters}
+     * whose {@code Original} type is assignable from {@code raw}. Returns a writer
+     * that invokes {@code adaptToJson} and then delegates to the writer for the
+     * {@code Adapted} type.
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     private BindingWriter adapterWriterFor(Class<?> raw) {
         if (globalAdapters.isEmpty() || raw == null || raw == Object.class) return null;
-        // Match exact d'abord, puis assignable.
+        // Exact match first, then assignable.
         var direct = globalAdapters.get(raw);
         if (direct == null) {
             for (var entry : globalAdapters.entrySet()) {
@@ -150,7 +151,7 @@ final class RuntimeBindingRegistry {
         };
     }
 
-    /** Variante de {@link #writerFor(Type)} sans court-circuit adapter, pour éviter une récursion infinie. */
+    /** Variant of {@link #writerFor(Type)} without the adapter short-circuit, to avoid infinite recursion. */
     private BindingWriter writerForRaw(Class<?> c) {
         if (c == null || c == Object.class) return dynamicWriter();
         if (c.isArray()) return arrayWriter(c.getComponentType());
@@ -158,8 +159,8 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Cherche un {@code JsonbSerializer} global enregistré dont le type {@code T}
-     * est assignable depuis {@code raw}. Renvoie un writer qui invoque
+     * Looks up a registered global {@code JsonbSerializer} whose {@code T} type
+     * is assignable from {@code raw}. Returns a writer that invokes
      * {@code serialize(value, gen, ctx)}.
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -179,7 +180,7 @@ final class RuntimeBindingRegistry {
         };
     }
 
-    /** Writer pour {@code @JsonbTypeSerializer} sur record component / Method / Field. */
+    /** Writer for {@code @JsonbTypeSerializer} on a record component / Method / Field. */
     @SuppressWarnings({"rawtypes", "unchecked"})
     java.util.Optional<BindingWriter> customSerializerWriter(java.lang.reflect.AnnotatedElement member,
                                                              java.lang.reflect.Field underlying) {
@@ -191,7 +192,7 @@ final class RuntimeBindingRegistry {
         Class<? extends jakarta.json.bind.serializer.JsonbSerializer> serClass = ann.value();
         jakarta.json.bind.serializer.JsonbSerializer ser;
         try {
-            // §5 — résolution CDI si container disponible, sinon newInstance.
+            // §5 — CDI resolution if a container is available, otherwise newInstance.
             ser = CdiResolver.resolve(serClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbSerializer " + serClass, e);
@@ -202,8 +203,8 @@ final class RuntimeBindingRegistry {
         });
     }
 
-    /** Writer qui résout au runtime par {@code value.getClass()} : nécessaire pour
-     *  les collections/maps non typées (raw types) ou quand le type statique est {@code Object}. */
+    /** Writer that resolves at runtime via {@code value.getClass()}: needed for
+     *  untyped collections/maps (raw types) or when the static type is {@code Object}. */
     private BindingWriter dynamicWriter() {
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
@@ -218,10 +219,10 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Résolution pour types paramétrés : Collection&lt;E&gt;, Map&lt;String,V&gt;, Optional&lt;E&gt;.
-     * Le writer obtenu est <em>spécifique au type</em> et non caché par classe — la JVM réutilise
-     * cependant la même instance pour des types identiques via memoisation interne (M5 : cache
-     * dédié si besoin).
+     * Resolution for parameterized types: Collection&lt;E&gt;, Map&lt;String,V&gt;,
+     * Optional&lt;E&gt;. The resulting writer is <em>type-specific</em> and not cached
+     * by class — the JVM still reuses the same instance for identical types via
+     * internal memoization (M5: dedicated cache if needed).
      */
     private BindingWriter parameterizedWriter(java.lang.reflect.ParameterizedType p) {
         Class<?> raw = (Class<?>) p.getRawType();
@@ -290,11 +291,11 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * JSON-B 3.0 §3.3.1 — byte[] :
+     * JSON-B 3.0 §3.3.1 — byte[]:
      * <ul>
-     *   <li>BYTE (défaut) : array d'entiers signés [-128..127]</li>
-     *   <li>BASE_64 : string base64 standard avec padding</li>
-     *   <li>BASE_64_URL : string base64 URL-safe sans padding</li>
+     *   <li>BYTE (default): array of signed integers [-128..127]</li>
+     *   <li>BASE_64: standard base64 string with padding</li>
+     *   <li>BASE_64_URL: URL-safe base64 string without padding</li>
      * </ul>
      */
     private BindingWriter byteArrayWriter() {
@@ -305,7 +306,7 @@ final class RuntimeBindingRegistry {
         if ("BASE_64_URL".equals(s)) {
             return (g, v) -> g.write(java.util.Base64.getUrlEncoder().encodeToString((byte[]) v));
         }
-        // BYTE par défaut
+        // BYTE by default
         return (g, v) -> {
             g.writeStartArray();
             for (byte b : (byte[]) v) g.write((int) b);
@@ -355,19 +356,19 @@ final class RuntimeBindingRegistry {
         BindingWriter built = Builtins.lookup(type);
         if (built != null) return built;
         if (type.isEnum()) return Builtins.ENUM;
-        if (type == Number.class) return dynamicWriter();   // abstract → résoudre par valeur runtime
+        if (type == Number.class) return dynamicWriter();   // abstract → resolve by runtime value
         if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()
                 && !java.util.Map.class.isAssignableFrom(type)
                 && !java.util.Collection.class.isAssignableFrom(type)) {
             return dynamicWriter();
         }
-        // M4.5 : polymorphisme — si @JsonbTypeInfo (sur la classe ou un supertype),
-        // émet un membre discriminant avant les membres du concrete type.
+        // M4.5: polymorphism — if @JsonbTypeInfo is present (on the class or a
+        // supertype), emit a discriminant member before the concrete type members.
         var info = findTypeInfo(type);
         if (info != null) return polymorphicWriter(info);
         if (type.isRecord()) return resolveRecord(type);
         if (type.isPrimitive()) {
-            // Boxé par l'appelant ; on ne devrait pas arriver ici hors cas tordu.
+            // Boxed by the caller; we should not reach this path except in odd cases.
             return cache.get(boxOf(type));
         }
         if (java.util.Map.class.isAssignableFrom(type)) {
@@ -402,13 +403,13 @@ final class RuntimeBindingRegistry {
             Method accessor = c.getAccessor();
             String name = jsonbName(c, c.getName());
             boolean nillable = isJsonbNillable(c) || writeNullValues;
-            // M4.4f : @JsonbTypeAdapter → applique l'adapter avant écriture.
-            // M4.4d : @JsonbDateFormat sur composant > M4.7 JSONB_DATE_FORMAT global > runtime ISO.
+            // M4.4f: @JsonbTypeAdapter → apply the adapter before writing.
+            // M4.4d: @JsonbDateFormat on component > M4.7 global JSONB_DATE_FORMAT > runtime ISO.
             BindingWriter w = customAdapterWriter(c)
                     .or(() -> customDateWriter(c))
                     .or(() -> globalDateWriter(c.getType()))
                     .orElseGet(() -> writerFor(c.getGenericType()));
-            // P6.1 — privilégier LambdaMetafactory ; fallback Reflection setAccessible.
+            // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
                 try { accessor.setAccessible(true); } catch (Exception ignore) {}
@@ -420,11 +421,13 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Si le composant a {@code @JsonbTypeAdapter(class)}, retourne un writer qui :
-     * 1. instancie l'adapter via son no-arg ctor,
-     * 2. invoque {@code adaptToJson(value)} sur la valeur,
-     * 3. délègue l'écriture du résultat au writer du type {@code Adapted} (déduit du
-     *    super interface paramétré {@code JsonbAdapter<Original, Adapted>}).
+    /**
+     * If the component has {@code @JsonbTypeAdapter(class)}, returns a writer that:
+     * 1. instantiates the adapter via its no-arg ctor,
+     * 2. invokes {@code adaptToJson(value)} on the value,
+     * 3. delegates writing the result to the writer for the {@code Adapted} type
+     *    (derived from the parameterized super interface
+     *    {@code JsonbAdapter<Original, Adapted>}).
      */
     private java.util.Optional<BindingWriter> customAdapterWriter(RecordComponent c) {
         var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter.class);
@@ -435,8 +438,9 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Cherche {@code @JsonbTypeAdapter} sur {@code member} (field ou method) ou,
-     * en repli, sur le {@code underlying} field. Retourne le writer adapté ou empty.
+     * Searches for {@code @JsonbTypeAdapter} on {@code member} (field or method)
+     * or, as a fallback, on the {@code underlying} field. Returns the adapted
+     * writer or empty.
      */
     java.util.Optional<BindingWriter> customAdapterWriter(java.lang.reflect.AnnotatedElement member,
                                                           java.lang.reflect.Field underlying) {
@@ -453,7 +457,7 @@ final class RuntimeBindingRegistry {
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
         jakarta.json.bind.adapter.JsonbAdapter adapter;
         try {
-            // §5 — résolution CDI si container disponible, sinon newInstance.
+            // §5 — CDI resolution if a container is available, otherwise newInstance.
             adapter = CdiResolver.resolve(adapterClass);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
@@ -469,7 +473,7 @@ final class RuntimeBindingRegistry {
         });
     }
 
-    /** Variante de {@link #writerFor(Type)} sans court-circuit adapter. Préserve les ParameterizedType. */
+    /** Variant of {@link #writerFor(Type)} without the adapter short-circuit. Preserves ParameterizedType. */
     private BindingWriter writerForGeneric(java.lang.reflect.Type t) {
         if (t == null) return dynamicWriter();
         if (t instanceof java.lang.reflect.ParameterizedType p) return parameterizedWriter(p);
@@ -478,7 +482,7 @@ final class RuntimeBindingRegistry {
         return writerForRaw(raw);
     }
 
-    /** Examine les génériques de l'interface {@code JsonbAdapter<Original, Adapted>}. */
+    /** Examines the generics of the {@code JsonbAdapter<Original, Adapted>} interface. */
     @SuppressWarnings("rawtypes")
     static Class<?> findAdaptedType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
         java.lang.reflect.Type t = findAdaptedGenericType(adapterClass);
@@ -487,7 +491,7 @@ final class RuntimeBindingRegistry {
         return Object.class;
     }
 
-    /** Renvoie le {@link java.lang.reflect.Type} complet (avec génériques) du paramètre Adapted. */
+    /** Returns the full {@link java.lang.reflect.Type} (including generics) of the Adapted parameter. */
     @SuppressWarnings("rawtypes")
     static java.lang.reflect.Type findAdaptedGenericType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
         for (Class<?> c = adapterClass; c != null && c != Object.class; c = c.getSuperclass()) {
@@ -502,9 +506,9 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Writer date pour un member donné (field ou method) en cherchant @JsonbDateFormat à
-     * plusieurs niveaux : member > déclarant type > package > JsonbConfig.DATE_FORMAT.
-     * Renvoie empty si {@code rawType} n'est pas un type date supporté ou si aucun pattern.
+     * Date writer for a given member (field or method), searching @JsonbDateFormat at
+     * multiple levels: member > declaring type > package > JsonbConfig.DATE_FORMAT.
+     * Returns empty if {@code rawType} is not a supported date type or if no pattern exists.
      */
     private java.util.Optional<BindingWriter> dateWriter(Class<?> rawType, java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
         if (!isDateLikeType(rawType)) return java.util.Optional.empty();
@@ -521,8 +525,8 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Writer numérique customisé via @JsonbNumberFormat (member > type > package > config).
-     * Renvoie empty si pas applicable.
+     * Custom numeric writer via @JsonbNumberFormat (member > type > package > config).
+     * Returns empty if not applicable.
      */
     private java.util.Optional<BindingWriter> numberWriter(Class<?> rawType, java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
         if (!isNumericType(rawType)) return java.util.Optional.empty();
@@ -545,9 +549,9 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Compatibilité TCK §JsonbNumberFormat : depuis Java 13/CLDR moderne, le séparateur
-     * de groupes pour la locale française est U+202F (NNBSP, NARROW NO-BREAK SPACE) ;
-     * le TCK JSON-B 3.0 attend U+00A0 (NBSP). On ré-impose NBSP pour rester conforme.
+     * TCK compatibility for §JsonbNumberFormat: since Java 13 / modern CLDR, the
+     * French grouping separator is U+202F (NNBSP, NARROW NO-BREAK SPACE); the
+     * JSON-B 3.0 TCK expects U+00A0 (NBSP). Reimpose NBSP to stay compliant.
      */
     private static void normalizeFrenchGroupSeparator(java.text.DecimalFormatSymbols sym) {
         char sep = sym.getGroupingSeparator();
@@ -617,7 +621,7 @@ final class RuntimeBindingRegistry {
                 var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
                 if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
-            // Walk superclass packages (anonymous inner classes héritent du parent)
+            // Walk superclass packages (anonymous inner classes inherit from the parent)
             for (Class<?> c = declaringType; c != null && c != Object.class; c = c.getSuperclass()) {
                 var pkg = c.getPackage();
                 if (pkg == null) continue;
@@ -633,17 +637,17 @@ final class RuntimeBindingRegistry {
     }
 
     private static java.util.Locale parseLocale(String tag) {
-        // §4.7.3 : "##default" sur @JsonbNumberFormat / @JsonbDateFormat signifie le format
-        // canonique JSON-B (séparateur de groupes ',' décimal '.'), équivalent à Locale.ROOT.
+        // §4.7.3: "##default" on @JsonbNumberFormat / @JsonbDateFormat means the
+        // canonical JSON-B format (group separator ',' decimal '.'), equivalent to Locale.ROOT.
         if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.ROOT;
         return java.util.Locale.forLanguageTag(tag);
     }
 
     /**
-     * Détecte si un pattern utilise des caractères propres à {@link java.time.format.DateTimeFormatter}
-     * non supportés par {@link java.text.SimpleDateFormat} (notamment {@code x}, {@code X}, {@code Z}
-     * en certains nombres). On route alors la Date/Calendar via DateTimeFormatter après conversion
-     * en {@code ZonedDateTime}.
+     * Detects whether a pattern uses characters specific to {@link java.time.format.DateTimeFormatter}
+     * that are not supported by {@link java.text.SimpleDateFormat} (notably {@code x}, {@code X}, {@code Z}
+     * with certain counts). Date/Calendar are then routed through DateTimeFormatter after conversion
+     * to {@code ZonedDateTime}.
      */
     private static boolean patternUsesDateTimeFormatterChars(String pattern) {
         if (pattern == null) return false;
@@ -683,24 +687,24 @@ final class RuntimeBindingRegistry {
                     var zdt = cal.toInstant().atZone(cal.getTimeZone().toZoneId());
                     g.write(zdt.format(java.time.format.DateTimeFormatter.ISO_ZONED_DATE_TIME));
                 } else {
-                    // Convertir via ZonedDateTime pour aligner sur le format ZonedDateTime UTC
-                    // (IJSON strict §3.5.1 demande que Date/Calendar produisent le même
-                    // format qu'un ZonedDateTime).
+                    // Convert via ZonedDateTime to align with the ZonedDateTime UTC format
+                    // (strict IJSON §3.5.1 requires Date/Calendar to produce the same
+                    // format as a ZonedDateTime).
                     var zdt = cal.toInstant().atZone(cal.getTimeZone().toZoneId());
                     var fmt = java.time.format.DateTimeFormatter.ofPattern(spec.pattern(), spec.locale());
                     g.write(fmt.format(zdt));
                 }
             };
         }
-        // Duration / Period : format ISO 8601 fixe — les patterns DateTimeFormatter ne s'y appliquent pas.
+        // Duration / Period: fixed ISO 8601 format — DateTimeFormatter patterns do not apply.
         if (rawType == java.time.Duration.class || rawType == java.time.Period.class) {
             return (g, value) -> {
                 if (value == null) { g.writeNull(); return; }
                 g.write(value.toString());
             };
         }
-        // java.time : convertir vers ZonedDateTime UTC quand nécessaire pour absorber les patterns
-        // qui exigent des champs absolus (yyyy/MM/dd HH:mm:ss).
+        // java.time: convert to ZonedDateTime UTC when needed to absorb patterns
+        // that require absolute fields (yyyy/MM/dd HH:mm:ss).
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             if (spec.isDefault()) {
@@ -727,8 +731,8 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Si le composant a {@code @JsonbDateFormat}, retourne un writer qui formate
-     * la valeur via {@link java.time.format.DateTimeFormatter#ofPattern}. Sinon empty.
+     * If the component has {@code @JsonbDateFormat}, returns a writer that formats
+     * the value via {@link java.time.format.DateTimeFormatter#ofPattern}. Otherwise empty.
      */
     private static java.util.Optional<BindingWriter> customDateWriter(RecordComponent c) {
         var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
@@ -740,7 +744,7 @@ final class RuntimeBindingRegistry {
         java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(ann.value());
         Class<?> rawType = c.getType();
         return java.util.Optional.of((g, value) -> {
-            // Délègue à TemporalAccessor.format quand applicable.
+            // Delegates to TemporalAccessor.format when applicable.
             if (value == null) { g.writeNull(); return; }
             if (value instanceof java.time.temporal.TemporalAccessor t) {
                 g.write(fmt.format(t));
@@ -755,9 +759,9 @@ final class RuntimeBindingRegistry {
         var props = new ArrayList<Property>();
         var seen = new java.util.HashSet<String>();
 
-        // 1) Découvrir tous les getters de la hiérarchie (incluant private/protected/package).
-        // JSON-B 3.0 §3.7.1 : seuls les public getters sont considérés par défaut, mais
-        // l'EXISTENCE d'un accesseur non-public masque la property (le field public ne suffit pas).
+        // 1) Discover all getters in the hierarchy (including private/protected/package).
+        // JSON-B 3.0 §3.7.1: only public getters are considered by default, but
+        // the EXISTENCE of a non-public accessor hides the property (a public field is not enough).
         var getterByProp = new java.util.LinkedHashMap<String, Method>();
         var hiddenProps = new java.util.HashSet<String>();
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
@@ -774,11 +778,11 @@ final class RuntimeBindingRegistry {
                     continue;
                 }
                 if (!Modifier.isPublic(mods)) {
-                    // Getter non-public → la property est masquée (même si un field public existe)
+                    // Non-public getter → the property is hidden (even if a public field exists)
                     hiddenProps.add(propName);
                     continue;
                 }
-                // §3.7.1 : si le field underlying est static ou transient, skip.
+                // §3.7.1: if the underlying field is static or transient, skip.
                 Field underlying = findFieldByName(type, propName);
                 if (underlying != null) {
                     int fMods = underlying.getModifiers();
@@ -805,7 +809,7 @@ final class RuntimeBindingRegistry {
                 }
             }
         }
-        // Retire les props masquées au cas où on aurait à la fois public/non-public
+        // Removes hidden props in case both public/non-public are present
         getterByProp.keySet().removeAll(hiddenProps);
         for (var e : getterByProp.entrySet()) {
             String propName = e.getKey();
@@ -814,13 +818,13 @@ final class RuntimeBindingRegistry {
             String name = jsonbNameFromMethod(m, propName);
             Field underlying0 = findFieldByName(type, propName);
             boolean nillable = computeNillable(m, underlying0, type);
-            // Date / Number format : @JsonbDateFormat / @JsonbNumberFormat sur method, field underlying, type, package, ou config global.
+            // Date / Number format: @JsonbDateFormat / @JsonbNumberFormat on method, underlying field, type, package, or global config.
             Field underlying = findFieldByName(type, propName);
             java.lang.reflect.AnnotatedElement memberForDate = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? underlying : null);
             java.lang.reflect.AnnotatedElement memberForNumber = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class)
                     ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class) ? underlying : null);
-            // §4.7 — @JsonbTypeAdapter / @JsonbTypeSerializer sur le getter ou son field underlying.
+            // §4.7 — @JsonbTypeAdapter / @JsonbTypeSerializer on the getter or its underlying field.
             final Field underlying2 = underlying;
             BindingWriter w = customAdapterWriter(m, underlying2)
                     .or(() -> customSerializerWriter(m, underlying2))
@@ -829,8 +833,8 @@ final class RuntimeBindingRegistry {
                     .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
                     .orElseGet(() -> writerFor(m.getGenericReturnType()));
             seen.add(propName);
-            // P6.1 — privilégier LambdaMetafactory pour les getters publics
-            // dans des classes publiques (POJO standard).
+            // P6.1 — prefer LambdaMetafactory for public getters
+            // in public classes (standard POJOs).
             Accessor pojoAcc = (Modifier.isPublic(m.getModifiers())
                     && Modifier.isPublic(m.getDeclaringClass().getModifiers()))
                     ? tryLambdaAccessor(m.getDeclaringClass(), m.getName(), m.getReturnType())
@@ -839,7 +843,7 @@ final class RuntimeBindingRegistry {
             props.add(new Property(name, pojoAcc, w, nillable));
         }
 
-        // 2) Champs publics non couverts par un getter et non masqués.
+        // 2) Public fields not covered by a getter and not hidden.
         for (Field f : type.getFields()) {
             int mods = f.getModifiers();
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
@@ -858,7 +862,7 @@ final class RuntimeBindingRegistry {
             props.add(new Property(name, new FieldAccessor(f), w, nillable));
         }
 
-        // Application de PropertyVisibilityStrategy si configurée (config ou @JsonbVisibility).
+        // Apply PropertyVisibilityStrategy if configured (config or @JsonbVisibility).
         var visibility = effectiveVisibility(type);
         if (visibility != null) {
             var visibleProps = new ArrayList<Property>(props.size());
@@ -869,7 +873,7 @@ final class RuntimeBindingRegistry {
             props.addAll(visibleProps);
         }
 
-        // Détection de doublons sur le nom JSON final.
+        // Detect duplicates on the final JSON name.
         var names = new java.util.HashSet<String>();
         for (var pr : props) {
             if (!names.add(pr.name)) {
@@ -881,7 +885,7 @@ final class RuntimeBindingRegistry {
         applyPropertyOrder(type, props);
 
         if (props.isEmpty()) {
-            // JSON-B 3.0 §3.7 : objet sans property visible → objet JSON vide {}.
+            // JSON-B 3.0 §3.7: object with no visible property → empty JSON object {}.
             return (g, value) -> {
                 if (value == null) g.writeNull();
                 else { g.writeStartObject(); g.writeEnd(); }
@@ -898,7 +902,7 @@ final class RuntimeBindingRegistry {
                 catch (Exception e) { throw new JsonbException("Cannot instantiate @JsonbVisibility " + ann.value(), e); }
             }
         }
-        // Walk superclass chain for package visibility (anonymous inner classes héritent du parent)
+        // Walk superclass chain for package visibility (anonymous inner classes inherit from the parent)
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             var fromPackage = packageVisibility(c);
             if (fromPackage != null) return fromPackage;
@@ -907,17 +911,17 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Lit la {@code @JsonbVisibility} déclarée sur le package-info de la classe.
-     * Utilise plusieurs stratégies pour contourner les ClassLoader / module-path
-     * où {@code Class.getPackage().getAnnotation()} peut retourner null si le
-     * package-info n'a pas encore été chargé.
+     * Reads the {@code @JsonbVisibility} declared on the class package-info.
+     * Uses several strategies to work around ClassLoader / module-path cases
+     * where {@code Class.getPackage().getAnnotation()} may return null if the
+     * package-info has not yet been loaded.
      */
     private jakarta.json.bind.config.PropertyVisibilityStrategy packageVisibility(Class<?> type) {
         var pkg = type.getPackage();
         if (pkg == null) return null;
         ClassLoader cl = type.getClassLoader();
         if (cl == null) cl = ClassLoader.getSystemClassLoader();
-        // 1) Charger explicitement package-info et lire l'annotation directement.
+        // 1) Explicitly load package-info and read the annotation directly.
         try {
             Class<?> pkgInfo = Class.forName(pkg.getName() + ".package-info", false, cl);
             var pann = pkgInfo.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
@@ -928,7 +932,7 @@ final class RuntimeBindingRegistry {
         } catch (Exception e) {
             throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
         }
-        // 2) Package.getAnnotation (fonctionne uniquement après chargement)
+        // 2) Package.getAnnotation (works only after loading)
         var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
         if (pann != null) {
             try { return pann.value().getDeclaredConstructor().newInstance(); }
@@ -938,14 +942,14 @@ final class RuntimeBindingRegistry {
     }
 
     private static boolean isVisibleByStrategy(jakarta.json.bind.config.PropertyVisibilityStrategy s, Class<?> type, Property pr) {
-        // Spec §4.5 : on consulte BOTH le field underlying (si présent) ET la méthode.
-        // Une property est visible si l'une ou l'autre return true (logique OR).
+        // Spec §4.5: consult BOTH the underlying field (if present) AND the method.
+        // A property is visible if either returns true (OR logic).
         if (pr.accessor instanceof FieldAccessor fa) {
             return s.isVisible(fa.f);
         }
         if (pr.accessor instanceof MethodAccessor ma) {
             boolean methodVisible = s.isVisible(ma.m);
-            // Cherche le field underlying par nom de bean property
+            // Look up the underlying field by bean property name
             String propName = beanPropertyOf(ma.m);
             if (propName != null) {
                 Field f = findFieldByName(type, propName);
@@ -957,11 +961,11 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Applique l'ordre :
+     * Applies the order:
      * <ol>
-     *   <li>Property dans @JsonbPropertyOrder dans l'ordre déclaré ;</li>
-     *   <li>autres properties triées via {@link jakarta.json.bind.config.PropertyOrderStrategy}
-     *       (LEXICOGRAPHICAL = défaut, REVERSE, ANY = ordre d'insertion).</li>
+     *   <li>Properties in @JsonbPropertyOrder in declared order ;</li>
+     *   <li>other properties sorted via {@link jakarta.json.bind.config.PropertyOrderStrategy}
+     *       (LEXICOGRAPHICAL = default, REVERSE, ANY = insertion order).</li>
      * </ol>
      */
     private void applyPropertyOrder(Class<?> type, List<Property> props) {
@@ -970,17 +974,17 @@ final class RuntimeBindingRegistry {
             order = c.getAnnotation(jakarta.json.bind.annotation.JsonbPropertyOrder.class);
         }
         String[] explicit = order == null ? new String[0] : order.value();
-        // Resolve explicit names through naming strategy: les noms du @JsonbPropertyOrder se réfèrent
-        // soit au nom de property (camelCase) soit au nom JSON. On accepte les deux.
-        // On compare le nom JSON final ; si l'utilisateur a annoté avec le nom JSON, OK ; sinon on tente
-        // le nom de property non transformé.
+        // Resolve explicit names through naming strategy: @JsonbPropertyOrder names
+        // may refer either to the property name (camelCase) or the JSON name. We accept both.
+        // Compare the final JSON name; if the user annotated with the JSON name, OK; otherwise try
+        // the untransformed property name.
         var byName = new java.util.LinkedHashMap<String, Property>();
         for (var p : props) byName.put(p.name, p);
         var ordered = new ArrayList<Property>(props.size());
         for (String n : explicit) {
             Property p = byName.remove(n);
             if (p == null) {
-                // Try with naming strategy applied
+                // Try with the naming strategy applied
                 String transformed = applyNamingStrategy(n, false);
                 p = byName.remove(transformed);
             }
@@ -988,11 +992,11 @@ final class RuntimeBindingRegistry {
         }
         var rest = new ArrayList<>(byName.values());
         String strat = propertyOrderStrategy;
-        // Default JSON-B 3.0 §4.4 : LEXICOGRAPHICAL.
+        // Default JSON-B 3.0 §4.4: LEXICOGRAPHICAL.
         if (strat == null) strat = "LEXICOGRAPHICAL";
         // Group by declaring class (parent → child) for class hierarchy ordering
         var byClass = new java.util.LinkedHashMap<Class<?>, java.util.List<Property>>();
-        // Build chain super→sub
+        // Build the super→sub chain
         var chain = new ArrayList<Class<?>>();
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) chain.add(c);
         java.util.Collections.reverse(chain);
@@ -1024,11 +1028,11 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Applique la stratégie de naming JSON-B 3.0 §4.1.1 sur un nom déjà déterminé via
-     * convention bean (ou via @JsonbProperty/JsonbPropertyOrder qui ont la priorité).
+     * Applies the JSON-B 3.0 §4.1.1 naming strategy to a name already determined by
+     * bean convention (or by @JsonbProperty/JsonbPropertyOrder, which take priority).
      *
-     * <p>Si {@code annotated} est vrai (le nom vient d'une annotation explicite), on ne
-     * transforme pas — l'annotation a la priorité absolue.</p>
+     * <p>If {@code annotated} is true (the name comes from an explicit annotation),
+     * no transformation is applied — the annotation has absolute priority.</p>
      */
     String applyNamingStrategy(String name, boolean annotated) {
         if (annotated || propertyNamingStrategy == null) return name;
@@ -1074,9 +1078,9 @@ final class RuntimeBindingRegistry {
     jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy() { return propertyVisibilityStrategy; }
 
     /**
-     * JSON-B 3.0 §4.7 : si {@code @JsonbTransient} apparaît sur un membre (field/getter/setter)
-     * et qu'une AUTRE annotation Jsonb apparaît sur le même membre OU sur le pair (field/getter/setter)
-     * de la même property, c'est une combinaison invalide → JsonbException.
+     * JSON-B 3.0 §4.7: if {@code @JsonbTransient} appears on a member (field/getter/setter)
+     * and ANOTHER Jsonb annotation appears on the same member OR on the paired (field/getter/setter)
+     * member of the same property, it's an invalid combination → JsonbException.
      */
     static void validateTransientCombinations(Class<?> type) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
@@ -1118,9 +1122,9 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Calcule le statut nillable d'une property :
+     * Calculates the nillable status of a property:
      * <ol>
-     *   <li>@JsonbProperty(nillable=true) ou @JsonbNillable explicite → true (annotation gagne)</li>
+     *   <li>@JsonbProperty(nillable=true) or explicit @JsonbNillable → true (annotation wins)</li>
      *   <li>@JsonbNillable(false) explicite → false (annotation gagne)</li>
      *   <li>type level @JsonbNillable → true</li>
      *   <li>package level @JsonbNillable → true</li>
@@ -1129,7 +1133,7 @@ final class RuntimeBindingRegistry {
      * </ol>
      */
     private boolean computeNillable(Method getter, Field underlying, Class<?> type) {
-        // Annotations directes sur member
+        // Direct annotations on the member
         Boolean direct = directNillable(getter);
         if (direct != null) return direct;
         if (underlying != null) {
@@ -1163,7 +1167,7 @@ final class RuntimeBindingRegistry {
         return null;
     }
 
-    /** Cherche un field (public, protected, package, private) sur la classe ou ses parents. */
+    /** Looks up a field (public, protected, package, private) on the class or its parents. */
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
@@ -1173,20 +1177,20 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Cherche {@code @JsonbTypeInfo} sur {@code type} ou ses supertypes (interfaces et
-     * superclasses). Spec §4.8 : peut être déclarée sur l'interface sealed parente.
+     * Looks up {@code @JsonbTypeInfo} on {@code type} or its supertypes (interfaces and
+     * superclasses). Spec §4.8: it may be declared on the parent sealed interface.
      *
-     * <p>Pour une chaîne linéaire d'héritage (A → B → C où chaque interface porte
-     * @JsonbTypeInfo), retourne l'annotation la PLUS PROCHE (la plus spécifique).
-     * Lève {@link JsonbException} uniquement quand plusieurs interfaces SŒURS portent
-     * indépendamment l'annotation (vraie multi-inheritance — TCK
+     * <p>For a linear inheritance chain (A → B → C where each interface carries
+     * @JsonbTypeInfo), returns the CLOSEST annotation (the most specific one).
+     * Throws {@link JsonbException} only when multiple sibling interfaces carry
+     * the annotation independently (true multiple inheritance — TCK
      * {@code TypeInfoExceptionsTest.testSerializeTypeInfoMultiInheritance}).</p>
      */
     static jakarta.json.bind.annotation.JsonbTypeInfo findTypeInfo(Class<?> type) {
         if (type == null || type == Object.class) return null;
         var direct = type.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
         if (direct != null) return direct;
-        // Collecter sur les interfaces directes ET la superclass.
+        // Collect from direct interfaces AND the superclass.
         java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> direct1 = new java.util.ArrayList<>();
         for (Class<?> i : type.getInterfaces()) {
             var d = i.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
@@ -1196,7 +1200,7 @@ final class RuntimeBindingRegistry {
             var d = type.getSuperclass().getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
             if (d != null) direct1.add(d);
         }
-        // Si plusieurs ancêtres directs portent @JsonbTypeInfo, multi-inheritance non supportée.
+        // If multiple direct ancestors carry @JsonbTypeInfo, multiple inheritance is not supported.
         if (direct1.size() > 1) {
             var first = direct1.get(0);
             for (int i = 1; i < direct1.size(); i++) {
@@ -1207,7 +1211,7 @@ final class RuntimeBindingRegistry {
             return first;
         }
         if (direct1.size() == 1) return direct1.get(0);
-        // Aucune annotation directe : chercher récursivement sur les ancêtres.
+        // No direct annotation: search recursively through the ancestors.
         for (Class<?> i : type.getInterfaces()) {
             var f = findTypeInfo(i);
             if (f != null) return f;
@@ -1216,19 +1220,19 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Collecte la chaîne complète de {@code @JsonbTypeInfo} dans l'ordre
-     * <strong>parent → enfant</strong> (le plus général en premier). Utilisé pour
-     * écrire des discriminators en cascade (MultipleTypeInfoTest).
+     * Collects the full {@code @JsonbTypeInfo} chain in
+     * <strong>parent → child</strong> order (most general first). Used to write
+     * cascading discriminators (MultipleTypeInfoTest).
      */
     static java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> typeInfoChain(Class<?> type) {
         java.util.List<jakarta.json.bind.annotation.JsonbTypeInfo> chain = new java.util.ArrayList<>();
-        // Walk linéaire : à chaque niveau, prendre l'annotation directe la plus PROCHE
-        // (depuis type vers les ancêtres) et l'ajouter au CHEMIN.
+        // Linear walk: at each level, take the closest direct annotation
+        // (from type toward ancestors) and add it to the chain.
         Class<?> current = type;
         while (current != null && current != Object.class) {
             var direct = current.getAnnotation(jakarta.json.bind.annotation.JsonbTypeInfo.class);
-            if (direct != null) chain.add(0, direct); // parent en premier
-            // Cherche dans les interfaces directes
+            if (direct != null) chain.add(0, direct); // parent first
+            // Look in direct interfaces
             for (Class<?> i : current.getInterfaces()) {
                 addChainFromInterface(i, chain);
             }
@@ -1246,15 +1250,15 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Validations §4.8 sur {@code @JsonbTypeInfo} avant écriture/lecture :
+     * §4.8 validations for {@code @JsonbTypeInfo} before writing/reading:
      * <ul>
-     *   <li>chaque alias doit pointer vers un sous-type assignable</li>
-     *   <li>le {@code key} ne doit pas collider avec le nom d'une propriété de la classe</li>
+     *   <li>each alias must point to an assignable subtype</li>
+     *   <li>the {@code key} must not collide with a class property name</li>
      * </ul>
      */
     static void validateTypeInfo(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
         if (info == null) return;
-        // Trouver la classe qui PORTE directement l'annotation.
+        // Find the class that directly CARRIES the annotation.
         Class<?> bearer = bearerOfTypeInfo(type, info);
         if (bearer != null) {
             for (var sub : info.value()) {
@@ -1264,7 +1268,7 @@ final class RuntimeBindingRegistry {
                 }
             }
         }
-        // Vérifier collision du discriminator key avec une propriété de la classe.
+        // Check collision of the discriminator key with a class property.
         String key = info.key();
         for (java.lang.reflect.Field f : type.getFields()) {
             int mods = f.getModifiers();
@@ -1285,9 +1289,10 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Cherche dans {@code info.value()} l'alias correspondant à un subtype assignable
-     * depuis {@code concrete}. Retourne null si aucun match (peut arriver pour des
-     * niveaux intermédiaires d'une cascade, ex. Animal/Dog interfaces sans subtype direct).
+     * Looks in {@code info.value()} for the alias corresponding to a subtype
+     * assignable from {@code concrete}. Returns null if there is no match (which
+     * can happen for intermediate levels in a cascade, e.g. Animal/Dog interfaces
+     * without a direct subtype).
      */
     private static String aliasFor(jakarta.json.bind.annotation.JsonbTypeInfo info, Class<?> concrete) {
         for (var sub : info.value()) {
@@ -1307,18 +1312,18 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Writer polymorphe : pour chaque {@code value}, identifie l'alias matching dans
-     * {@code typeInfo.value()}, écrit {@code @key:alias}, puis sérialise les membres
-     * de la classe concrète.
+     * Polymorphic writer: for each {@code value}, identifies the matching alias in
+     * {@code typeInfo.value()}, writes {@code @key:alias}, then serializes the
+     * members of the concrete class.
      */
     private BindingWriter polymorphicWriter(jakarta.json.bind.annotation.JsonbTypeInfo info) {
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
             Class<?> concrete = value.getClass();
-            // Validations §4.8 sur la première annotation rencontrée.
+            // §4.8 validations on the first annotation encountered.
             validateTypeInfo(concrete, info);
-            // Cascade : écrire chaque (key, alias) de la chaîne d'@JsonbTypeInfo
-            // depuis l'ancêtre le plus général jusqu'à l'enfant le plus spécifique
+            // Cascade: write each (key, alias) pair from the @JsonbTypeInfo chain
+            // from the most general ancestor to the most specific child
             // (MultipleTypeInfoTest.testMultipleTypeInfoPropertySerialization).
             var chain = typeInfoChain(concrete);
             g.writeStartObject();
@@ -1357,11 +1362,11 @@ final class RuntimeBindingRegistry {
         for (RecordComponent c : comps) {
             if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
-            // §R-6 — record accessors sont TOUJOURS publics. publicLookup() les
-            // résout sans setAccessible ni opens côté consommateur.
-            // P6.1 — privilégier LambdaMetafactory (Function<Object,Object>) qui
-            // produit du code inline-friendly équivalent à un getter direct
-            // après warmup ; fallback MethodHandle puis Reflection.
+            // §R-6 — record accessors are ALWAYS public. publicLookup() resolves
+            // them without setAccessible or opens on the consumer side.
+            // P6.1 — prefer LambdaMetafactory (Function<Object,Object>) which
+            // produces inline-friendly code equivalent to a direct getter after
+            // warmup; fallback to MethodHandle then reflection.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
                 try {
@@ -1370,7 +1375,7 @@ final class RuntimeBindingRegistry {
                                     java.lang.invoke.MethodType.methodType(c.getType()));
                     acc = new MhAccessor(mh);
                 } catch (NoSuchMethodException | IllegalAccessException ex) {
-                    // Fallback Reflection si publicLookup échoue (record non-exporté).
+                    // Reflection fallback if publicLookup fails (non-exported record).
                     try { accessor.setAccessible(true); } catch (Exception ignore) {}
                     acc = new MethodAccessor(accessor);
                 }
@@ -1420,16 +1425,16 @@ final class RuntimeBindingRegistry {
             BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
             props.add(new Property(name, new FieldAccessor(f), w, nillable));
         }
-        // Appliquer le tri parent → enfant + lex (cas hiérarchique avec @JsonbTypeInfo,
-        // MultipleTypeInfoTest.testSerializeMultipleTypeInfoInSingleChain).
+        // Apply parent → child + lex ordering (hierarchical case with
+        // @JsonbTypeInfo, MultipleTypeInfoTest.testSerializeMultipleTypeInfoInSingleChain).
         applyPropertyOrder(type, props);
         return props;
     }
 
     /**
-     * Vrai si le {@link RecordComponent} ou son accesseur portent {@code @JsonbTransient}.
-     * Spec §4.7 : l'annotation peut être présente sur le composant lui-même ou sur la
-     * méthode d'accès (synthétique pour les records).
+     * True if the {@link RecordComponent} or its accessor carries {@code @JsonbTransient}.
+     * Spec §4.7: the annotation may be present on the component itself or on the
+     * accessor method (synthetic for records).
      */
     private static boolean isJsonbTransient(RecordComponent c) {
         if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) return true;
@@ -1438,8 +1443,8 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Vrai si le composant ou son accesseur portent {@code @JsonbNillable}.
-     * Spec §4.3.3 : force l'écriture du membre même quand sa valeur est null.
+     * True if the component or its accessor carries {@code @JsonbNillable}.
+     * Spec §4.3.3: forces writing the member even when its value is null.
      */
     private static boolean isJsonbNillable(RecordComponent c) {
         if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)) return true;
@@ -1447,7 +1452,7 @@ final class RuntimeBindingRegistry {
         return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
     }
 
-    /** Renommage via {@code @JsonbProperty(name)} sur un component ; fallback {@code defaultName}. */
+    /** Renaming via {@code @JsonbProperty(name)} on a component; fallback {@code defaultName}. */
     private String jsonbName(RecordComponent c, String defaultName) {
         var prop = c.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
@@ -1456,25 +1461,25 @@ final class RuntimeBindingRegistry {
         return applyNamingStrategy(defaultName, false);
     }
 
-    /** Renommage via {@code @JsonbProperty(name)} sur un field ; fallback {@code defaultName}. */
+    /** Renaming via {@code @JsonbProperty(name)} on a field; fallback {@code defaultName}. */
     private String jsonbName(Field f, String defaultName) {
         var prop = f.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
         return applyNamingStrategy(defaultName, false);
     }
 
-    /** Renommage via {@code @JsonbProperty(name)} sur un method, son setter pair ou le field underlying. */
+    /** Renaming via {@code @JsonbProperty(name)} on a method, its paired setter, or the underlying field. */
     String jsonbNameFromMethod(Method m, String defaultName) {
         var prop = m.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
-        // Recherche aussi sur le setter associé et le field underlying (spec §4.1.2).
+        // Also search the paired setter and the underlying field (spec §4.1.2).
         Class<?> declaring = m.getDeclaringClass();
         Field underlying = findFieldByName(declaring, defaultName);
         if (underlying != null) {
             var fp = underlying.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
             if (fp != null && !fp.value().isEmpty()) return applyNamingStrategy(fp.value(), true);
         }
-        // Setter associé
+        // Paired setter
         for (Method other : declaring.getDeclaredMethods()) {
             if (other.getName().equals("set" + Character.toUpperCase(defaultName.charAt(0)) + defaultName.substring(1))
                     && other.getParameterCount() == 1) {
@@ -1487,8 +1492,8 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Convention JavaBean §3.7 : {@code getXxx} → {@code xxx} ; {@code isXxx} (boolean
-     * uniquement) → {@code xxx}. Retourne {@code null} si la méthode n'est pas un accesseur.
+     * JavaBean convention §3.7: {@code getXxx} → {@code xxx}; {@code isXxx} (boolean
+     * only) → {@code xxx}. Returns {@code null} if the method is not an accessor.
      */
     static String beanPropertyOf(Method m) {
         String n = m.getName();
@@ -1502,7 +1507,7 @@ final class RuntimeBindingRegistry {
         return null;
     }
 
-    /** Convention JavaBean : {@code setXxx} → {@code xxx}. */
+    /** JavaBean convention: {@code setXxx} → {@code xxx}. */
     static String beanSetterOf(Method m) {
         String n = m.getName();
         if (n.startsWith("set") && n.length() > 3 && Character.isUpperCase(n.charAt(3))
@@ -1521,9 +1526,9 @@ final class RuntimeBindingRegistry {
         if (value == null) { g.writeNull(); return; }
         g.writeStartObject();
         for (Property p : props) {
-            // P6.2 — fast-path primitif (sans boxing).
-            // Les primitifs ne peuvent pas être null → on émet directement.
-            // L'ordre instanceof respecte la fréquence d'occurrence des types.
+            // P6.2 — primitive fast path (no boxing).
+            // Primitives cannot be null → emit directly.
+            // The instanceof order follows the frequency of the types.
             if (p.accessor instanceof LongAccessor la) {
                 g.write(p.name, la.fn.applyAsLong(value));
                 continue;
@@ -1547,8 +1552,8 @@ final class RuntimeBindingRegistry {
                 throw new JsonbException("Failed to read property " + p.name, t);
             }
             if (v == null) {
-                // Spec §3.14.2 : null members omis par défaut.
-                // §4.3.3 @JsonbNillable : force-include.
+                // Spec §3.14.2: null members omitted by default.
+                // §4.3.3 @JsonbNillable: force-include.
                 if (p.nillable) {
                     g.writeKey(p.name);
                     g.writeNull();
@@ -1556,7 +1561,7 @@ final class RuntimeBindingRegistry {
                 continue;
             }
             if (v instanceof java.util.Optional<?> opt && opt.isEmpty()) {
-                // Optional.empty() = absence sémantique → membre omis (sauf @JsonbNillable).
+                // Optional.empty() = semantic absence → omit member (unless @JsonbNillable).
                 if (p.nillable) {
                     g.writeKey(p.name);
                     g.writeNull();
@@ -1591,36 +1596,36 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Accesseur via {@link java.lang.invoke.MethodHandle} — utilisé pour les
-     * records (canonical accessors publics) afin d'éviter {@code setAccessible}
-     * et {@code opens}. {@code invoke} sur un MethodHandle pré-bindé est plus
-     * rapide que {@code Method.invoke} et compatible JPMS strict.
+     * Accessor via {@link java.lang.invoke.MethodHandle} — used for records
+     * (public canonical accessors) to avoid {@code setAccessible} and {@code opens}.
+     * {@code invoke} on a pre-bound MethodHandle is faster than {@code Method.invoke}
+     * and compatible with strict JPMS.
      */
     private record MhAccessor(java.lang.invoke.MethodHandle mh) implements Accessor {
         public Object read(Object target) throws Throwable { return mh.invoke(target); }
     }
 
     /**
-     * P6.1 — Accesseur via {@link java.util.function.Function} produit par
-     * {@link java.lang.invoke.LambdaMetafactory}. HotSpot inline ce site comme
-     * un appel direct au getter après warmup ; pas de cast varargs ni de
-     * boxing intermédiaire (sauf valueOf automatique sur retour primitif).
-     * Fallback {@link MhAccessor} ou {@link MethodAccessor} si le lookup public
-     * ne peut pas générer la lambda (classe/package non accessible).
+     * P6.1 — Accessor via {@link java.util.function.Function} produced by
+     * {@link java.lang.invoke.LambdaMetafactory}. HotSpot inlines this site as
+     * a direct getter call after warmup; no varargs cast or intermediate boxing
+     * (except the automatic valueOf on primitive returns).
+     * Fallback to {@link MhAccessor} or {@link MethodAccessor} if the public
+     * lookup cannot generate the lambda (class/package not accessible).
      */
     private record LambdaAccessor(java.util.function.Function<Object, Object> f) implements Accessor {
         public Object read(Object target) { return f.apply(target); }
     }
 
     /**
-     * P6.2 — Accesseurs typés primitive via {@link java.lang.invoke.LambdaMetafactory}
-     * sur les SAM standard de {@code java.util.function} ({@code ToLongFunction},
+     * P6.2 — Primitive-typed accessors via {@link java.lang.invoke.LambdaMetafactory}
+     * on the standard {@code java.util.function} SAMs ({@code ToLongFunction},
      * {@code ToIntFunction}, {@code ToDoubleFunction}, {@code Predicate}).
-     * Le hot path {@link #writeObject} fait un {@code instanceof} et appelle
-     * {@code applyAsLong/Int/Double} ou {@code test} directement, ce qui émet
-     * la valeur primitive sans boxing.
-     * {@link #read(Object)} reste compatible (boxe via {@code Long.valueOf}
-     * etc.) pour les chemins polymorphiques (visibility, ordering, etc.).
+     * The {@link #writeObject} hot path does an {@code instanceof} and calls
+     * {@code applyAsLong/Int/Double} or {@code test} directly, emitting the
+     * primitive value without boxing.
+     * {@link #read(Object)} remains compatible (boxing via {@code Long.valueOf}
+     * etc.) for polymorphic paths (visibility, ordering, etc.).
      */
     private record LongAccessor(java.util.function.ToLongFunction<Object> fn) implements Accessor {
         public Object read(Object target) { return Long.valueOf(fn.applyAsLong(target)); }
@@ -1636,13 +1641,13 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Tente de produire un {@link LambdaAccessor} via {@link java.lang.invoke.LambdaMetafactory}.
-     * Pour les types primitifs ({@code long}/{@code int}/{@code double}/{@code boolean}),
-     * privilégie un accesseur typé ({@link LongAccessor}/{@link IntAccessor}/
-     * {@link DoubleAccessor}/{@link BooleanAccessor}) qui évitera le boxing
-     * dans le hot path {@code writeObject} (P6.2).
-     * Retourne {@code null} si la classe n'est pas accessible publiquement ou
-     * si la metafactory échoue (classe non exportée, etc.).
+     * Attempts to produce a {@link LambdaAccessor} via {@link java.lang.invoke.LambdaMetafactory}.
+     * For primitive types ({@code long}/{@code int}/{@code double}/{@code boolean}),
+     * prefers a typed accessor ({@link LongAccessor}/{@link IntAccessor}/
+     * {@link DoubleAccessor}/{@link BooleanAccessor}) that avoids boxing in the
+     * {@code writeObject} hot path (P6.2).
+     * Returns {@code null} if the class is not publicly accessible or if the
+     * metafactory fails (non-exported class, etc.).
      */
     @SuppressWarnings("unchecked")
     private static Accessor tryLambdaAccessor(Class<?> declaring, String methodName, Class<?> returnType) {
@@ -1652,7 +1657,7 @@ final class RuntimeBindingRegistry {
                     java.lang.invoke.MethodType.methodType(returnType));
             var instMethodType = java.lang.invoke.MethodType.methodType(returnType, declaring);
 
-            // P6.2 — fast path primitif (sans boxing) selon le type de retour.
+            // P6.2 — primitive fast path (no boxing) based on the return type.
             if (returnType == long.class) {
                 var samType = java.lang.invoke.MethodType.methodType(long.class, Object.class);
                 var cs = java.lang.invoke.LambdaMetafactory.metafactory(lookup, "applyAsLong",
@@ -1686,9 +1691,9 @@ final class RuntimeBindingRegistry {
                 return new BooleanAccessor(fn);
             }
 
-            // Path générique Object → Object (pour String, types complexes,
-            // Optional…). Boxing automatique sur primitifs non couverts ci-dessus
-            // (short, byte, float, char) via valueOf inséré par LMF.
+            // Generic Object → Object path (for String, complex types, Optional…).
+            // Automatic boxing for the primitives not covered above
+            // (short, byte, float, char) via valueOf inserted by LMF.
             var samMethodType = java.lang.invoke.MethodType.methodType(Object.class, Object.class);
             var callsite = java.lang.invoke.LambdaMetafactory.metafactory(
                     lookup,
@@ -1770,7 +1775,7 @@ final class RuntimeBindingRegistry {
         static final BindingWriter MONTH_DAY = (g, v) -> g.write(((java.time.MonthDay) v).toString());
         static final BindingWriter YEAR_MONTH = (g, v) -> g.write(((java.time.YearMonth) v).toString());
         static final BindingWriter YEAR = (g, v) -> g.write(((java.time.Year) v).toString());
-        // JSON-B 3.0 §3.5.1 : java.util.Date → ZonedDateTime UTC ISO format
+        // JSON-B 3.0 §3.5.1: java.util.Date → ZonedDateTime UTC ISO format
         static final BindingWriter UTIL_DATE = (g, v) -> {
             var d = (java.util.Date) v;
             g.write(d.toInstant().atZone(java.time.ZoneId.of("UTC")).format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
@@ -1778,7 +1783,7 @@ final class RuntimeBindingRegistry {
         static final BindingWriter CALENDAR = (g, v) -> {
             var c = (java.util.Calendar) v;
             var zdt = c.toInstant().atZone(c.getTimeZone().toZoneId());
-            // JSON-B 3.0 §3.5.1 : si time = 00:00:00.000, format ISO_OFFSET_DATE.
+            // JSON-B 3.0 §3.5.1: if time = 00:00:00.000, use ISO_OFFSET_DATE format.
             if (zdt.getHour() == 0 && zdt.getMinute() == 0 && zdt.getSecond() == 0 && zdt.getNano() == 0) {
                 g.write(zdt.toLocalDate().atStartOfDay(zdt.getZone()).toOffsetDateTime()
                         .format(DateTimeFormatter.ISO_OFFSET_DATE));
@@ -1788,7 +1793,7 @@ final class RuntimeBindingRegistry {
         };
         static final BindingWriter TIMEZONE = (g, v) -> g.write(((java.util.TimeZone) v).getID());
 
-        // JSON-B §3.6 : JSON-P types passent par g.write(JsonValue)
+        // JSON-B §3.6: JSON-P types go through g.write(JsonValue)
         static final BindingWriter JSON_VALUE = (g, v) -> g.write((jakarta.json.JsonValue) v);
 
         static BindingWriter lookup(Class<?> type) {

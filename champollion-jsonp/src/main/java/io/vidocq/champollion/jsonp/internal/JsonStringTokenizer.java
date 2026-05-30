@@ -1,15 +1,15 @@
 package io.vidocq.champollion.jsonp.internal;
 
 /**
- * Tokenizer JSON RFC 8259 fast-path lisant directement une {@link String} via
- * {@link String#charAt} (P10.1). Aucun {@code Reader}, aucun {@code char[]}
- * intermédiaire — économise ~1 KB d'alloc par {@code fromJson(String)} et la
- * copie {@code String.getChars}.
+ * RFC 8259 fast-path JSON tokenizer that reads a {@link String} directly via
+ * {@link String#charAt} (P10.1). No {@code Reader}, no intermediate {@code char[]}
+ * — saves about 1 KB of allocations per {@code fromJson(String)} and avoids
+ * {@code String.getChars} copying.
  *
- * <p>P10.2 — {@link #next()} et tous ses helpers sont dupliqués localement
- * (pas dans le parent abstract) pour que les appels à {@link #read()} /
- * {@link #peekRead()} restent statiquement résolus dans cette classe finale,
- * inlinables par HotSpot sans dispatch virtuel.</p>
+ * <p>P10.2 — {@link #next()} and all helpers are duplicated locally (not in the
+ * abstract parent) so calls to {@link #read()} / {@link #peekRead()} remain
+ * statically resolved in this final class, making them HotSpot-inlineable without
+ * virtual dispatch.</p>
  */
 public final class JsonStringTokenizer extends JsonTokenizer {
 
@@ -24,7 +24,7 @@ public final class JsonStringTokenizer extends JsonTokenizer {
     }
 
     @Override
-    void close() { /* no-op : pas de ressource à fermer */ }
+    void close() { /* no-op: nothing to close */ }
 
     private int read() {
         if (peek != NO_PEEK) {

@@ -7,19 +7,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Registre des types acceptés par {@link Any#unpack(Class)} et par le mapping
- * JSON canonical d'{@code Any}.
+ * Registry of types accepted by {@link Any#unpack(Class)} and by the canonical
+ * JSON mapping of {@code Any}.
  *
- * <p>Convention proto : un {@code type_url} a la forme
- * {@code "<base>/<full.name>"}, le {@code base} typique étant
+ * <p>Proto convention: a {@code type_url} has the form
+ * {@code "<base>/<full.name>"}, with the typical {@code base} being
  * {@code "type.googleapis.com"} (cf.
  * <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#any">Any spec</a>).
- * Seule la partie {@code full.name} est utilisée pour le lookup ici — la base
- * est facultative pour les besoins du runtime.</p>
+ * Only the {@code full.name} part is used for lookup here — the base
+ * is optional for the runtime's needs.</p>
  *
- * <p>Mutable, thread-safe, statique au module. L'utilisateur enregistre ses
- * types via {@link #register(Class)} (le {@code fullName} provient de
- * {@link ProtobufMessage#value()}) ou directement par {@code typeFullName}.</p>
+ * <p>Mutable, thread-safe, module-static. Users register their
+ * types via {@link #register(Class)} (the {@code fullName} comes from
+ * {@link ProtobufMessage#value()}) or directly via {@code typeFullName}.</p>
  */
 public final class TypeRegistry {
 
@@ -28,7 +28,7 @@ public final class TypeRegistry {
     private static final ConcurrentMap<String, Class<?>> BY_FULL_NAME = new ConcurrentHashMap<>();
 
     static {
-        // Enregistrement automatique des WKT exposés par champollion.
+        // Automatic registration of WKT exposed by Champollion.
         register(Timestamp.class);
         register(Duration.class);
         register(Empty.class);

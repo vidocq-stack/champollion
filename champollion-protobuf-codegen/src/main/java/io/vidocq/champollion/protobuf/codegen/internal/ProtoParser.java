@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parser .proto (proto3 / Editions 2023) — récursif descendant.
+ * .proto parser (proto3 / Editions 2023) — recursive descent.
  *
  * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/proto3-spec/">Proto3 Language Spec</a>.</p>
  */
@@ -174,7 +174,7 @@ public final class ProtoParser {
             expect(TokenKind.SEMI);
             return new ProtoAst.Edition(val.text());
         }
-        // Spec : proto2 par défaut si aucun syntax explicite.
+        // Spec: proto2 by default if no explicit syntax.
         return new ProtoAst.Proto2();
     }
 
@@ -352,7 +352,7 @@ public final class ProtoParser {
     }
 
     private void skipBlock(String label) {
-        consume(); // mot-clé
+        consume(); // keyword
         // Optionally consume name
         if (peek().kind() == TokenKind.IDENT) consume();
         skipBalanced(TokenKind.LBRACE, TokenKind.RBRACE);

@@ -8,10 +8,10 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import java.util.List;
 
 /**
- * {@code google.protobuf.ListValue} — JSON array typé dynamiquement.
+ * {@code google.protobuf.ListValue} — dynamically typed JSON array.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#list-value">
- * ListValue</a> — équivalent à un JSON array via {@code repeated Value}.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#list-value">
+ * ListValue</a> — equivalent to a JSON array via {@code repeated Value}.</p>
  */
 @ProtobufMessage("google.protobuf.ListValue")
 public record ListValue(

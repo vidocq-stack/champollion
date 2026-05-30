@@ -7,11 +7,11 @@ import java.math.BigInteger;
 import java.util.Objects;
 
 /**
- * Implémentation de {@link JsonNumber} adossée à la forme lexicale du nombre JSON,
- * avec parsing différé en {@link BigDecimal} (cache lazy).
+ * {@link JsonNumber} implementation backed by the JSON number's lexical form,
+ * with deferred parsing into {@link BigDecimal} (lazy cache).
  *
- * <p>{@code equals} compare la valeur numérique ({@link BigDecimal}), comme exigé
- * par la spec Jakarta JSON-P §4.5 : {@code 1} est égal à {@code 1.0}.</p>
+ * <p>{@code equals} compares the numeric value ({@link BigDecimal}), as required
+ * by Jakarta JSON-P §4.5: {@code 1} equals {@code 1.0}.</p>
  */
 public final class ChampollionJsonNumber implements JsonNumber {
 
@@ -43,7 +43,7 @@ public final class ChampollionJsonNumber implements JsonNumber {
     @Override public ValueType getValueType() { return ValueType.NUMBER; }
 
     @Override public boolean isIntegral() {
-        // Forme lexicale : ni '.', ni 'e/E' → integral.
+        // Lexical form: no '.' and no 'e/E' → integral.
         return literal.indexOf('.') < 0 && literal.indexOf('e') < 0 && literal.indexOf('E') < 0;
     }
 

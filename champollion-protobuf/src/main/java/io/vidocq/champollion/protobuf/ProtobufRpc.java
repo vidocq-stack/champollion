@@ -6,8 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marque une méthode d'une interface {@link ProtobufService} comme RPC
- * Protocol Buffers.
+ * Marks a method in a {@link ProtobufService} interface as a Protocol Buffers RPC.
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/proto3/#services">Proto3 §Services</a>.</p>
  */
@@ -15,7 +14,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 public @interface ProtobufRpc {
 
-    /** Nom de la méthode tel que vu sur le wire. Vide = nom Java. */
+    /** Method name as seen on the wire. Empty = Java name. */
     String value() default "";
 
     boolean clientStreaming() default false;

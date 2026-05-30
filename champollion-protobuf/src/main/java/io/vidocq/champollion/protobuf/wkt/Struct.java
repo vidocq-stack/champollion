@@ -8,10 +8,10 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import java.util.Map;
 
 /**
- * {@code google.protobuf.Struct} — objet JSON typé dynamiquement.
+ * {@code google.protobuf.Struct} — dynamically typed JSON object.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#struct">
- * Struct</a> — équivalent à un JSON object via {@code map<string, Value>}.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#struct">
+ * Struct</a> — equivalent to a JSON object via {@code map<string, Value>}.</p>
  */
 @ProtobufMessage("google.protobuf.Struct")
 public record Struct(

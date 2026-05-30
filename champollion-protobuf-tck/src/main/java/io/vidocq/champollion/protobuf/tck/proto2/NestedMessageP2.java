@@ -6,7 +6,7 @@ import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
 /**
- * {@code TestAllTypesProto2.NestedMessage} — sub-message récursif (proto2).
+ * {@code TestAllTypesProto2.NestedMessage} — recursive sub-message (proto2).
  *
  * <p>{@code optional int32 a = 1; optional TestAllTypesProto2 corecursive = 2;}.</p>
  */

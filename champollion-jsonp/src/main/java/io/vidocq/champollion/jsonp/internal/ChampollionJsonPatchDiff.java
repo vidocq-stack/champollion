@@ -9,26 +9,26 @@ import jakarta.json.JsonValue;
 import java.util.LinkedHashSet;
 
 /**
- * Algorithme RFC 6902 §A.16 : diff entre deux {@link JsonStructure} produit
- * un {@link JsonPatch} qui appliqué à {@code source} donne {@code target}.
+ * RFC 6902 §A.16 algorithm: diffing two {@link JsonStructure}s produces a
+ * {@link JsonPatch} that, when applied to {@code source}, yields {@code target}.
  *
- * <p>Approche simple et correcte (pas optimale en taille du patch) :</p>
+ * <p>Simple, correct approach (not optimal in patch size):</p>
  * <ul>
- *   <li>Objects : pour chaque clé dans {@code source ∪ target} :
+ *   <li>Objects: for each key in {@code source ∪ target}:
  *     <ul>
- *       <li>Pas dans target → {@code remove}</li>
- *       <li>Pas dans source → {@code add}</li>
- *       <li>Présente dans les deux mais valeurs différentes → recurse si toutes
- *           deux sont des structures, sinon {@code replace}</li>
+ *       <li>Missing from target → {@code remove}</li>
+ *       <li>Missing from source → {@code add}</li>
+ *       <li>Present in both but different values → recurse if both are
+ *           structures, otherwise {@code replace}</li>
  *     </ul>
  *   </li>
- *   <li>Arrays : approche naïve par position. Si tailles identiques, recurse
- *       élément par élément. Sinon, replace tout. Optimisations LCS / move
- *       reportées (le résultat reste correct, juste plus verbeux).</li>
+ *   <li>Arrays: naive position-based approach. If sizes match, recurse element by
+ *       element. Otherwise, replace everything. LCS / move optimizations are
+ *       deferred (the result remains correct, just more verbose).</li>
  * </ul>
  *
- * <p>Invariant : {@code mergePatch(source, diff(source, target)).equals(target)}
- * si l'on considère l'égalité valeur-par-valeur (cf. {@link ChampollionJsonPatch#equalsByValue}).</p>
+ * <p>Invariant: {@code mergePatch(source, diff(source, target)).equals(target)}
+ * if value-by-value equality is considered (see {@link ChampollionJsonPatch#equalsByValue}).</p>
  */
 final class ChampollionJsonPatchDiff {
 
@@ -49,7 +49,7 @@ final class ChampollionJsonPatchDiff {
         } else if (source instanceof JsonArray sa && target instanceof JsonArray ta) {
             diffArray(pointer, sa, ta, ops);
         } else {
-            // Type différent ou scalaire différent → replace
+            // Different type or different scalar → replace
             ops.add(replaceOp(pointer, target));
         }
     }
@@ -74,19 +74,19 @@ final class ChampollionJsonPatchDiff {
 
     private static void diffArray(String pointer, JsonArray source, JsonArray target,
                                   ChampollionJsonArrayBuilder ops) {
-        // Approche simple : tailles différentes → on emet une séquence de remove
-        // (depuis la fin) puis add. Sinon recurse position-par-position.
+        // Simple approach: different sizes → emit a sequence of remove operations
+        // (from the end) then add. Otherwise recurse position by position.
         int sn = source.size();
         int tn = target.size();
         int common = Math.min(sn, tn);
         for (int i = 0; i < common; i++) {
             diffValue(pointer + "/" + i, source.get(i), target.get(i), ops);
         }
-        // Suppression des éléments en trop dans source (depuis la fin pour stable indices).
+        // Remove extra elements in source (from the end for stable indices).
         for (int i = sn - 1; i >= tn; i--) {
             ops.add(removeOp(pointer + "/" + i));
         }
-        // Ajout des éléments supplémentaires dans target.
+        // Add extra elements in target.
         for (int i = sn; i < tn; i++) {
             ops.add(addOp(pointer + "/" + i, target.get(i)));
         }

@@ -11,11 +11,11 @@ import jakarta.json.JsonValue;
 import java.util.Objects;
 
 /**
- * Implémentation immuable de {@link JsonPatch} conforme RFC 6902.
+ * Immutable {@link JsonPatch} implementation conforming to RFC 6902.
  *
- * <p>Sémantique d'application : chaque opération est appliquée à l'état courant
- * (résultat des opérations précédentes). Toute erreur (path manquant pour replace,
- * test qui échoue, etc.) interrompt l'application avec une {@link JsonException}.</p>
+ * <p>Application semantics: each operation is applied to the current state
+ * (the result of previous operations). Any error (missing path for replace,
+ * failing test, etc.) aborts application with a {@link JsonException}.</p>
  */
 public final class ChampollionJsonPatch implements JsonPatch {
 
@@ -97,9 +97,9 @@ public final class ChampollionJsonPatch implements JsonPatch {
     }
 
     /**
-     * Égalité valeur par valeur (RFC 6902 §4.6). Pour les nombres, comparaison numérique
-     * (1 == 1.0). Pour les containers, équivalence structurelle. Pour string/bool/null :
-     * égalité d'identité de valeur.
+     * Value-by-value equality (RFC 6902 §4.6). For numbers, numeric comparison
+     * (1 == 1.0). For containers, structural equivalence. For string/bool/null:
+     * value identity equality.
      */
     static boolean equalsByValue(JsonValue a, JsonValue b) {
         if (a == b) return true;

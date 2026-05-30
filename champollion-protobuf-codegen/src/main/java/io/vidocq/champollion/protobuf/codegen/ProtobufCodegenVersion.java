@@ -1,11 +1,11 @@
 package io.vidocq.champollion.protobuf.codegen;
 
 /**
- * Marqueur de version du module codegen — placeholder M1 garantissant que le
- * package n'est pas vide pour le compilateur Java.
+ * Codegen module version marker — M1 placeholder ensuring the
+ * package is not empty for the Java compiler.
  *
- * <p>Le codegen réel ({@code .proto → .java} et APT {@code @ProtobufStatic})
- * est implémenté en M2/M3.</p>
+ * <p>The real codegen ({@code .proto → .java} and APT {@code @ProtobufStatic})
+ * is implemented in M2/M3.</p>
  */
 public final class ProtobufCodegenVersion {
 

@@ -3,8 +3,8 @@ package io.vidocq.champollion.jsonb.internal;
 import jakarta.json.stream.JsonGenerator;
 
 /**
- * Écrit une valeur Java dans un {@link JsonGenerator}. Une instance par classe résolue
- * (cache {@link ClassValue}). Stateless après construction.
+ * Writes a Java value to a {@link JsonGenerator}. One instance per resolved class
+ * (cache {@link ClassValue}). Stateless after construction.
  */
 @FunctionalInterface
 interface BindingWriter {

@@ -15,11 +15,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Lecteur d'object model JSON-P 2.1 fondé sur {@link ChampollionJsonParser}.
+ * JSON-P 2.1 object model reader based on {@link ChampollionJsonParser}.
  *
- * <p>Construction itérative à pile pour éviter une récursion proportionnelle à
- * la profondeur du document — virtual-thread-friendly et resistant aux JSON très
- * profonds (cf. corpus JSONTestSuite {@code i_structure_500_nested_arrays.json}).</p>
+ * <p>Stack-based iterative construction to avoid recursion proportional to
+ * document depth — virtual-thread-friendly and resistant to very deep JSON (see
+ * JSONTestSuite corpus {@code i_structure_500_nested_arrays.json}).</p>
  */
 public final class ChampollionJsonReader implements JsonReader {
 
@@ -35,7 +35,7 @@ public final class ChampollionJsonReader implements JsonReader {
         this(parser, jakarta.json.JsonConfig.KeyStrategy.LAST);
     }
 
-    /** Permet de configurer la stratégie de clés dupliquées (Spec 2.1 §4.6). */
+    /** Allows configuring the duplicate-key strategy (Spec 2.1 §4.6). */
     public ChampollionJsonReader(JsonParser parser, jakarta.json.JsonConfig.KeyStrategy keyStrategy) {
         this.parser = parser;
         this.keyStrategy = keyStrategy == null ? jakarta.json.JsonConfig.KeyStrategy.LAST : keyStrategy;
@@ -73,15 +73,15 @@ public final class ChampollionJsonReader implements JsonReader {
         JsonValue root = parseValue(e);
 
         if (parser.hasNext()) {
-            // Le parser refuse déjà les multi-roots, mais on garde une garde de sécurité.
+            // The parser already rejects multi-roots, but we keep a safety check.
             throw new JsonException("Unexpected trailing content after root value");
         }
         return root;
     }
 
     private JsonValue parseValue(JsonParser.Event first) {
-        // Pile de "frames" : chaque frame est soit un builder objet (avec le nom courant)
-        // soit un builder array. Construction iterative.
+        // Stack of "frames": each frame is either an object builder (with the
+        // current name) or an array builder. Iterative construction.
         Deque<Frame> stack = new ArrayDeque<>();
         JsonValue currentValue = null;
         JsonParser.Event e = first;
@@ -106,7 +106,7 @@ public final class ChampollionJsonReader implements JsonReader {
                 }
             }
 
-            // Si l'événement courant a produit une valeur (END_* ou VALUE_*), l'attacher au parent.
+            // If the current event produced a value (END_* or VALUE_*), attach it to the parent.
             if (currentValue != null) {
                 if (stack.isEmpty()) return currentValue;
                 Frame parent = stack.peek();
@@ -137,8 +137,8 @@ public final class ChampollionJsonReader implements JsonReader {
     }
 
     @Override public void close() {
-        // Marque le reader comme consommé pour que tout read*() ultérieur
-        // throw IllegalStateException (Spec §3.6).
+        // Mark the reader as consumed so any later read*() throws IllegalStateException
+        // (Spec §3.6).
         consumed = true;
         parser.close();
     }

@@ -9,20 +9,20 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Émetteur de code Java source à partir d'un {@link Descriptors.FileDescriptor}.
+ * Java source code emitter from a {@link Descriptors.FileDescriptor}.
  *
- * <p>Un fichier {@code .java} est émis pour chaque {@link Descriptors.Descriptor}
- * top-level du file. Les messages et enums imbriqués sont rendus comme types
- * imbriqués Java (records statiques implicites). Chaque record implémente
- * {@code io.vidocq.champollion.protobuf.Message} et porte les annotations
- * {@code @ProtobufMessage(fullName)} et {@code @ProtobufField(number, type)}.</p>
+ * <p>A {@code .java} file is emitted for each top-level {@link Descriptors.Descriptor}
+ * in the file. Nested messages and enums are rendered as nested Java types
+ * (implicit static records). Each record implements
+ * {@code io.vidocq.champollion.protobuf.Message} and carries the annotations
+ * {@code @ProtobufMessage(fullName)} and {@code @ProtobufField(number, type)}.</p>
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/proto3-spec/">Proto3 Language Spec</a>
- * et le contrat du runtime M1.3 ({@code Protobuf.parser(Class)}).</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/proto3-spec/">Proto3 Language Spec</a>
+ * and the M1.3 runtime contract ({@code Protobuf.parser(Class)}).</p>
  *
- * <p>Le code produit est volontairement compilable par {@code javac} standard
- * (pas de feature preview, pas d'extension propriétaire) et n'introduit aucune
- * dépendance externe au runtime Champollion.</p>
+ * <p>The generated code is intentionally compilable by standard {@code javac}
+ * (no preview feature, no proprietary extension) and introduces no external
+ * dependency on the Champollion runtime.</p>
  */
 public final class JavaEmitter {
 
@@ -30,18 +30,18 @@ public final class JavaEmitter {
     private final boolean staticParser;
 
     /**
-     * @param javaPackage Package Java dans lequel placer les sources émises.
-     *                    Distinct du {@code package} proto (qui sert au fullName).
+     * @param javaPackage Java package in which to place the emitted sources.
+     *                    Distinct from the proto {@code package} (used for the fullName).
      */
     public JavaEmitter(String javaPackage) {
         this(javaPackage, false);
     }
 
     /**
-     * @param javaPackage  Package Java cible des sources émises.
-     * @param staticParser Si {@code true}, chaque record émis porte aussi
-     *                     {@code @ProtobufStatic} — l'APT M3.1 produira alors
-     *                     un parser zéro-réflexion ServiceLoader-discoverable.
+     * @param javaPackage  Target Java package for the emitted sources.
+     * @param staticParser If {@code true}, each emitted record also carries
+     *                     {@code @ProtobufStatic} — the M3.1 APT will then
+     *                     produce a zero-reflection, ServiceLoader-discoverable parser.
      */
     public JavaEmitter(String javaPackage, boolean staticParser) {
         this.javaPackage = Objects.requireNonNull(javaPackage, "javaPackage");
@@ -49,9 +49,9 @@ public final class JavaEmitter {
     }
 
     /**
-     * Émet un {@code Map} {@code className → source} pour chaque type top-level
-     * du file. La clé est le {@link Class#getName() FQN Java} ; la valeur est le
-     * source complet (avec {@code package} et imports).
+     * Emits a {@code Map} {@code className → source} for each top-level type
+     * in the file. The key is the {@link Class#getName() Java FQN}; the value is the
+     * full source (including {@code package} and imports).
      */
     public Map<String, String> emit(Descriptors.FileDescriptor file) {
         Map<String, String> out = new LinkedHashMap<>();
@@ -84,9 +84,9 @@ public final class JavaEmitter {
             sb.append(")\n");
             String input = simpleNameForReference(m.inputType());
             String output = simpleNameForReference(m.outputType());
-            // Unary uniquement pour M2.6. Le streaming est exposé via la
-            // signature avec types byte[] (canal opaque) en attendant un
-            // type d'abstraction stable (Flow.Publisher en M2.7).
+            // Unary only for M2.6. Streaming is exposed through the
+            // signature with byte[] types (opaque channel) while waiting for a
+            // stable abstraction type (Flow.Publisher in M2.7).
             if (m.isUnary()) {
                 sb.append("    ").append(output).append(' ')
                         .append(decapitalize(m.name())).append("(")
@@ -217,14 +217,14 @@ public final class JavaEmitter {
     }
 
     /**
-     * Traduit un {@code fullName} de Descriptor en référence Java utilisable
-     * dans le file courant : pour un type nested, l'utilisateur écrit
-     * {@code Outer.Inner} ; pour un sibling top-level, juste {@code Sibling}.
+     * Translates a {@code fullName} descriptor into a Java reference usable
+     * in the current file: for a nested type, the user writes
+     * {@code Outer.Inner}; for a top-level sibling, just {@code Sibling}.
      */
     private String simpleNameForReference(String fullName) {
-        // Strip eventual package prefix (avant le premier majuscule).
-        // La règle Proto3 : les fullNames sont {package}.{Type}.{Nested} ;
-        // on garde la dernière séquence de noms commençant par majuscule.
+        // Strip any package prefix (before the first uppercase letter).
+        // Proto3 rule: fullNames are {package}.{Type}.{Nested};
+        // we keep the last sequence of names starting with an uppercase letter.
         String[] segs = fullName.split("\\.");
         int start = 0;
         for (int i = 0; i < segs.length; i++) {
@@ -241,7 +241,7 @@ public final class JavaEmitter {
         return sb.toString();
     }
 
-    /** Mots-clés Java réservés : on suffixe d'un underscore. */
+    /** Java reserved keywords: we suffix an underscore. */
     private static String safeIdent(String name) {
         return switch (name) {
             case "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",

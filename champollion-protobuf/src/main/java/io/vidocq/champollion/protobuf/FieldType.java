@@ -1,13 +1,13 @@
 package io.vidocq.champollion.protobuf;
 
 /**
- * Type de champ Protocol Buffers — couple {@code (wire type, encoding sémantique)}.
+ * Protocol Buffers field type — pair {@code (wire type, semantic encoding)}.
  *
  * <p>Spec : <a href="https://protobuf.dev/programming-guides/proto3/#scalar">Proto3 §Scalar Value Types</a>.
- * Le wire type seul ne suffit pas : un {@code int} en Java peut s'encoder en
- * varint signé (INT32), unsigned (UINT32), zigzag (SINT32), little-endian fixé
- * (FIXED32 / SFIXED32). L'annotation {@code @ProtobufField(type = ...)} lève
- * cette ambiguïté.</p>
+ * The wire type alone is not enough: a Java {@code int} can encode as a
+ * signed varint (INT32), unsigned (UINT32), zigzag (SINT32), fixed little-endian
+ * (FIXED32 / SFIXED32). The {@code @ProtobufField(type = ...)} annotation removes
+ * this ambiguity.</p>
  */
 public enum FieldType {
 
@@ -32,12 +32,12 @@ public enum FieldType {
     STRING(WireFormat.WIRETYPE_LENGTH_DELIMITED, false),
     /** Octets bruts. Non packable. */
     BYTES(WireFormat.WIRETYPE_LENGTH_DELIMITED, false),
-    /** Embedded message (record annoté @ProtobufMessage). Non packable. */
+    /** Embedded message (record annotated @ProtobufMessage). Not packable. */
     MESSAGE(WireFormat.WIRETYPE_LENGTH_DELIMITED, false),
     /**
-     * {@code map<K,V>} — encodé comme {@code repeated Entry { K key = 1; V value = 2; }}.
-     * Cf. <a href="https://protobuf.dev/programming-guides/encoding/#maps">Encoding §maps</a>.
-     * Non packable. Type Java attendu : {@code Map<K,V>}.
+     * {@code map<K,V>} — encoded as {@code repeated Entry { K key = 1; V value = 2; }}.
+     * See <a href="https://protobuf.dev/programming-guides/encoding/#maps">Encoding §maps</a>.
+     * Not packable. Expected Java type: {@code Map<K,V>}.
      */
     MAP(WireFormat.WIRETYPE_LENGTH_DELIMITED, false);
 
@@ -53,7 +53,7 @@ public enum FieldType {
         return wireType;
     }
 
-    /** {@code true} si {@code repeated} peut être encodé en mode packed (proto3 par défaut). */
+    /** {@code true} if {@code repeated} can be encoded in packed mode (proto3 by default). */
     public boolean packable() {
         return packable;
     }

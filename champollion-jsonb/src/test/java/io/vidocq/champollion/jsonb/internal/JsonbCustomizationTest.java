@@ -102,7 +102,7 @@ class JsonbCustomizationTest {
 
         @Test
         void non_nillable_null_remains_omitted() {
-            // title sans @JsonbNillable, son null reste omis.
+            // title without @JsonbNillable, its null remains omitted.
             record Plain(String title, String desc) {}
             try (var j = JsonbBuilder.create()) {
                 String json = j.toJson(new Plain(null, null));

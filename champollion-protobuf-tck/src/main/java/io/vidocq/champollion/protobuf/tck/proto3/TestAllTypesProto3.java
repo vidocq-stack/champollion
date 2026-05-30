@@ -14,15 +14,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * <p><b>M5.5.5 — étendu manuellement.</b> Modèle quasi-complet de
- * {@code google/protobuf/test_messages_proto3.proto} pour la conformance
- * Google. Notre {@code SchemaResolver} ne sait pas encore importer
- * {@code google/protobuf/*.proto} cross-fichier ; les champs WKT et les
- * messages/enums nested sont écrits à la main. À industrialiser en M5.6.</p>
+ * <p><b>M5.5.5 — manually extended.</b> Near-complete model of
+ * {@code google/protobuf/test_messages_proto3.proto} for Google
+ * conformance. Our {@code SchemaResolver} cannot yet import
+ * {@code google/protobuf/*.proto} cross-file; the WKT fields and the
+ * nested messages/enums are written by hand. To be industrialized in M5.6.</p>
  *
- * <p>{@link NestedMessageT} et {@link NestedEnumT} sont sortis en top-level
- * pour contourner une limite de l'APT {@code ProtobufStaticProcessor} qui
- * matérialise les nested type names en sous-packages (collision).</p>
+ * <p>{@link NestedMessageT} and {@link NestedEnumT} are extracted to top-level
+ * to work around a limitation of the APT {@code ProtobufStaticProcessor} which
+ * materializes nested type names as sub-packages (collision).</p>
  */
 @ProtobufMessage("protobuf_test_messages.proto3.TestAllTypesProto3")
 public record TestAllTypesProto3(
@@ -129,7 +129,7 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 315, type = FieldType.MESSAGE) List<Any> repeated_any,
         @ProtobufField(number = 316, type = FieldType.MESSAGE) List<io.vidocq.champollion.protobuf.wkt.Value> repeated_value,
         @ProtobufField(number = 317, type = FieldType.MESSAGE) List<io.vidocq.champollion.protobuf.wkt.ListValue> repeated_list_value,
-        // Maps (numéros 56..74, conforme Google test_messages_proto3.proto §maps).
+        // Maps (numbers 56..74, conforming to Google test_messages_proto3.proto §maps).
         @ProtobufField(number = 56, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.INT32) Map<Integer, Integer> map_int32_int32,
         @ProtobufField(number = 57, type = FieldType.MAP, mapKey = FieldType.INT64, mapValue = FieldType.INT64) Map<Long, Long> map_int64_int64,
         @ProtobufField(number = 58, type = FieldType.MAP, mapKey = FieldType.UINT32, mapValue = FieldType.UINT32) Map<Integer, Integer> map_uint32_uint32,
@@ -166,7 +166,7 @@ public record TestAllTypesProto3(
         @ProtobufField(number = 416, type = FieldType.INT32) int field__Name16,
         @ProtobufField(number = 417, type = FieldType.INT32) int field_name17__,
         @ProtobufField(number = 418, type = FieldType.INT32) int Field_name18__,
-        // Composant spécial : collecte les fields inconnus pour ré-émission (forward-compat).
-        // Détecté par RuntimeBinding via le type UnknownFieldSet + le nom 'unknownFields'.
+        // Special component: collects unknown fields for re-emission (forward-compat).
+        // Detected by RuntimeBinding via the UnknownFieldSet type + the name 'unknownFields'.
         UnknownFieldSet unknownFields
 ) implements Message {}

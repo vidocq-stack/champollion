@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Benchmark write : POJO/record → JSON string.
  *
- * <p>4 implémentations : Champollion, Yasson, Jackson databind, Jackson-jr.</p>
+ * <p>4 implementations : Champollion, Yasson, Jackson databind, Jackson-jr.</p>
  */
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -43,7 +43,7 @@ public class JsonbWriteBench {
             }
             case "MEDIUM" -> {
                 pojo = Workloads.mediumOrder();
-                record = pojo; // pas de variant record pour Order
+                record = pojo; // no record variant for Order
             }
             case "LARGE" -> {
                 pojo = Workloads.largeBatch(100);
@@ -51,8 +51,8 @@ public class JsonbWriteBench {
             }
             default -> throw new IllegalArgumentException(size);
         }
-        // Force Champollion à être discovered avant Yasson (ServiceLoader).
-        // Pour comparer fairement on instancie chaque provider explicitement.
+        // Force Champollion to be discovered before Yasson (ServiceLoader).
+        // To compare fairly we instantiate each provider explicitly.
         champollion = JsonbBuilder.newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider").build();
         yasson = JsonbBuilder.newBuilder("org.eclipse.yasson.JsonBindingProvider").build();
         jackson = new ObjectMapper().registerModule(new ParameterNamesModule());

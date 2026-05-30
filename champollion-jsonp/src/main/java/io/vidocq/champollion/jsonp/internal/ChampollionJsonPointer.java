@@ -13,16 +13,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Implémentation immuable de {@link JsonPointer} conforme RFC 6901.
+ * Immutable {@link JsonPointer} implementation conforming to RFC 6901.
  *
- * <p>Format : "" (document entier), ou {@code /token/token/...} où chaque token
- * voit ses '~' échappés en {@code ~0} et ses '/' en {@code ~1}. Pour les arrays,
- * un token est soit un index décimal sans zéro initial (sauf "0"), soit '-' qui
- * désigne l'index immédiatement après le dernier (insertion en fin).</p>
+ * <p>Format: "" (whole document), or {@code /token/token/...} where each token
+ * has its '~' escaped as {@code ~0} and its '/' as {@code ~1}. For arrays, a
+ * token is either a decimal index without a leading zero (except "0"), or '-'
+ * which denotes the index immediately after the last one (append).</p>
  *
- * <p>Les méthodes de mutation ({@code add}, {@code replace}, {@code remove}) renvoient
- * une <em>nouvelle</em> {@link JsonStructure} : l'instance d'origine n'est jamais
- * modifiée (cohérent avec l'immutabilité de {@link ChampollionJsonObject} et
+ * <p>Mutation methods ({@code add}, {@code replace}, {@code remove}) return a
+ * <em>new</em> {@link JsonStructure}: the original instance is never modified
+ * (consistent with the immutability of {@link ChampollionJsonObject} and
  * {@link ChampollionJsonArray}).</p>
  */
 public final class ChampollionJsonPointer implements JsonPointer {
@@ -37,10 +37,11 @@ public final class ChampollionJsonPointer implements JsonPointer {
             throw new JsonException("JSON Pointer must be empty or start with '/'");
         }
         this.raw = pointer;
-        // Spec interpretation : RFC 6901 §3 réserve `~0`/`~1` ; un `~n` mal formé
-        // est techniquement invalide, mais le TCK 2.1 (PointerResolve.testResolvePathWithUnencodedTilde)
-        // tolère cette construction et n'attend l'exception qu'à la résolution.
-        // On diffère donc l'erreur de parsing à `getValue()` & co.
+        // Spec interpretation: RFC 6901 §3 reserves `~0`/`~1`; a malformed `~n`
+        // is technically invalid, but the 2.1 TCK
+        // (PointerResolve.testResolvePathWithUnencodedTilde) tolerates this and
+        // only expects the exception at resolution time.
+        // We therefore defer the parsing error to `getValue()` and friends.
         List<String> parsed;
         JsonException err = null;
         try {
@@ -62,7 +63,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
         List<String> out = new ArrayList<>();
         int len = pointer.length();
         var sb = new StringBuilder();
-        // Saute le '/' initial.
+        // Skip the initial '/'.
         for (int i = 1; i < len; i++) {
             char c = pointer.charAt(i);
             if (c == '/') {
@@ -146,7 +147,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
             return size;
         }
         if (tok.isEmpty()) throw new JsonException("Empty array index");
-        // RFC 6901 §4 : pas de zéros initiaux (sauf "0").
+        // RFC 6901 §4: no leading zeros (except "0").
         if (tok.length() > 1 && tok.charAt(0) == '0') {
             throw new JsonException("Leading zeros not allowed in array index: " + tok);
         }
@@ -179,7 +180,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
     private <T extends JsonStructure> T mutate(T target, Op op, JsonValue value) {
         requireValidPointer();
         if (tokens.isEmpty()) {
-            // Pointer vide = remplacement du document entier (add/replace) ou interdit (remove).
+            // Empty pointer = replace the whole document (add/replace) or forbidden (remove).
             if (op == Op.REMOVE) throw new JsonException("Cannot remove root document");
             if (!(value instanceof JsonStructure s)) throw new JsonException("Root replacement must be object or array");
             return (T) s;
@@ -204,7 +205,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
         var copy = new LinkedHashMap<String, JsonValue>(obj);
         if (last) {
             switch (op) {
-                case ADD -> copy.put(tok, value);  // ADD remplace s'il existe déjà (cf. RFC 6902 §4.1)
+                case ADD -> copy.put(tok, value);  // ADD replaces if already present (see RFC 6902 §4.1)
                 case REPLACE -> {
                     if (!copy.containsKey(tok)) throw new JsonException("Cannot replace missing member: " + tok);
                     copy.put(tok, value);

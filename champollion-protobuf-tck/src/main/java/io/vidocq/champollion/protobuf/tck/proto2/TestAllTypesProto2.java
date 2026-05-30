@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * <p>Équivalent {@code google/protobuf/test_messages_proto2.proto} pour la
- * conformance Google. Tous les champs singuliers sont {@code explicitPresence=true}
- * (sémantique proto2 {@code optional}).</p>
+ * <p>Equivalent of {@code google/protobuf/test_messages_proto2.proto} for
+ * Google conformance. All singular fields have {@code explicitPresence=true}
+ * (proto2 {@code optional} semantics).</p>
  *
- * <p>Wire format identique à proto3, sémantique presence différente.
+ * <p>Wire format identical to proto3, different presence semantics.
  * Cf. <a href="https://protobuf.dev/programming-guides/proto2/">proto2 spec</a>.</p>
  */
 @ProtobufMessage("protobuf_test_messages.proto2.TestAllTypesProto2")
@@ -85,7 +85,7 @@ public record TestAllTypesProto2(
         @ProtobufField(number = 305, type = FieldType.MESSAGE, explicitPresence = true) Any optional_any,
         @ProtobufField(number = 306, type = FieldType.MESSAGE, explicitPresence = true) io.vidocq.champollion.protobuf.wkt.Value optional_value,
         @ProtobufField(number = 307, type = FieldType.ENUM, explicitPresence = true) io.vidocq.champollion.protobuf.wkt.NullValue optional_null_value,
-        // Maps (numéros 56..74, conforme Google test_messages_proto2.proto)
+        // Maps (numbers 56..74, conforming to Google test_messages_proto2.proto)
         @ProtobufField(number = 56, type = FieldType.MAP, mapKey = FieldType.INT32, mapValue = FieldType.INT32) Map<Integer, Integer> map_int32_int32,
         @ProtobufField(number = 57, type = FieldType.MAP, mapKey = FieldType.INT64, mapValue = FieldType.INT64) Map<Long, Long> map_int64_int64,
         @ProtobufField(number = 58, type = FieldType.MAP, mapKey = FieldType.UINT32, mapValue = FieldType.UINT32) Map<Integer, Integer> map_uint32_uint32,

@@ -19,13 +19,13 @@ import java.io.Writer;
 import java.lang.reflect.Type;
 
 /**
- * Implémentation principale de {@link Jsonb}. M4.1 :
+ * Main {@link Jsonb} implementation. M4.1:
  * <ul>
- *   <li>écriture en mode runtime via {@link RuntimeBindingRegistry}</li>
- *   <li>lecture reportée à M4.2</li>
+ *   <li>runtime write path via {@link RuntimeBindingRegistry}</li>
+ *   <li>read path deferred to M4.2</li>
  * </ul>
  *
- * <p>Pas de {@code synchronized} — les caches utilisent {@link ClassValue}.</p>
+ * <p>No {@code synchronized} — caches use {@link ClassValue}.</p>
  */
 public final class ChampollionJsonb implements Jsonb {
 
@@ -39,10 +39,10 @@ public final class ChampollionJsonb implements Jsonb {
     private final boolean strictIJson;
 
     /**
-     * P9 — pool de parsers Champollion par-thread. Évite la ré-allocation à
-     * chaque {@code fromJson} de {@code JsonTokenizer + char[512] + Deque}.
-     * Ne pool que si le provider est {@code ChampollionJsonProvider} ; pour
-     * tout autre provider on retombe sur {@code createParser}.
+     * P9 — per-thread Champollion parser pool. Avoids reallocating
+     * {@code JsonTokenizer + char[512] + Deque} on every {@code fromJson} call.
+     * Pool only when the provider is {@code ChampollionJsonProvider}; for any
+     * other provider, fall back to {@code createParser}.
      */
     private final ThreadLocal<io.vidocq.champollion.jsonp.internal.ChampollionJsonParser> parserPool =
             ThreadLocal.withInitial(() -> null);
@@ -54,7 +54,7 @@ public final class ChampollionJsonb implements Jsonb {
         this.writeNullValues = booleanProp(config, JsonbConfig.NULL_VALUES);
         this.strictIJson = booleanProp(config, JsonbConfig.STRICT_IJSON);
         String defaultDateFormat = stringProp(config, JsonbConfig.DATE_FORMAT);
-        // En mode IJSON strict, on force BASE_64 (avec padding) — §3.5.5.
+        // In strict IJSON mode, force BASE_64 (with padding) — §3.5.5.
         String binaryStrategy = this.strictIJson
                 ? jakarta.json.bind.config.BinaryDataStrategy.BASE_64
                 : stringProp(config, JsonbConfig.BINARY_DATA_STRATEGY);
@@ -65,9 +65,9 @@ public final class ChampollionJsonb implements Jsonb {
         var configLocale = (java.util.Locale) config.getProperty(JsonbConfig.LOCALE).orElse(null);
         boolean failOnUnknown = booleanProp(config, "jsonb.fail-on-unknown-properties");
         boolean creatorParametersRequired = booleanProp(config, JsonbConfig.CREATOR_PARAMETERS_REQUIRED);
-        // En mode IJSON strict, le format date/time est figé sur le format ZonedDateTime — §3.5.1.
-        // Pattern attendu par TCK : Z littéral + offset numérique XXX (xxx = offset always
-        // numerique ±HH:MM, jamais "Z").
+        // In strict IJSON mode, the date/time format is fixed to the ZonedDateTime format — §3.5.1.
+        // Pattern expected by the TCK: literal Z + numeric offset XXX (xxx = numeric
+        // offset ±HH:MM, never "Z").
         String effectiveDateFormat = (this.strictIJson && defaultDateFormat == null)
                 ? "yyyy-MM-dd'T'HH:mm:ss'Z'xxx"
                 : defaultDateFormat;
@@ -92,7 +92,7 @@ public final class ChampollionJsonb implements Jsonb {
 
     /**
      * Extrait les adapters globaux depuis {@code JsonbConfig.ADAPTERS} et indexe-les
-     * par leur type {@code Original} (premier paramètre générique de {@code JsonbAdapter}).
+     * by their {@code Original} type (the first generic parameter of {@code JsonbAdapter}).
      */
     @SuppressWarnings("rawtypes")
     private static java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> collectAdapters(JsonbConfig config) {
@@ -151,7 +151,7 @@ public final class ChampollionJsonb implements Jsonb {
         return out;
     }
 
-    /** Cherche le 1er paramètre générique de l'interface {@code iface} sur la classe (récursif sur supers). */
+    /** Looks up the first generic parameter of interface {@code iface} on the class (recursive over supers). */
     private static Class<?> findGenericArg(Class<?> impl, Class<?> iface) {
         for (Class<?> c = impl; c != null && c != Object.class; c = c.getSuperclass()) {
             for (java.lang.reflect.Type t : c.getGenericInterfaces()) {
@@ -165,7 +165,7 @@ public final class ChampollionJsonb implements Jsonb {
         return null;
     }
 
-    /** Vue immuable des bindings statiques résolus, pour diagnostic et tests. */
+    /** Immutable view of the resolved static bindings, for diagnostics and tests. */
     public Map<Class<?>, JsonbBinding<?>> staticBindingsView() {
         return staticBindings.view();
     }
@@ -212,7 +212,7 @@ public final class ChampollionJsonb implements Jsonb {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private void writeValue(JsonGenerator g, Object object, Type runtimeType) {
         if (object == null) { g.writeNull(); return; }
-        // §3.5 IJSON strict — top-level doit être objet ou tableau, sinon JsonbException.
+        // §3.5 strict IJSON — top-level must be object or array, otherwise JsonbException.
         if (strictIJson) {
             Class<?> raw = rawClassOf(runtimeType, object);
             boolean okTop = java.util.Map.class.isAssignableFrom(raw)
@@ -231,7 +231,7 @@ public final class ChampollionJsonb implements Jsonb {
                 throw new JsonbException("IJSON strict mode: top-level JSON text must be an object or array (got " + raw.getName() + ")");
             }
         }
-        // Lookup-first : binding statique disponible pour ce type ?
+        // Lookup-first: static binding available for this type?
         JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, object));
         if (staticBinding != null) {
             staticBinding.write(g, object);
@@ -276,8 +276,8 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     /**
-     * P10.1 fast-path : parse une {@link String} directement sans
-     * {@link StringReader} ni {@code char[]} intermédiaire (via
+     * P10.1 fast-path: parse a {@link String} directly without
+     * {@link StringReader} or intermediate {@code char[]} (via
      * {@link io.vidocq.champollion.jsonp.internal.JsonStringTokenizer}).
      */
     private Object readValuePooledFromString(String src, Type runtimeType) {
@@ -306,11 +306,12 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     /**
-     * Voie pool : récupère (ou crée) un {@link io.vidocq.champollion.jsonp.internal.ChampollionJsonParser}
-     * thread-local, le {@code reset(reader)}, lit la valeur, et le laisse en
-     * place pour le prochain appel sur ce thread. Le {@code reader} fourni
-     * n'est pas fermé — c'est la responsabilité de l'appelant (cohérent avec
-     * le contrat habituel des méthodes {@code fromJson(Reader, ...)}).
+     * Pooled path: retrieve (or create) a thread-local
+     * {@link io.vidocq.champollion.jsonp.internal.ChampollionJsonParser},
+     * {@code reset(reader)}, read the value, and leave it in place for the next
+     * call on this thread. The provided {@code reader} is not closed — that is the
+     * caller's responsibility (consistent with the usual
+     * {@code fromJson(Reader, ...)} contract).
      */
     private Object readValuePooled(Reader reader, Type runtimeType) {
         var parser = parserPool.get();
@@ -336,7 +337,7 @@ public final class ChampollionJsonb implements Jsonb {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private Object readValue(JsonParser p, Type runtimeType) {
-        // Lookup-first : binding statique pour ce type ?
+        // Lookup-first: static binding for this type?
         JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, null));
         if (staticBinding != null) {
             return staticBinding.read(p);

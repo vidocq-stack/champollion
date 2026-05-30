@@ -26,16 +26,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Runtime binding reflectif pour records annotés {@link ProtobufMessage}.
+ * Reflective runtime binding for records annotated {@link ProtobufMessage}.
  *
- * <p>Introspection à la première rencontre de la classe : on construit un
- * {@link BindingPlan} via {@link RecordComponent#getAnnotation(Class)} et des
- * {@link MethodHandle} pour le constructeur canonique et les accesseurs.
- * Plan caché dans une {@link ConcurrentHashMap} par {@link Class} — coût amorti
- * après warmup. Aucune {@code synchronized}, aucun {@code ThreadLocal}.</p>
+ * <p>Introspection on first encounter of the class: we build a
+ * {@link BindingPlan} via {@link RecordComponent#getAnnotation(Class)} and
+ * {@link MethodHandle}s for the canonical constructor and accessors.
+ * Binding plan cached in a {@link ConcurrentHashMap} keyed by {@link Class} — amortized cost
+ * after warmup. No {@code synchronized}, no {@code ThreadLocal}.</p>
  *
- * <p>Le mode statique ({@code champollion-protobuf-codegen}) pourra plus tard
- * produire un binding compilé qui supplantera ce runtime via {@link java.util.ServiceLoader}.</p>
+ * <p>The static mode ({@code champollion-protobuf-codegen}) may later
+ * produce a compiled binding that will supersede this runtime via {@link java.util.ServiceLoader}.</p>
  */
 public final class RuntimeBinding {
 
@@ -85,10 +85,10 @@ public final class RuntimeBinding {
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
         } catch (IllegalAccessException e) {
-            // Fallback : un record public dans un module non-ouvert (par
-            // exemple chargé dynamiquement dans l'unnamed module) reste
-            // utilisable via publicLookup — son ctor canonique et ses
-            // accessors sont publics par construction.
+            // Fallback: a public record in an openless module (for
+            // example loaded dynamically in the unnamed module) remains
+            // usable via publicLookup — its canonical ctor and accessors are
+            // public by construction.
             lookup = MethodHandles.publicLookup();
         }
         int unknownFieldsIndex = -1;
@@ -96,8 +96,8 @@ public final class RuntimeBinding {
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
-            // Détecter le composant UnknownFieldSet : doit s'appeler "unknownFields"
-            // (par convention) et avoir le type UnknownFieldSet. Pas annoté
+            // Detect the UnknownFieldSet component: it must be called "unknownFields"
+            // (by convention) and have the UnknownFieldSet type. Not annotated
             // @ProtobufField.
             if (rc.getType() == UnknownFieldSet.class
                     && "unknownFields".equals(rc.getName())) {
@@ -190,7 +190,7 @@ public final class RuntimeBinding {
                 "Cannot resolve List element type for " + rc.getName() + " (got " + arg + ")");
     }
 
-    /** Extrait V de Map<K,V>. Utilisé pour MAP avec mapValue=MESSAGE. */
+    /** Extracts V from Map<K,V>. Used for MAP with mapValue=MESSAGE. */
     private static Class<?> resolveMapValueClass(RecordComponent rc) {
         Type generic = rc.getGenericType();
         if (!(generic instanceof ParameterizedType pt)) return Object.class;
@@ -231,15 +231,15 @@ public final class RuntimeBinding {
             } else if (fb.repeated) {
                 writeRepeated(fb, (List<?>) value, out);
             } else if (!fb.explicitPresence && isDefault(fb, value)) {
-                // Proto3 implicit presence : on omet les valeurs par défaut sur la wire.
-                // En EXPLICIT (proto2 / Edition 2023 override), on écrit toujours.
+                // Proto3 implicit presence: omit default values on the wire.
+                // In EXPLICIT (proto2 / Edition 2023 override), always write it.
                 continue;
             } else {
                 out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
                 writeScalar(fb, value, out);
             }
         }
-        // Ré-émet les unknown fields à la fin du message (forward-compat).
+        // Re-emits unknown fields at the end of the message (forward compat).
         if (plan.unknownFieldsIndex >= 0) {
             try {
                 UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
@@ -254,8 +254,8 @@ public final class RuntimeBinding {
 
     private static void writeRepeated(FieldBinding fb, List<?> list, CodedOutputStream out) throws IOException {
         if (list.isEmpty()) return;
-        // Filtre les nulls (unknown enum values stockées en null par le parser lenient).
-        // Proto3 forward-compat : on omet ces valeurs en re-sérialisation.
+        // Filters nulls (unknown enum values stored as null by the lenient parser).
+        // Proto3 forward compat: omit these values when re-serializing.
         if (fb.packed) {
             int payloadSize = 0;
             for (Object item : list) {
@@ -351,8 +351,8 @@ public final class RuntimeBinding {
             case STRING -> "";
             case BYTES -> new byte[0];
             case ENUM -> {
-                // Default proto3 §enum : la première constante déclarée (value=0).
-                // En cas d'enum unknown reçu sur wire, le caller distingue via byValue→null.
+                // Default proto3 §enum: the first declared constant (value=0).
+                // If an unknown enum is received on the wire, the caller distinguishes it via byValue→null.
                 if (messageClass != null && messageClass.isEnum()) {
                     yield messageClass.getEnumConstants()[0];
                 }
@@ -403,7 +403,7 @@ public final class RuntimeBinding {
             case BOOL -> 1;
             case ENUM -> {
                 int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
-                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
                 yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
                              : CodedOutputStream.computeRawVarint32Size(_v);
             }
@@ -513,7 +513,7 @@ public final class RuntimeBinding {
             case BOOL -> 1;
             case ENUM -> {
                 int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
-                // ENUM négatif (NEG=-1) → writeInt32NoTag sign-extend sur 10 octets.
+                // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
                 yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
                              : CodedOutputStream.computeRawVarint32Size(_v);
             }
@@ -549,7 +549,7 @@ public final class RuntimeBinding {
             case DOUBLE -> ((double) value) == 0.0;
             case STRING -> ((String) value).isEmpty();
             case BYTES -> ((byte[]) value).length == 0;
-            case MESSAGE -> false; // un message embarqué non-null est jamais "default"
+            case MESSAGE -> false; // a non-null embedded message is never "default"
             case MAP -> ((Map<?, ?>) value).isEmpty();
         };
     }
@@ -561,8 +561,8 @@ public final class RuntimeBinding {
         boolean[] hasValue = new boolean[plan.componentTypes.length];
         // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge.
         java.util.Map<Integer, java.io.ByteArrayOutputStream> messageBuffers = null;
-        // UnknownFieldSet : si le record a un composant `unknownFields`, on collecte
-        // les fields inconnus pour les ré-émettre à la sérialisation (forward-compat).
+        // UnknownFieldSet: if the record has an `unknownFields` component, collect
+        // unknown fields so they can be re-emitted during serialization (forward compat).
         UnknownFieldSet.Builder unknownFieldsBuilder =
                 plan.unknownFieldsIndex >= 0 ? UnknownFieldSet.newBuilder() : null;
 
@@ -576,9 +576,9 @@ public final class RuntimeBinding {
                 in.skipField(tag, unknownFieldsBuilder);
                 continue;
             }
-            // Spec proto3 §oneof : si plusieurs champs d'un même oneof arrivent sur
-            // la wire, seul le dernier est conservé. On clear les autres slots du
-            // même oneofGroup avant d'écrire le nouveau.
+            // Proto3 §oneof spec: if multiple fields from the same oneof arrive on
+            // the wire, only the last one is kept. We clear the other slots in the
+            // same oneofGroup before writing the new one.
             if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
                 for (FieldBinding other : plan.fields) {
                     if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
@@ -588,8 +588,8 @@ public final class RuntimeBinding {
                     }
                 }
             }
-            // Spec proto3 §field-message-merge : si MESSAGE singulier et déjà vu,
-            // on accumule les bytes pour reparse une seule fois en fin de message.
+            // Proto3 §field-message-merge spec: if a singular MESSAGE has already been seen,
+            // accumulate bytes to reparse only once at the end of the message.
             if (fb.type == FieldType.MESSAGE && !fb.repeated
                     && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
                 if (messageBuffers == null) messageBuffers = new java.util.HashMap<>();
@@ -620,8 +620,8 @@ public final class RuntimeBinding {
             }
         }
 
-        // Compléter les slots vides avec les défauts du record. Le composant
-        // unknownFields (s'il existe) reçoit UnknownFieldSet.EMPTY ou le build du Builder.
+        // Fill empty slots with the record defaults. The
+        // unknownFields component (if it exists) receives UnknownFieldSet.EMPTY or the Builder build result.
         for (int i = 0; i < slots.length; i++) {
             if (hasValue[i]) continue;
             if (i == plan.unknownFieldsIndex) {
@@ -633,7 +633,7 @@ public final class RuntimeBinding {
             FieldBinding fb = plan.fields.get(indexOfComponent(plan, i));
             slots[i] = defaultFor(fb);
         }
-        // Le slot unknownFields doit toujours être set (le record l'attend non-null).
+        // The unknownFields slot must always be set (the record expects it non-null).
         if (plan.unknownFieldsIndex >= 0 && slots[plan.unknownFieldsIndex] == null) {
             slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
                     ? unknownFieldsBuilder.build()
@@ -696,9 +696,9 @@ public final class RuntimeBinding {
                 slots[idx] = list;
                 hasValue[idx] = true;
             }
-            // Le lecteur doit accepter PACKED et UNPACKED pour un même champ
-            // (proto3 / Edition 2023 spec), peu importe la valeur de fb.packed
-            // côté binding — c'est juste l'hint d'écriture.
+            // The reader must accept PACKED and UNPACKED for the same field
+            // (proto3 / Edition 2023 spec), regardless of the value of fb.packed
+            // on the binding side — it is only a write hint.
             if (wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED && fb.type.packable()) {
                 int size = in.readRawVarint32();
                 int oldLimit = in.pushLimit(size);
@@ -742,8 +742,8 @@ public final class RuntimeBinding {
                 if (!ec.isEnum()) {
                     throw new IOException("ENUM field bound to non-enum class " + ec);
                 }
-                // EnumValueMap honore @ProtoEnumValue + fallback ordinal.
-                // null = unknown value (proto3 forward-compat).
+                // EnumValueMap honors @ProtoEnumValue + ordinal fallback.
+                // null = unknown value (proto3 forward compat).
                 yield EnumValueMap.forClass(ec).byValue(value);
             }
             case FIXED32 -> in.readFixed32();
@@ -809,11 +809,11 @@ public final class RuntimeBinding {
 
     private static Object defaultFor(FieldBinding fb) {
         if (fb.repeated) return List.of();
-        // explicitPresence (oneof / proto2 / Edition 2023 EXPLICIT) : un champ
-        // absent du wire reste null en Java pour distinguer "absent" de "présent
-        // avec valeur default". Le caller utilise null pour ne pas écrire le champ.
-        // Requiert que le elementType ne soit pas une primitive — c'est garanti
-        // pour les oneof (Integer/Long/etc. wrapper types).
+        // explicitPresence (oneof / proto2 / Edition 2023 EXPLICIT): a field
+        // absent from the wire remains null in Java to distinguish "absent" from "present
+        // with default value". The caller uses null to avoid writing the field.
+        // Requires the elementType not to be a primitive — this is guaranteed
+        // for oneofs (Integer/Long/etc. wrapper types).
         if (fb.explicitPresence && !fb.elementType.isPrimitive()) {
             return null;
         }

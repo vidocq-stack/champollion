@@ -6,17 +6,17 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marque un {@code record} (ou une classe immutable canonique) comme message
- * Protocol Buffers. Les record components doivent porter {@link ProtobufField}.
+ * Marks a {@code record} (or a canonical immutable class) as a Protocol
+ * Buffers message. Record components must carry {@link ProtobufField}.
  *
- * <p>L'annotation seule suffit en mode runtime reflectif (introspection via
- * {@code MethodHandles}). Le mode statique (codegen via {@code champollion-protobuf-codegen})
- * pourra plus tard produire un binding compilé sans réflexion.</p>
+ * <p>The annotation alone is enough in reflective runtime mode (introspection via
+ * {@code MethodHandles}). The static mode (codegen via {@code champollion-protobuf-codegen})
+ * may later produce a compiled binding without reflection.</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface ProtobufMessage {
 
-    /** Nom du message (par défaut, le simple name de la classe). */
+    /** Message name (by default, the class simple name). */
     String value() default "";
 }

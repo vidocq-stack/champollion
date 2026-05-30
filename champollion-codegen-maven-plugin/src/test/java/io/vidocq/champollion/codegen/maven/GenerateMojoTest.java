@@ -40,10 +40,10 @@ class GenerateMojoTest {
 
     @Test
     void mojo_class_loads_and_extends_AbstractMojo() {
-        // @Mojo a RetentionPolicy.CLASS — pas visible via reflection runtime.
-        // On vérifie juste la hiérarchie de classes : si le module compile et
-        // que la classe étend AbstractMojo, le maven-plugin-plugin descriptor
-        // l'aura inclus dans META-INF/maven/plugin.xml.
+        // @Mojo has RetentionPolicy.CLASS — not visible via runtime reflection.
+        // We just verify the class hierarchy: if the module compiles and
+        // the class extends AbstractMojo, the maven-plugin-plugin descriptor
+        // will have included it in META-INF/maven/plugin.xml.
         assertNotNull(GenerateMojo.class);
         assertTrue(org.apache.maven.plugin.AbstractMojo.class.isAssignableFrom(GenerateMojo.class));
     }

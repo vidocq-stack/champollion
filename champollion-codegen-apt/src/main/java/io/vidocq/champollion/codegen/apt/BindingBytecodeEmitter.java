@@ -21,13 +21,13 @@ import java.lang.constant.MethodTypeDesc;
 import java.util.List;
 
 /**
- * Émet directement le bytecode du binding statique via {@link ClassFile} (JDK 24+).
+ * Emits static binding bytecode directly via {@link ClassFile} (JDK 24+).
  *
- * <p>Chemin "fast path" pour les records dont tous les composants sont primitifs
- * ou {@link String}. Les types complexes (containers, nested records) font basculer
- * le {@link JsonbStaticProcessor} sur la génération de sources.</p>
+ * <p>Fast path for records whose components are all primitive or {@link String}.
+ * Complex types (containers, nested records) switch {@link JsonbStaticProcessor}
+ * to source generation.</p>
  *
- * <p>Format des classes générées :</p>
+ * <p>Generated class format:</p>
  * <pre>{@code
  * public final class <Pkg>.<Simple>$$Binding implements JsonbBinding {
  *     public Class type() { return <Target>.class; }
@@ -54,9 +54,9 @@ import java.util.List;
  * }
  * }</pre>
  *
- * <p>Note : on n'émet pas de bridges generics — l'effacement de
- * {@code JsonbBinding<T>} donne {@code Class type()}, {@code void write(JsonGenerator, Object)},
- * {@code Object read(JsonParser)}, exactement les signatures qu'on génère.</p>
+ * <p>Note: we do not emit generic bridges — the erasure of {@code JsonbBinding<T>}
+ * yields {@code Class type()}, {@code void write(JsonGenerator, Object)},
+ * {@code Object read(JsonParser)}, exactly the signatures we generate.</p>
  */
 final class BindingBytecodeEmitter {
 
@@ -78,17 +78,18 @@ final class BindingBytecodeEmitter {
     private static final ClassDesc CD_RAW_KEY_WRITER = ClassDesc.of("io.vidocq.champollion.spi.RawJsonKeyWriter");
 
     /**
-     * Slots locaux fixes utilisés par les méthodes de container côté <em>write</em>.
-     * Les locals 0-3 sont occupés par {@code this/g/v/t}.
+     * Fixed local slots used by the container-side <em>write</em> methods.
+     * Locals 0-3 are occupied by {@code this/g/v/t}.
      */
     private static final int W_TMP = 4;
     private static final int W_IDX = 5;
     private static final int W_LEN = 6;
-    private static final int W_TMP2 = 7;   // utilisé pour les pivots nested record dans les boucles
+    private static final int W_TMP2 = 7;   // used for nested-record pivots in loops
 
     /**
-     * Test : tous les composants sont-ils dans le subset bytecode ?
-     * Couverture actuelle : primitives, String, enums, arrays {int[]/long[]/double[]/boolean[]/String[]}.
+     * Test: are all components within the bytecode subset?
+     * Current coverage: primitives, String, enums, arrays
+     * {int[]/long[]/double[]/boolean[]/String[]}.
      */
     static boolean eligible(List<? extends RecordComponentElement> comps) {
         for (var c : comps) {
@@ -148,7 +149,7 @@ final class BindingBytecodeEmitter {
         };
     }
 
-    /** Type interne accepté dans les containers (Optional, List, Map values). */
+    /** Internal type accepted in containers (Optional, List, Map values). */
     private static boolean isInnerEligible(TypeMirror inner) {
         if (inner.getKind() != TypeKind.DECLARED) return false;
         DeclaredType dt = (DeclaredType) inner;
@@ -159,15 +160,15 @@ final class BindingBytecodeEmitter {
                 || isStaticRecord(dt);
     }
 
-    /** Émet le bytecode du binding pour {@code record}. */
+    /** Emits binding bytecode for {@code record}. */
     static byte[] emit(TypeElement record, String bindingFqn) {
         String targetFqn = record.getQualifiedName().toString();
         ClassDesc CD_TARGET = ClassDesc.of(targetFqn);
         ClassDesc CD_BINDING = ClassDesc.of(bindingFqn);
         List<? extends RecordComponentElement> comps = record.getRecordComponents();
 
-        // M5.11 : pré-encoder les noms de propriétés (avec escape RFC 8259).
-        // M4.4b : @JsonbProperty(name) renomme ; @JsonbTransient exclut.
+        // M5.11: pre-encode property names (with RFC 8259 escaping).
+        // M4.4b: @JsonbProperty(name) renames; @JsonbTransient excludes.
         String[] jsonNames = new String[comps.size()];
         String[] preQuoted = new String[comps.size()];
         boolean[] transientFlag = new boolean[comps.size()];
@@ -193,7 +194,7 @@ final class BindingBytecodeEmitter {
         });
     }
 
-    /** Nom JSON d'un composant : valeur de @JsonbProperty si présente, sinon simpleName. */
+    /** JSON name of a component: @JsonbProperty value if present, otherwise simpleName. */
     private static String jsonbName(RecordComponentElement c) {
         var prop = c.getAnnotation(JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return prop.value();
@@ -205,14 +206,14 @@ final class BindingBytecodeEmitter {
         return c.getSimpleName().toString();
     }
 
-    /** Vrai si le composant ou son accesseur portent {@code @JsonbTransient}. */
+    /** True if the component or its accessor carry {@code @JsonbTransient}. */
     private static boolean isJsonbTransient(RecordComponentElement c) {
         if (c.getAnnotation(JsonbTransient.class) != null) return true;
         var accessor = c.getAccessor();
         return accessor != null && accessor.getAnnotation(JsonbTransient.class) != null;
     }
 
-    /** Vrai si le composant ou son accesseur portent {@code @JsonbNillable}. */
+    /** True if the component or its accessor carry {@code @JsonbNillable}. */
     private static boolean isJsonbNillable(RecordComponentElement c) {
         if (c.getAnnotation(JsonbNillable.class) != null) return true;
         var accessor = c.getAccessor();
@@ -220,11 +221,11 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Pré-encode un nom de propriété en JSON quoted + colon (RFC 8259 §7).
-     * Le colon final est inclus pour permettre {@link
-     * io.vidocq.champollion.spi.RawJsonKeyWriter#writeKeyRawWithColon} (P4 :
-     * fragment {@code "name":} émis en un unique {@code Writer.write(String)}).
-     * Exemple : {@code name} → {@code "name":} ; {@code "a\""} → {@code "\"a\\\"\":"}.
+     * Pre-encodes a property name as JSON quoted + colon (RFC 8259 §7).
+     * The trailing colon is included to allow {@link
+     * io.vidocq.champollion.spi.RawJsonKeyWriter#writeKeyRawWithColon} (P4:
+     * fragment {@code "name":} emitted as a single {@code Writer.write(String)}).
+     * Example: {@code name} → {@code "name":}; {@code "a\""} → {@code "\"a\\\"\":"}.
      */
     private static String preQuoteJson(String name) {
         var sb = new StringBuilder(name.length() + 3);
@@ -306,7 +307,7 @@ final class BindingBytecodeEmitter {
                     code.pop();
 
                     for (int i = 0; i < comps.size(); i++) {
-                        if (transientFlag[i]) continue;   // @JsonbTransient : pas d'écriture
+                        if (transientFlag[i]) continue;   // @JsonbTransient: no write
                         emitWriteComponent(code, CD_TARGET, comps.get(i), jsonNames[i], preQuoted[i], nillableFlag[i]);
                     }
 
@@ -320,8 +321,8 @@ final class BindingBytecodeEmitter {
     }
 
     private static void emitWriteComponent(CodeBuilder code, ClassDesc CD_TARGET, RecordComponentElement c, String jsonName, String preQuoted, boolean nillable) {
-        // 'name' = nom de la méthode accessor sur le record (toujours le simpleName du composant).
-        // 'jsonName' = nom du membre dans le JSON (peut différer via @JsonbProperty).
+        // 'name' = accessor method name on the record (always the component simpleName).
+        // 'jsonName' = member name in JSON (may differ via @JsonbProperty).
         String name = c.getSimpleName().toString();
         TypeMirror tm = c.asType();
 
@@ -370,14 +371,14 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Émet l'écriture {@code g.write(name, value)} pour un composant primitif,
-     * en choisissant la voie rapide {@code RawJsonKeyWriter.writeKeyRaw} +
-     * {@code g.write(value)} si le generator l'implémente, sinon le fallback
-     * standard {@code g.write(name, value)}.
+     * Emits the {@code g.write(name, value)} call for a primitive component,
+     * choosing the fast path {@code RawJsonKeyWriter.writeKeyRaw} +
+     * {@code g.write(value)} if the generator implements it, otherwise the
+     * standard {@code g.write(name, value)} fallback.
      *
-     * <p>Le dispatch se fait via un {@code instanceof RawJsonKeyWriter} en début
-     * de chaque write : 1 instruction de plus par propriété, négligeable face au
-     * gain d'avoir évité l'escape RFC 8259 §7 sur le nom à chaque appel.</p>
+     * <p>Dispatch is done via an {@code instanceof RawJsonKeyWriter} check at the
+     * start of each write: one extra instruction per property, negligible compared
+     * to the gain from avoiding RFC 8259 §7 escaping of the name on every call.</p>
      */
     private static void emitKeyValuePrimitive(CodeBuilder code, ClassDesc CD_TARGET, String name,
                                               String jsonName, String preQuoted, TypeMirror accessorTm,
@@ -391,7 +392,7 @@ final class BindingBytecodeEmitter {
         code.instanceOf(CD_RAW_KEY_WRITER);
         code.ifeq(slow);
 
-        // FAST : ((RawJsonKeyWriter) g).writeKeyRaw(preQuoted) ; g.write(t.name())
+        // FAST: ((RawJsonKeyWriter) g).writeKeyRaw(preQuoted); g.write(t.name())
         code.aload(1);
         code.checkcast(CD_RAW_KEY_WRITER);
         code.ldc(preQuoted);
@@ -407,7 +408,7 @@ final class BindingBytecodeEmitter {
         code.pop();
         code.goto_(end);
 
-        // SLOW : g.write(jsonName, t.name())
+        // SLOW: g.write(jsonName, t.name())
         code.labelBinding(slow);
         code.aload(1);
         code.ldc(jsonName);
@@ -421,7 +422,7 @@ final class BindingBytecodeEmitter {
         code.labelBinding(end);
     }
 
-    /** Voie rapide / lente pour les composants String avec gestion null + @JsonbNillable. */
+    /** Fast/slow path for String components with null handling + @JsonbNillable. */
     private static void emitKeyValueString(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted, boolean nillable) {
         Label skip = code.newLabel();
         Label nullPath = code.newLabel();
@@ -461,7 +462,7 @@ final class BindingBytecodeEmitter {
         code.pop();
         code.goto_(end);
 
-        // NULL PATH : si @JsonbNillable, écrire la clé + null ; sinon skip.
+        // NULL PATH: if @JsonbNillable, write the key + null; otherwise skip.
         code.labelBinding(nullPath);
         if (nillable) {
             code.aload(1);
@@ -479,7 +480,7 @@ final class BindingBytecodeEmitter {
         code.labelBinding(skip);
     }
 
-    /** Voie rapide / lente pour les composants enum avec gestion null. */
+    /** Fast/slow path for enum components with null handling. */
     private static void emitKeyValueEnum(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, String preQuoted, DeclaredType enumDt) {
         ClassDesc CD_ENUM = ClassDesc.of(enumDt.asElement().toString());
         Label skip = code.newLabel();
@@ -522,7 +523,7 @@ final class BindingBytecodeEmitter {
         code.labelBinding(skip);
     }
 
-    /** Émet le bytecode write pour un composant array primitif ou {@code String[]}. */
+    /** Emits write bytecode for a primitive array component or {@code String[]}. */
     private static void emitWriteArray(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, ArrayType arrTm) {
         TypeMirror compTm = arrTm.getComponentType();
         ClassDesc CD_COMP_ARR = arrayCDOf(compTm);
@@ -591,7 +592,7 @@ final class BindingBytecodeEmitter {
                         MethodTypeDesc.of(CD_JSON_GENERATOR, ConstantDescs.CD_boolean));
             }
             case DECLARED -> {
-                // String[] : on doit gérer null pour chaque élément
+                // String[]: null must be handled for each element
                 code.aaload();              // [g, String|null]
                 Label nullElem = code.newLabel();
                 Label afterElem = code.newLabel();
@@ -602,10 +603,10 @@ final class BindingBytecodeEmitter {
                         MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
                 code.goto_(afterElem);
                 code.labelBinding(nullElem);
-                // null : pop la null + g already on stack? Non, dup a laissé : [g, null]
-                // On a fait dup → [g, null, null]. ifnull a sauté quand top était null,
-                // mais on a aussi consommé un null par ifnull. Reste : [g, null]. Il faut
-                // pop le null restant et appeler g.writeNull().
+                // null: pop the null + g already on stack? No, dup left [g, null]
+                // We did dup → [g, null, null]. ifnull skipped when top was null,
+                // but it also consumed one null. Remaining: [g, null]. We must pop
+                // the remaining null and call g.writeNull().
                 code.pop();
                 code.invokeinterface(CD_JSON_GENERATOR, "writeNull",
                         MethodTypeDesc.of(CD_JSON_GENERATOR));
@@ -634,11 +635,11 @@ final class BindingBytecodeEmitter {
     // ============================================================
 
     /**
-     * Émet le bytecode write pour {@code Optional<X>}.
+     * Emits write bytecode for {@code Optional<X>}.
      *
-     * <p>Si l'Optional est null ou empty → pas d'émission (cohérent runtime §3.14.2).
-     * Sinon, on extrait via {@code .get()} et on émet via {@code g.write(name, val)}
-     * avec unbox au besoin pour les wrappers primitifs.</p>
+     * <p>If the Optional is null or empty → no emission (consistent with runtime
+     * §3.14.2). Otherwise, extract via {@code .get()} and emit via
+     * {@code g.write(name, val)} with unboxing as needed for primitive wrappers.</p>
      */
     private static void emitWriteOptional(CodeBuilder code, ClassDesc CD_TARGET, String name, String jsonName, DeclaredType optTm) {
         TypeMirror inner = optTm.getTypeArguments().get(0);
@@ -719,10 +720,10 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Émet le bytecode read pour {@code Optional<X>}.
+     * Emits read bytecode for {@code Optional<X>}.
      *
-     * <p>{@code _ev == VALUE_NULL} → {@code Optional.empty()}, sinon
-     * {@code Optional.of(<read leaf>)} où le leaf est lu via le parser et boxé.</p>
+     * <p>{@code _ev == VALUE_NULL} → {@code Optional.empty()}, otherwise
+     * {@code Optional.of(<read leaf>)} where the leaf is read via the parser and boxed.</p>
      */
     private static void emitReadOptional(CodeBuilder code, DeclaredType optTm, int slot) {
         TypeMirror inner = optTm.getTypeArguments().get(0);
@@ -737,7 +738,7 @@ final class BindingBytecodeEmitter {
         code.goto_(join);
         code.labelBinding(nul);
 
-        // Lit la valeur leaf et la boxe en Object pour Optional.of(Object).
+        // Read the leaf value and box it as Object for Optional.of(Object).
         if (isEnum(inner)) {
             ClassDesc CD_ENUM = ClassDesc.of(innerFqn);
             code.aload(1);
@@ -796,14 +797,14 @@ final class BindingBytecodeEmitter {
     // ============================================================
 
     /**
-     * État pré-condition : event courant en slot 2, parser en slot 1.
-     * Lit la valeur courante (selon innerFqn et l'event) et empile une référence
-     * boxed sur la stack.
+     * Precondition state: current event in slot 2, parser in slot 1.
+     * Reads the current value (according to innerFqn and the event) and pushes a
+     * boxed reference onto the stack.
      */
     private static void readLeafBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
         if (innerTm.getKind() == TypeKind.DECLARED && isStaticRecord((DeclaredType) innerTm)) {
-            // Nested @JsonbStatic record dans un container. Délégation au binding enfant
-            // via PrimedJsonParser avec l'event courant en slot 2.
+            // Nested @JsonbStatic record inside a container. Delegate to the child
+            // binding via PrimedJsonParser with the current event in slot 2.
             DeclaredType dt = (DeclaredType) innerTm;
             ClassDesc CD_BIND = bindingCDOf(dt);
             ClassDesc CD_PRIMED = ClassDesc.of("io.vidocq.champollion.jsonb.spi.PrimedJsonParser");
@@ -871,13 +872,14 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Stack pré : [g, value(boxed)]. Émet l'appel approprié à g.write(...) selon innerFqn,
-     * en unboxant si nécessaire. Stack post : [g] (pop le retour de l'invokeinterface).
+     * Pre stack: [g, value(boxed)]. Emits the appropriate g.write(...) call
+     * according to innerFqn, unboxing if necessary. Post stack: [g] (pop the
+     * invokeinterface return).
      */
     private static void writeLeafFromBoxed(CodeBuilder code, TypeMirror innerTm, String innerFqn) {
         if (innerTm.getKind() == TypeKind.DECLARED && isStaticRecord((DeclaredType) innerTm)) {
-            // Stack pré : [g, val(Object)]. On veut appeler new Inner$$Binding().write(g, val).
-            // Stratégie : sauve val dans W_TMP2, pop g, instancie le binding, recharge g + val.
+            // Pre stack: [g, val(Object)]. We want to call new Inner$$Binding().write(g, val).
+            // Strategy: save val in W_TMP2, pop g, instantiate the binding, reload g + val.
             DeclaredType dt = (DeclaredType) innerTm;
             ClassDesc CD_BIND = bindingCDOf(dt);
             code.astore(W_TMP2);
@@ -969,7 +971,7 @@ final class BindingBytecodeEmitter {
                 MethodTypeDesc.of(CD_JSON_GENERATOR));
         code.pop();
 
-        // Iterator it = field.iterator() ; stockée en W_TMP
+        // Iterator it = field.iterator(); stored in W_TMP
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_LIST));
         code.invokeinterface(CD_LIST, "iterator", MethodTypeDesc.of(CD_ITERATOR));
@@ -1022,7 +1024,7 @@ final class BindingBytecodeEmitter {
         String innerFqn = ((DeclaredType) inner).asElement().toString();
         final int R_TMP = tmpBase;
 
-        // _ev (slot 2) doit être START_ARRAY
+        // _ev (slot 2) must be START_ARRAY
         Label okStart = code.newLabel();
         code.aload(2);
         code.getstatic(CD_JSON_PARSER_EVENT, "START_ARRAY", CD_JSON_PARSER_EVENT);
@@ -1125,7 +1127,7 @@ final class BindingBytecodeEmitter {
                 MethodTypeDesc.of(CD_JSON_GENERATOR, CD_STRING));
         code.pop();
 
-        // value: stack pré [entry]; on veut [g, value]
+        // value: pre stack [entry]; we want [g, value]
         code.invokeinterface(CD_MAP_ENTRY, "getValue", MethodTypeDesc.of(CD_OBJECT));
         // si null, writeNull ; sinon write
         Label writeIt = code.newLabel();
@@ -1246,7 +1248,7 @@ final class BindingBytecodeEmitter {
         code.aload(1);
         code.aload(3);
         code.invokevirtual(CD_TARGET, name, MethodTypeDesc.of(CD_INNER));
-        // signature effacée : write(JsonGenerator, Object)V
+        // erased signature: write(JsonGenerator, Object)V
         code.invokevirtual(CD_INNER_BINDING, "write",
                 MethodTypeDesc.of(ConstantDescs.CD_void, CD_JSON_GENERATOR, CD_OBJECT));
 
@@ -1314,23 +1316,23 @@ final class BindingBytecodeEmitter {
         cb.withMethodBody("read",
                 MethodTypeDesc.of(CD_OBJECT, CD_JSON_PARSER),
                 ClassFile.ACC_PUBLIC, code -> {
-                    // Locals layout :
+                    // Locals layout:
                     //   0  this
                     //   1  p
                     //   2  e (Event)
-                    //   3  key (String, réutilisé dans la boucle)
-                    //   4..  composants un par un (slot count en fonction du type)
+                    //   3  key (String, reused in the loop)
+                    //   4..  components one by one (slot count depends on the type)
                     int[] slotByIdx = new int[comps.size()];
                     int slot = 4;
                     for (int i = 0; i < comps.size(); i++) {
                         slotByIdx[i] = slot;
                         slot += slotsFor(comps.get(i).asType());
                     }
-                    // Base des slots temporaires utilisés par les containers (arrays...) :
-                    // après le dernier slot composant pour éviter toute collision.
+                    // Base of the temporary slots used by containers (arrays...):
+                    // after the last component slot to avoid any collision.
                     final int tmpBase = slot;
 
-                    // Initialise les slots à leur défaut.
+                    // Initialize slots to their default values.
                     for (int i = 0; i < comps.size(); i++) {
                         emitDefaultStore(code, comps.get(i).asType(), slotByIdx[i]);
                     }
@@ -1349,7 +1351,7 @@ final class BindingBytecodeEmitter {
                     code.areturn();
                     code.labelBinding(notNullRoot);
 
-                    // Boucle while ((e = p.next()) != END_OBJECT)
+                    // while ((e = p.next()) != END_OBJECT)
                     Label loopStart = code.newLabel();
                     Label loopEnd = code.newLabel();
                     code.labelBinding(loopStart);
@@ -1365,15 +1367,15 @@ final class BindingBytecodeEmitter {
                     code.invokeinterface(CD_JSON_PARSER, "getString", MethodTypeDesc.of(CD_STRING));
                     code.astore(3);
 
-                    // p.next() — consomme l'event de la valeur
+                    // p.next() — consumes the value event
                     code.aload(1);
                     code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
                     code.astore(2);
 
-                    // chaîne if/else if sur la clé
+                    // if/else if chain on the key
                     Label nextIter = code.newLabel();
                     for (int i = 0; i < comps.size(); i++) {
-                        if (transientFlag[i]) continue;   // @JsonbTransient : pas de mapping en read
+                        if (transientFlag[i]) continue;   // @JsonbTransient: no read mapping
                         var c = comps.get(i);
                         Label notMatch = code.newLabel();
                         code.aload(3);
@@ -1385,7 +1387,7 @@ final class BindingBytecodeEmitter {
                         code.goto_(nextIter);
                         code.labelBinding(notMatch);
                     }
-                    // default : skip object/array si nécessaire
+                    // default: skip object/array if needed
                     Label noSkip = code.newLabel();
                     code.aload(2);
                     code.getstatic(CD_JSON_PARSER_EVENT, "START_OBJECT", CD_JSON_PARSER_EVENT);
@@ -1429,7 +1431,7 @@ final class BindingBytecodeEmitter {
             case FLOAT -> { code.fconst_0(); code.fstore(slot); }
             case BOOLEAN -> { code.iconst_0(); code.istore(slot); }
             case DECLARED -> {
-                // Optional<X> : default = Optional.empty() (cohérent avec le source path).
+                // Optional<X>: default = Optional.empty() (consistent with the source path).
                 if (isOptional(tm)) {
                     code.invokestatic(CD_OPTIONAL, "empty", MethodTypeDesc.of(CD_OPTIONAL));
                     code.astore(slot);
@@ -1464,13 +1466,13 @@ final class BindingBytecodeEmitter {
                 && elem.getAnnotation(JsonbStatic.class) != null;
     }
 
-    /** FQN du binding généré pour un record statique. */
+    /** FQN of the generated binding for a static record. */
     private static ClassDesc bindingCDOf(DeclaredType dt) {
         return ClassDesc.of(((TypeElement) dt.asElement()).getQualifiedName().toString() + "$$Binding");
     }
 
     private static void emitReadComponent(CodeBuilder code, TypeMirror tm, int slot, int tmpBase) {
-        // Si _ev == VALUE_NULL on saute (le slot reste à sa valeur par défaut).
+        // If _ev == VALUE_NULL, skip (the slot stays at its default value).
         Label nullSkip = code.newLabel();
         Label after = code.newLabel();
         code.aload(2);
@@ -1561,11 +1563,12 @@ final class BindingBytecodeEmitter {
     }
 
     /**
-     * Émet le bytecode read pour un composant array primitif ou {@code String[]}.
+     * Emits read bytecode for a primitive array component or {@code String[]}.
      *
-     * <p>Stratégie : on accumule dans un {@link java.util.ArrayList}, puis on transfère
-     * vers un array du type cible. Coût : une boxing par élément primitif. Optimisable
-     * en lecture directe à taille connue, mais le parser ne donne pas la taille à l'avance.</p>
+     * <p>Strategy: accumulate in a {@link java.util.ArrayList}, then transfer to an
+     * array of the target type. Cost: one boxing per primitive element. It could be
+     * optimized with direct reads at known size, but the parser does not provide the
+     * size upfront.</p>
      */
     private static void emitReadArray(CodeBuilder code, ArrayType arrTm, int slot, int tmpBase) {
         TypeMirror compTm = arrTm.getComponentType();
@@ -1573,8 +1576,8 @@ final class BindingBytecodeEmitter {
         final int R_IDX = tmpBase + 1;
         final int R_LEN = tmpBase + 2;
 
-        // Vérification : _ev (slot 2) doit être START_ARRAY (sinon le source path
-        // throw IllegalStateException ; on reproduit ce comportement).
+        // Check: _ev (slot 2) must be START_ARRAY (otherwise the source path throws
+        // IllegalStateException; we reproduce that behavior).
         Label okStart = code.newLabel();
         code.aload(2);
         code.getstatic(CD_JSON_PARSER_EVENT, "START_ARRAY", CD_JSON_PARSER_EVENT);
@@ -1599,7 +1602,7 @@ final class BindingBytecodeEmitter {
         code.labelBinding(loopStart);
         code.aload(1);
         code.invokeinterface(CD_JSON_PARSER, "next", MethodTypeDesc.of(CD_JSON_PARSER_EVENT));
-        // store aev en slot 2 (réutilise _ev)
+        // store aev in slot 2 (reuses _ev)
         code.astore(2);
         code.aload(2);
         code.getstatic(CD_JSON_PARSER_EVENT, "END_ARRAY", CD_JSON_PARSER_EVENT);
@@ -1666,14 +1669,14 @@ final class BindingBytecodeEmitter {
         code.goto_(loopStart);
         code.labelBinding(loopEnd);
 
-        // Maintenant convertit la List en array typé.
+        // Now convert the List to a typed array.
         // int n = list.size();
         code.aload(R_TMP);
         code.invokevirtual(CD_ARRAYLIST, "size", MethodTypeDesc.of(ConstantDescs.CD_int));
         code.dup();
         code.istore(R_LEN);
 
-        // crée le tableau cible
+        // create the target array
         switch (compTm.getKind()) {
             case INT -> code.newarray(java.lang.classfile.TypeKind.INT);
             case LONG -> code.newarray(java.lang.classfile.TypeKind.LONG);
@@ -1682,7 +1685,7 @@ final class BindingBytecodeEmitter {
             case DECLARED -> code.anewarray(CD_STRING);
             default -> throw new IllegalStateException();
         }
-        // store en slot, puis on remplit à partir de la list
+        // store in slot, then fill from the list
         code.astore(slot);
 
         // for (int i = 0; i < n; i++) arr[i] = (cast) list.get(i)[.<unbox>()]

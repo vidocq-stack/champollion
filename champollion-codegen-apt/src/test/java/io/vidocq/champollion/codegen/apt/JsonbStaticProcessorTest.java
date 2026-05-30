@@ -43,9 +43,9 @@ class JsonbStaticProcessorTest {
         Path out = tmp.resolve("out");
         Files.createDirectories(out);
 
-        // Classpath du process courant (pour que le record annoté puisse importer JsonbStatic).
+        // Classpath of the current process (so the annotated record can import JsonbStatic).
         String cp = System.getProperty("java.class.path");
-        // Ajouter aussi le module path : nos modules sont chargés en --module-path par surefire.
+        // Also add module path: our modules are loaded via --module-path by surefire.
         String mp = System.getProperty("jdk.module.path", "");
 
         var fileManager = compiler.getStandardFileManager(null, null, java.nio.charset.StandardCharsets.UTF_8);
@@ -174,7 +174,7 @@ class JsonbStaticProcessorTest {
                 @JsonbStatic
                 public class NotARecord { public int x; }
                 """;
-        // La compilation doit échouer (printMessage ERROR) — on capture sans crasher le test runner.
+        // Compilation must fail (printMessage ERROR) — capture without crashing the test runner.
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         Path out = tmp.resolve("out");
         Files.createDirectories(out);

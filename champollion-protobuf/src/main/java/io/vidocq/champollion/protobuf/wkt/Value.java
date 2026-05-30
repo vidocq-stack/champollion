@@ -6,15 +6,15 @@ import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
 /**
- * {@code google.protobuf.Value} — valeur JSON-typée dynamique.
+ * {@code google.protobuf.Value} — dynamically typed JSON value.
  *
- * <p>Spec : <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#value">
- * Value</a> — oneof de 6 sub-fields (null/number/string/bool/struct/list).
- * Un seul sub-field doit être non-null à la fois.</p>
+ * <p>Spec: <a href="https://protobuf.dev/reference/protobuf/google.protobuf/#value">
+ * Value</a> — oneof of 6 sub-fields (null/number/string/bool/struct/list).
+ * Only one sub-field may be non-null at a time.</p>
  *
- * <p>Représenté en Java comme un record avec 6 champs annotés
- * {@code oneofGroup="kind"} + {@code explicitPresence=true} pour respecter
- * la sémantique oneof (last-wins sur la wire, distinction null/default JSON).</p>
+ * <p>Represented in Java as a record with 6 fields annotated
+ * {@code oneofGroup="kind"} + {@code explicitPresence=true} to respect
+ * oneof semantics (last-wins on the wire, null/default JSON distinction).</p>
  */
 @ProtobufMessage("google.protobuf.Value")
 public record Value(
@@ -38,32 +38,32 @@ public record Value(
         ListValue listValue
 ) implements Message {
 
-    /** Factory : Value représentant {@code null} JSON. */
+    /** Factory: Value representing JSON {@code null}. */
     public static Value ofNull() {
         return new Value(NullValue.NULL_VALUE, null, null, null, null, null);
     }
 
-    /** Factory : Value représentant un number JSON. */
+    /** Factory: Value representing a JSON number. */
     public static Value ofNumber(double n) {
         return new Value(null, n, null, null, null, null);
     }
 
-    /** Factory : Value représentant une string JSON. */
+    /** Factory: Value representing a JSON string. */
     public static Value ofString(String s) {
         return new Value(null, null, s, null, null, null);
     }
 
-    /** Factory : Value représentant un boolean JSON. */
+    /** Factory: Value representing a JSON boolean. */
     public static Value ofBool(boolean b) {
         return new Value(null, null, null, b, null, null);
     }
 
-    /** Factory : Value représentant un Struct JSON object. */
+    /** Factory: Value representing a JSON Struct object. */
     public static Value ofStruct(Struct s) {
         return new Value(null, null, null, null, s, null);
     }
 
-    /** Factory : Value représentant un ListValue JSON array. */
+    /** Factory: Value representing a JSON ListValue array. */
     public static Value ofList(ListValue l) {
         return new Value(null, null, null, null, null, l);
     }
