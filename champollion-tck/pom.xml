@@ -163,6 +163,18 @@
                                 <dependency>jakarta.json:jakarta.json-tck-tests-pluggability</dependency>
                             </dependenciesToScan>
                             <reportsDirectory>${project.build.directory}/tck-reports/jsonp-pluggability</reportsDirectory>
+                            <!--
+                                Pluggability profile: MyJsonProvider (from the TCK pluggability
+                                jar) must win JsonProvider.provider() / ServiceLoader. Champollion
+                                is declared at the project root for the api profile, so we have to
+                                explicitly remove it from this profile's surefire classpath, otherwise
+                                the ServiceLoader picks ChampollionJsonProvider first and the 17
+                                jsonProviderTest* tests fail with "Current provider is not my provider".
+                            -->
+                            <classpathDependencyExcludes>
+                                <classpathDependencyExclude>io.vidocq.champollion:champollion-jsonp</classpathDependencyExclude>
+                                <classpathDependencyExclude>io.vidocq.champollion:champollion-jsonb</classpathDependencyExclude>
+                            </classpathDependencyExcludes>
                         </configuration>
                     </plugin>
                 </plugins>
