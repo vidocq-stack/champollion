@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Maven-4.0--rc--5-purple" alt="Maven">
   <img src="https://img.shields.io/badge/Jakarta_JSON--P-2.1-blue" alt="Jakarta JSON-P">
   <img src="https://img.shields.io/badge/Jakarta_JSON--B-3.0-blue" alt="Jakarta JSON-B">
-  <img src="https://img.shields.io/badge/license-Apache_2.0-green" alt="License">
+  <img src="https://img.shields.io/badge/license-EPL--2.0%20OR%20EUPL--1.2%20OR%20GPL--2.0--or--later-blue.svg" alt="License">
 </p>
 
 ---
@@ -92,4 +92,4 @@ The Vidocq ecosystem's Antora site aggregates Champollion documentation (FR + EN
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](./LICENSE).
+EPL-2.0 OR EUPL-1.2 OR GPL-2.0-or-later — see [`LICENSE`](./LICENSE).
