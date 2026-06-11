@@ -29,4 +29,17 @@ import jakarta.json.stream.JsonParser;
 @FunctionalInterface
 interface BindingReader {
     Object read(JsonParser p);
+
+    /**
+     * Marker for readers backed by a user-provided
+     * {@link jakarta.json.bind.serializer.JsonbDeserializer}: unlike internal
+     * readers (which consume exactly their value), a user deserializer may
+     * legitimately consume events up to and including the enclosing object's
+     * {@code END_OBJECT} (TCK-sanctioned pattern). {@code readObjectAndApply}
+     * applies its early-exit escape hatch only to these readers — applying it
+     * to internal readers was BUG-20260611-01 (a nested-POJO member's own
+     * {@code END_OBJECT} aborted the enclosing object read).
+     */
+    @FunctionalInterface
+    interface UserDeserializer extends BindingReader {}
 }

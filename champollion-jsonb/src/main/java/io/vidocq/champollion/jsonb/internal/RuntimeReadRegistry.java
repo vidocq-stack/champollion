@@ -262,12 +262,12 @@ final class RuntimeReadRegistry {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
         }
         if (advanceParser) {
-            return java.util.Optional.of(parser -> {
+            return java.util.Optional.of((BindingReader.UserDeserializer) parser -> {
                 parser.next();
                 return deser.deserialize(parser, deserContext, targetType);
             });
         }
-        return java.util.Optional.of(parser -> deser.deserialize(parser, deserContext, targetType));
+        return java.util.Optional.of((BindingReader.UserDeserializer) parser -> deser.deserialize(parser, deserContext, targetType));
     }
 
     /** Variant of {@link #readerFor(Type)} without adapter but preserving {@link java.lang.reflect.ParameterizedType}s. */
@@ -922,9 +922,15 @@ final class RuntimeReadRegistry {
                 skipValue(p);
             } else {
                 w.apply(inst, p);
-                // If a custom BindingReader (e.g. a TCK JsonbDeserializer) consumed
-                // jusqu'au END_OBJECT du parent, on sort proprement.
-                if (p.currentEvent() == JsonParser.Event.END_OBJECT) break;
+                // Escape hatch for user JsonbDeserializers only (TCK pattern:
+                // the deserializer consumed up to the parent's END_OBJECT).
+                // Internal readers consume exactly their value: checking them
+                // too was BUG-20260611-01 — a nested-POJO member's own
+                // END_OBJECT aborted the enclosing object read.
+                if (w.reader() instanceof BindingReader.UserDeserializer
+                        && p.currentEvent() == JsonParser.Event.END_OBJECT) {
+                    break;
+                }
             }
         }
         return inst;

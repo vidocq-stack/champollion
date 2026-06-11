@@ -9,7 +9,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20260611-01 — JSON-B runtime: nested-POJO field aborts the enclosing object read inside a collection element
 
 - **Date** : 2026-06-11
-- **Statut** : OPEN
+- **Statut** : FIXED (PR #3 — escape hatch restricted to user-deserializer readers)
 - **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.readObjectAndApply`
 - **Symptôme** : `JsonbException: Expected object, got KEY_NAME` when deserializing
   `List<Order>` (via a parameterized `Type`) where `Order` has a nested-POJO
@@ -35,3 +35,13 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-06-11 : reproduced on `main` (pre-P12) and on the P12 lazy-tokenizer
     branch — identical failure, NOT a P12 regression (verified by stashing).
     Found while extending the JSON-B read benchmark coverage to LARGE.
+  - 2026-06-11 : root cause confirmed, and the bug is WORSE than the original
+    symptom: the root case silently drops every property following a
+    nested-POJO member (`Order.total`/`priority` read back as `0.0`/`false`,
+    no exception). Fix: `BindingReader.UserDeserializer` marker on the readers
+    built from `@JsonbTypeDeserializer`; `readObjectAndApply` applies the
+    `currentEvent()==END_OBJECT` early-exit only to those (internal readers
+    consume exactly their value by contract). Regression tests in
+    `JsonbNestedPojoRegressionTest` (root + collection + greedy-deserializer
+    escape hatch). Validated: full reactor green, JSON-B TCK 289/295
+    (reference score).
