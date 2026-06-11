@@ -259,5 +259,34 @@ were self-marked as TODO):
 
 **M7.16 → M7.17 fixes** (CDI §5 + custom deserializer split — 287 → 289):
 
-_The rest of the file documents the remaining CDI and signature-environment
-details in the same spirit as above._
+- M7.16 — JSON-B §5 CDI support: `JsonbAdapter` / `JsonbSerializer` /
+  `JsonbDeserializer` instances are resolved through `CDI.current()` when a CDI
+  container is available (commit `bf8c3b2`). `CdiResolver` only delegates to CDI
+  for actual managed beans, falling back to direct instantiation otherwise
+  (commit `5fc08b5`).
+- M7.17 — custom deserializer semantics split between creator parameters and
+  regular properties: a `@JsonbTypeDeserializer` on a creator parameter is applied
+  at creator-argument binding time, not as a regular property write (commit
+  `17c6881`).
+
+### Remaining challenges (final)
+
+| Test | Suite | Nature |
+|---|---|---|
+| `JSONPSigTest.signatureTest` | JSON-P 2.1 | Environmental — the Eclipse signature file is not distributed in the 2.1.0 TCK ZIP. Not an implementation failure. |
+| `JSONBSigTest.signatureTest` | JSON-B 3.0 | Environmental — same cause (`.sig` file missing from the 3.0.0 ZIP). |
+| 5 SKIP (BasicJavaTypes, BigNumbers, Classes, Dates, Enum, PropertyUniqueness suites) | JSON-B 3.0 | Disabled **upstream inside the TCK itself** (`@Disabled` pointing to eclipse-ee4j/jsonb-api#180 and jakartaee-tck#103). Every implementation, including Yasson, skips them. |
+
+---
+
+## Verified status — 2026-06-10 (full rerun)
+
+| Suite | Run | PASS | FAIL | ERROR | SKIP |
+|---|---|---|---|---|---|
+| JSON-P 2.1 (API) | 179 | **178** | 0 | 1 (sigtest env) | 0 |
+| JSON-P 2.1 (pluggability) | 18 | **18** | 0 | 0 | 0 |
+| JSON-B 3.0 | 295 | **289** | 0 | 1 (sigtest env) | 5 (TCK-upstream) |
+
+**Both TCKs are functionally at 100% PASS.** The hard contract (no structural
+merge without TCK PASS) is satisfied; the only deltas are the two environmental
+signature tests and the five upstream-disabled tests documented above.

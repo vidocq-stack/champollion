@@ -1,6 +1,6 @@
 # Champollion — Current status
 
-> Progress summary as of 2026-05-01. For the phase-by-phase plan, see `ROADMAP.md`.
+> Progress summary as of 2026-06-10. For the phase-by-phase plan, see `ROADMAP.md`.
 > For conventions and constraints, see `CLAUDE.md`.
 
 ## Meta
@@ -8,8 +8,8 @@
 - **Branch**: `main`
 - **Build**: `mvn clean install -DskipTests` ✅ on 8 modules (parent + 7 submodules)
 - **Tests**: **290/290** ✅ (`mvn test` on the reactor)
-- **JSON-P 2.1 TCK**: 69/197 PASS (35%) — first incremental run, see `TCK.md`
-- **JSON-B 3.0 TCK**: 75/295 PASS (25%) — first baseline run
+- **JSON-P 2.1 TCK**: **178/179 PASS, 0 FAIL** ✅ — the only ERROR is `JSONPSigTest.signatureTest`, an environmental challenge (signature file not shipped in the 2.1.0 TCK ZIP). Pluggability suite 18/18. See `TCK.md`. Re-verified 2026-06-10.
+- **JSON-B 3.0 TCK**: **289/295 PASS, 0 FAIL** ✅ — 1 ERROR = `JSONBSigTest.signatureTest` (same environmental challenge), 5 SKIP are tests disabled upstream inside the TCK itself (eclipse-ee4j/jsonb-api#180, jakartaee-tck#103 — every implementation skips them). Re-verified 2026-06-10.
 - **Discipline**: strict TDD on every commit, RFC citation in `@DisplayName`
 
 ## Modules
@@ -21,7 +21,7 @@
 | `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. Runtime `toJson` + `fromJson` operational (primitives, `java.time`, UUID, enum, records, POJOs, containers). Public SPI `JsonbBinding<T>` + `@JsonbStatic` exposed, ServiceLoader, lookup-first, runtime fallback. |
 | `champollion-codegen-apt` | ✅ **functional MVP** | 18 tests. `JsonbStaticProcessor` APT generates one `JsonbBinding<T>` per `@JsonbStatic` record + ServiceLoader file. Covers primitives + String + enums + `List<E>` + `Optional<E>` + `Map<String,V>` + primitive arrays + `String[]` + nested `@JsonbStatic` records. Automated differential testing static vs runtime. |
 | `champollion-codegen-maven-plugin` | ✅ **active** (`packaging=maven-plugin`) | 3 tests. `generate` mojo writes `<FQN>$$Trigger.java` triggers annotated `@JsonbStatic`, then runs `javac` with `JsonbStaticProcessor` on the host project compile classpath. `maven-plugin-plugin 4.0.0-beta-2` supports Java 25. |
-| `champollion-bench` | 🟡 empty | JMH POM ready, no benchmark written yet. |
+| `champollion-bench` | ✅ active | JMH workloads (parser + JSON-B read/write) vs Parsson/Yasson/Jackson — see `BENCH.md`. |
 | `champollion-examples` | 🟡 empty | POM ready, no example written yet. |
 | `champollion-tck` | ✅ **created** (out of reactor) | Out-of-reactor module (Model 4.0.0 POM). Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Root shell scripts `run-official-tck-{jsonp-2.1,jsonb-3.0}.sh`. Clean skip (exit 78) if the official TCK is unavailable. |
 
@@ -42,14 +42,14 @@
 | **M4.1** | Runtime `Jsonb.toJson` — primitives + records | ✅ 14 tests |
 | **M4.2** | Symmetric runtime `Jsonb.fromJson` | ✅ 16 tests |
 | **M4.3-write** | Containers (List/Set/Map/Array/Optional) | ✅ 16 tests |
-| **M3.4** | `Json.createDiff` (JsonPatch diff) | ❌ deferred |
+| **M3.4** | `Json.createDiff` (JsonPatch diff) | ✅ implemented (validated by the JSON-P TCK) |
 | **M4.4a** | `@JsonbProperty` + `@JsonbTransient` runtime | ✅ 6 tests |
 | **M4.4b** | `@JsonbProperty` + `@JsonbTransient` APT bytecode | ✅ 3 tests |
 | **M4.4c** | `@JsonbNillable` runtime + bytecode | ✅ 3 tests |
 | **M4.4d** | `@JsonbDateFormat` runtime (`java.time`) | ✅ 3 tests |
 | **M4.4e** | `@JsonbCreator` runtime (ctor + static factory) | ✅ 2 tests |
 | **M4.4f** | `@JsonbTypeAdapter` runtime | ✅ 3 tests |
-| **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ❌ not started |
+| **M4.4g** | `@JsonbVisibility` + `@JsonbNumberFormat` | ✅ delivered during the TCK campaign (M7.6 / M7.9) |
 | **M4.6** | POJO JavaBean conventions (getters/setters) | ✅ 6 tests |
 | **M4.7** | `JsonbConfig` (`FORMATTING`, `NULL_VALUES`, `DATE_FORMAT`) | ✅ 6 tests |
 | **M4.5** | `@JsonbTypeInfo` / `@JsonbSubtype` polymorphism | ✅ 5 tests (records, MVP) |
@@ -72,24 +72,19 @@
 | **M6.5** | `TCK.md` instructions + challenges | ✅ |
 | **M6.6** | `install-tck.sh` — auto download + install in M2 | ✅ |
 | **M6.7** | First TCK run + first fixes (M2.x stubs + M3.4) | ✅ baseline 65→69 PASS on JSON-P |
-| **M6.8** | Methodical FAIL analysis (TCK sources) | ❌ ongoing — see `TCK.md` |
-| **M7** | Cassini integration (Yasson → Champollion swap) | ❌ not started |
+| **M6.8** | Methodical FAIL analysis (TCK sources) | ✅ done — 0 FAIL on both TCKs, see `TCK.md` |
+| **M7** | Cassini integration (Yasson → Champollion swap) | ✅ `cassini-core` depends on `champollion-jsonp` + `champollion-jsonb` |
 
 ## Remaining work
 
 ### Short term — finish M3 and M4
 
-- **M3.4** `Json.createDiff(JsonStructure, JsonStructure)` returning a `JsonPatch` (RFC 6902 diff). It is currently `UnsupportedOperationException` in `ChampollionJsonProvider`. The algorithm is non-trivial: compare two structures and emit the minimal sequence of `add/remove/replace/move/copy/test` operations.
-- **M4.4 — JSON-B 3.0 customization**:
-  - `@JsonbProperty(name)` — property rename
-  - `@JsonbTransient` — property exclusion
-  - `@JsonbDateFormat`, `@JsonbNumberFormat` — custom formats
-  - `@JsonbAdapter` / `JsonbAdapter<T,R>` — custom adapters
-  - `@JsonbCreator` — explicit factory method (beyond the canonical record constructor)
-  - `@JsonbVisibility` — property strategy override
-  - `JsonbConfig` properties: `JSONB_NULL_VALUES`, `JSONB_FORMATTING`, `JSONB_LOCALE`, `JSONB_DATE_FORMAT`, naming strategy
-- **M4.5 — Polymorphism**: `@JsonbTypeInfo` + `@JsonbSubtype`, new in JSON-B 3.0. Not supported yet.
-- **POJO setters**: current POJO reading only handles public fields. Extend to conventional setters (`setX`/`getX`) for classic beans.
+✅ **All delivered during the TCK campaign** (see `TCK.md`, M6.x/M7.x fixes): `Json.createDiff`
+(M3.4), the full JSON-B customization set (`@JsonbProperty`, `@JsonbTransient`,
+`@JsonbDateFormat`/`@JsonbNumberFormat`, adapters, `@JsonbCreator`, `@JsonbVisibility`,
+`JsonbConfig` properties, naming strategies), `@JsonbTypeInfo`/`@JsonbSubtype` polymorphism
+(including multi-level cascades), and POJO getter/setter conventions with the full
+visibility hierarchy.
 
 ### Medium term — M5 (static codegen) — partially delivered
 
@@ -111,7 +106,7 @@
 
 ### Medium term — broader tests
 
-- **JSONTestSuite corpus** (`nst/JSONTestSuite`) integrated into `champollion-jsonp/src/test/resources/` for an RFC 8259 harness independent of the TCK.
+- ~~**JSONTestSuite corpus**~~ — DONE 2026-06-11: the full `nst/JSONTestSuite` parsing corpus (318 files, MIT, vendored with its license) runs in `JsonTestSuiteConformanceTest`. **318/318 on first integration** — single adjustment: `i_number_huge_exp` materialization defers to `BigDecimal` (int-scale limit) exactly like Parsson.
 - **JMH benchmark** in `champollion-bench`: throughput/latency/allocs comparison vs Parsson, Yasson, Jackson.
 - **Examples** in `champollion-examples`: runtime vs static codegen demo, integration with `Json.*` and `JsonbBuilder`, custom adapter examples.
 
@@ -142,6 +137,11 @@
 
 ## Active risks
 
-- **`maven-plugin-plugin` / Java 25**: ASM 9.x bundled with 3.15.1 does not read major 69. Blocking for M5 until a compatible 3.16+ is released. Current workaround: `packaging=jar` for the skeleton.
-- **JSONTestSuite edge cases**: strict RFC 8259 conformance is not yet validated by an external corpus — regression risk on marginal cases (e.g. Unicode surrogate escapes). To be covered before M6.
-- **POJOs without public fields**: classic beans with private getters/setters cannot be read/written today. Blocking for the Yasson-style TCK. To be handled in M4.4.
+
+
+## Resolved risks
+
+- ~~**JSONTestSuite edge cases**~~ — resolved 2026-06-11: the adversarial corpus is integrated (318/318, see above); marginal cases (surrogate escapes, invalid UTF-8, deep nesting, huge exponents) are now regression-locked.
+
+- ~~**`maven-plugin-plugin` / Java 25**~~ — resolved: `maven-plugin-plugin 4.0.0-beta-2` reads major 69, `champollion-codegen-maven-plugin` uses `packaging=maven-plugin`.
+- ~~**POJOs without public fields**~~ — resolved during M7.5/M7.6 (property visibility hierarchy, getter/setter conventions), validated by the JSON-B TCK.
