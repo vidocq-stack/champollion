@@ -12,6 +12,54 @@ as baselines.
 
 ---
 
+## 2026-06-11 — P11: in-buffer fast paths + the decisive allocation diagnostic
+
+- **Hardware / JVM**: Apple M4 Max, 128 GB RAM, OpenJDK 25 LTS (Temurin).
+- **Command**: `java -jar champollion-bench/target/benchmarks.jar "JsonpParseBench.(champollion|parsson)" -f 1 -wi 2 -i 3 -w 2s -r 3s -bm thrpt [-prof gc]`
+
+**P11 changes** (`JsonReaderTokenizer`): whitespace, strings and numbers are now
+scanned directly in the `char[512]` buffer in tight loops — single
+`new String(buf, start, len)` materialization when no escape/boundary, bulk
+line/column/offset tracking (strings and numbers cannot contain raw newlines,
+so `getLocation()` stays exact), one-pass RFC 8259 number validation on the
+slice. Slow paths (escapes, refill boundaries) keep the original per-char loops
+and their precise error messages. Correctness: 493 jsonp tests + the full
+JSONTestSuite corpus (318/318) green.
+
+**Throughput (ops/µs)** — measurably unchanged vs the P1 baseline:
+
+| Workload | Champollion P11 | Parsson | ratio |
+|---|---:|---:|---:|
+| SMALL  | 3,573 | 9,106 | 0.39× |
+| MEDIUM | 0,579 | 1,284 | 0.45× |
+| LARGE  | 0,007 | 0,015 | 0.47× |
+
+**The decisive diagnostic (`-prof gc`, LARGE)**:
+
+| | alloc.rate.norm |
+|---|---:|
+| Champollion | **307 840 B/op** |
+| Parsson | **32 288 B/op** |
+
+A ~10× allocation gap. The per-char scanning cost was never the bottleneck —
+the GC pressure is: this benchmark drains events without calling
+`getString()`, and Parsson materializes nothing in that case, while our
+tokenizer allocates a `String` + a `StringToken`/`NumberToken` record for
+every scalar regardless of consumption.
+
+**Next step (the real path to 0.8×): lazy value materialization.** The
+tokenizer should record the value as a (buffer range | scratch builder)
+handle, materializing the `String` only when `getString()`/`getBigDecimal()`
+is actually called. Design constraint identified: the parser's `hasNext()`
+look-ahead may trigger a `refill()` that clobbers a still-unread range — the
+promotion (range → scratch copy, no String) must happen inside `refill()`
+when a pending un-materialized value exists. Touches the
+tokenizer⇄parser token contract (`JsonToken` records → type enum + accessors)
+and must be re-validated against both TCKs, the corpus and the jsonb
+differential suite — a dedicated chantier.
+
+---
+
 ## 1. Methodology
 
 ### Environment
