@@ -40,8 +40,9 @@ import java.util.stream.Stream;
  * machine: on each {@link #next()} call it consumes one or more tokens and emits
  * exactly one {@link Event}.</p>
  *
- * <p>The value accessors ({@code getString}, {@code getInt}, etc.) read the
- * internal buffers {@code lastString} / {@code lastNumber} populated by {@code next()}.</p>
+ * <p>P12 — the value accessors ({@code getString}, {@code getInt}, etc.)
+ * delegate to the tokenizer's lazy pending value: nothing is materialized
+ * while the event stream is merely drained.</p>
  */
 public final class ChampollionJsonParser implements JsonParser {
 
@@ -56,8 +57,6 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event next;
     private boolean nextReady;
-    private String lastString;
-    private String lastNumber;
     private Event lastEvent;
 
     public ChampollionJsonParser(Reader reader) {
@@ -93,8 +92,6 @@ public final class ChampollionJsonParser implements JsonParser {
         this.scopes.push(Scope.ROOT);
         this.next = null;
         this.nextReady = false;
-        this.lastString = null;
-        this.lastNumber = null;
         this.lastEvent = null;
     }
 
@@ -118,7 +115,7 @@ public final class ChampollionJsonParser implements JsonParser {
         // ROOT post-value: wait for EOF or throw
         if (scopes.peek() == Scope.DONE) {
             JsonToken trailing = tokenizer.next();
-            if (trailing == JsonToken.Eof.INSTANCE) return null;
+            if (trailing == JsonToken.EOF) return null;
             throw parsing("Unexpected token after root value");
         }
 
@@ -139,7 +136,7 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseRootValue() {
         JsonToken t = tokenizer.next();
-        if (t == JsonToken.Eof.INSTANCE) {
+        if (t == JsonToken.EOF) {
             throw parsing("Empty input");
         }
         Event e = consumeValueToken(t, /*topLevel*/ true);
@@ -154,7 +151,7 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseObjectKeyOrEnd() {
         JsonToken t = tokenizer.next();
-        if (t == JsonToken.EndObject.INSTANCE) {
+        if (t == JsonToken.END_OBJECT) {
             scopes.pop();
             transitionAfterValue();
             return Event.END_OBJECT;
@@ -168,10 +165,9 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     private Event consumeKey(JsonToken t) {
-        if (!(t instanceof JsonToken.StringToken s)) {
+        if (t != JsonToken.STRING) {
             throw parsing("Expected string key in object");
         }
-        lastString = s.value();
         scopes.pop();
         scopes.push(Scope.OBJECT_COLON);
         return Event.KEY_NAME;
@@ -179,7 +175,7 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseObjectColon() {
         JsonToken t = tokenizer.next();
-        if (t != JsonToken.NameSeparator.INSTANCE) {
+        if (t != JsonToken.NAME_SEPARATOR) {
             throw parsing("Expected ':' after key");
         }
         scopes.pop();
@@ -189,12 +185,12 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseObjectCommaOrEnd() {
         JsonToken t = tokenizer.next();
-        if (t == JsonToken.EndObject.INSTANCE) {
+        if (t == JsonToken.END_OBJECT) {
             scopes.pop();
             transitionAfterValue();
             return Event.END_OBJECT;
         }
-        if (t != JsonToken.ValueSeparator.INSTANCE) {
+        if (t != JsonToken.VALUE_SEPARATOR) {
             throw parsing("Expected ',' or '}' in object");
         }
         scopes.pop();
@@ -204,7 +200,7 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseArrayValueOrEnd() {
         JsonToken t = tokenizer.next();
-        if (t == JsonToken.EndArray.INSTANCE) {
+        if (t == JsonToken.END_ARRAY) {
             scopes.pop();
             transitionAfterValue();
             return Event.END_ARRAY;
@@ -223,12 +219,12 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private Event parseArrayCommaOrEnd() {
         JsonToken t = tokenizer.next();
-        if (t == JsonToken.EndArray.INSTANCE) {
+        if (t == JsonToken.END_ARRAY) {
             scopes.pop();
             transitionAfterValue();
             return Event.END_ARRAY;
         }
-        if (t != JsonToken.ValueSeparator.INSTANCE) {
+        if (t != JsonToken.VALUE_SEPARATOR) {
             throw parsing("Expected ',' or ']' in array");
         }
         scopes.pop();
@@ -241,29 +237,27 @@ public final class ChampollionJsonParser implements JsonParser {
      * Returns {@code null} if the token is not a value token.
      */
     private Event consumeValueToken(JsonToken t, boolean topLevel) {
-        if (t == JsonToken.StartObject.INSTANCE) {
+        if (t == JsonToken.START_OBJECT) {
             replaceTopForValueConsumed();
             scopes.push(Scope.OBJECT_START);
             return Event.START_OBJECT;
         }
-        if (t == JsonToken.StartArray.INSTANCE) {
+        if (t == JsonToken.START_ARRAY) {
             replaceTopForValueConsumed();
             scopes.push(Scope.ARRAY_START);
             return Event.START_ARRAY;
         }
-        if (t instanceof JsonToken.StringToken s) {
-            lastString = s.value();
+        if (t == JsonToken.STRING) {
             replaceTopForValueConsumed();
             return Event.VALUE_STRING;
         }
-        if (t instanceof JsonToken.NumberToken n) {
-            lastNumber = n.literal();
+        if (t == JsonToken.NUMBER) {
             replaceTopForValueConsumed();
             return Event.VALUE_NUMBER;
         }
-        if (t == JsonToken.True.INSTANCE) { replaceTopForValueConsumed(); return Event.VALUE_TRUE; }
-        if (t == JsonToken.False.INSTANCE) { replaceTopForValueConsumed(); return Event.VALUE_FALSE; }
-        if (t == JsonToken.Null.INSTANCE) { replaceTopForValueConsumed(); return Event.VALUE_NULL; }
+        if (t == JsonToken.TRUE) { replaceTopForValueConsumed(); return Event.VALUE_TRUE; }
+        if (t == JsonToken.FALSE) { replaceTopForValueConsumed(); return Event.VALUE_FALSE; }
+        if (t == JsonToken.NULL) { replaceTopForValueConsumed(); return Event.VALUE_NULL; }
         return null;
     }
 
@@ -290,33 +284,32 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public String getString() {
-        if (lastEvent == Event.VALUE_STRING || lastEvent == Event.KEY_NAME) {
-            return lastString;
-        }
-        if (lastEvent == Event.VALUE_NUMBER) {
-            return lastNumber;
+        if (lastEvent == Event.VALUE_STRING || lastEvent == Event.KEY_NAME
+                || lastEvent == Event.VALUE_NUMBER) {
+            return tokenizer.currentString();
         }
         throw new IllegalStateException("getString() not valid for event " + lastEvent);
     }
 
     @Override public boolean isIntegralNumber() {
         requireNumber();
-        return !(lastNumber.indexOf('.') >= 0 || lastNumber.indexOf('e') >= 0 || lastNumber.indexOf('E') >= 0);
+        return tokenizer.currentIntegral();
     }
 
     @Override public int getInt() {
         requireNumber();
-        return getBigDecimal().intValue();
+        // Same low-order-32-bits semantics as getBigDecimal().intValue().
+        return (int) tokenizer.currentLong();
     }
 
     @Override public long getLong() {
         requireNumber();
-        return getBigDecimal().longValue();
+        return tokenizer.currentLong();
     }
 
     @Override public BigDecimal getBigDecimal() {
         requireNumber();
-        return new BigDecimal(lastNumber);
+        return tokenizer.currentBigDecimal();
     }
 
     @Override public JsonLocation getLocation() {
@@ -342,8 +335,8 @@ public final class ChampollionJsonParser implements JsonParser {
         return switch (lastEvent) {
             case START_OBJECT -> readObjectMembers();
             case START_ARRAY -> readArrayElements();
-            case KEY_NAME, VALUE_STRING -> new ChampollionJsonString(lastString);
-            case VALUE_NUMBER -> ChampollionJsonNumber.of(lastNumber);
+            case KEY_NAME, VALUE_STRING -> new ChampollionJsonString(tokenizer.currentString());
+            case VALUE_NUMBER -> ChampollionJsonNumber.of(tokenizer.currentString());
             case VALUE_TRUE -> JsonValue.TRUE;
             case VALUE_FALSE -> JsonValue.FALSE;
             case VALUE_NULL -> JsonValue.NULL;
@@ -387,7 +380,7 @@ public final class ChampollionJsonParser implements JsonParser {
             if (e != Event.KEY_NAME) {
                 throw new IllegalStateException("Expected KEY_NAME or END_OBJECT, got " + e);
             }
-            String key = lastString;
+            String key = tokenizer.currentString();
             Event ve = next();
             map.put(key, readScalarOrStructure(ve));
         }
@@ -408,8 +401,8 @@ public final class ChampollionJsonParser implements JsonParser {
         return switch (e) {
             case START_OBJECT -> readObjectMembers();
             case START_ARRAY -> readArrayElements();
-            case VALUE_STRING -> new ChampollionJsonString(lastString);
-            case VALUE_NUMBER -> ChampollionJsonNumber.of(lastNumber);
+            case VALUE_STRING -> new ChampollionJsonString(tokenizer.currentString());
+            case VALUE_NUMBER -> ChampollionJsonNumber.of(tokenizer.currentString());
             case VALUE_TRUE -> JsonValue.TRUE;
             case VALUE_FALSE -> JsonValue.FALSE;
             case VALUE_NULL -> JsonValue.NULL;

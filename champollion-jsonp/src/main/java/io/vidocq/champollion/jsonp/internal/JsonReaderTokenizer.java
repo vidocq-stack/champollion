@@ -23,6 +23,7 @@ import jakarta.json.JsonException;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.math.BigDecimal;
 
 /**
  * RFC 8259 JSON tokenizer that reads a {@link Reader} through a pre-allocated
@@ -34,6 +35,14 @@ import java.io.Reader;
  * calls to {@link #read()}/{@link #peekRead()} remain <em>statically resolved</em>
  * in the same final class, and therefore HotSpot-inlineable without virtual
  * dispatch.</p>
+ *
+ * <p>P12 — lazy pending value: scalar scans record a {@code buf} range (fast
+ * path) or accumulate into the scratch (escapes / boundary crossings) instead
+ * of materializing a String. {@link #refill()} <em>promotes</em> a live
+ * un-materialized range into the scratch before clobbering {@code buf}, so the
+ * pending value survives separator/keyword/whitespace scans across buffer
+ * boundaries (the parser's look-ahead case). See the contract on
+ * {@link JsonTokenizer}.</p>
  */
 public final class JsonReaderTokenizer extends JsonTokenizer {
 
@@ -58,6 +67,21 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
         } catch (IOException e) {
             throw new JsonException("I/O error closing reader", e);
         }
+    }
+
+    @Override
+    protected char rangeChar(int i) {
+        return buf[valStart + i];
+    }
+
+    @Override
+    protected String materializeRange() {
+        return new String(buf, valStart, valLen);
+    }
+
+    @Override
+    protected BigDecimal rangeBigDecimal() {
+        return new BigDecimal(buf, valStart, valLen);
     }
 
     private int read() {
@@ -89,6 +113,15 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
     }
 
     private void refill() {
+        // P12 — promote a live un-materialized pending range into the scratch
+        // before the buffer content is overwritten. Never fires during a
+        // slow-path scalar scan (those run in scratch mode already).
+        if (valStart >= 0 && !valScratch && valMaterialized == null) {
+            buffer.setLength(0);
+            buffer.append(buf, valStart, valLen);
+            valStart = -1;
+            valScratch = true;
+        }
         try {
             int n = reader.read(buf, 0, BUF_SIZE);
             if (n <= 0) { eof = true; bufEnd = 0; bufPos = 0; }
@@ -109,17 +142,17 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
     public JsonToken next() {
         int c = skipWhitespace();
         return switch (c) {
-            case -1 -> JsonToken.Eof.INSTANCE;
-            case '{' -> JsonToken.StartObject.INSTANCE;
-            case '}' -> JsonToken.EndObject.INSTANCE;
-            case '[' -> JsonToken.StartArray.INSTANCE;
-            case ']' -> JsonToken.EndArray.INSTANCE;
-            case ':' -> JsonToken.NameSeparator.INSTANCE;
-            case ',' -> JsonToken.ValueSeparator.INSTANCE;
+            case -1 -> JsonToken.EOF;
+            case '{' -> JsonToken.START_OBJECT;
+            case '}' -> JsonToken.END_OBJECT;
+            case '[' -> JsonToken.START_ARRAY;
+            case ']' -> JsonToken.END_ARRAY;
+            case ':' -> JsonToken.NAME_SEPARATOR;
+            case ',' -> JsonToken.VALUE_SEPARATOR;
             case '"' -> readString();
-            case 't' -> readKeyword("true", JsonToken.True.INSTANCE);
-            case 'f' -> readKeyword("false", JsonToken.False.INSTANCE);
-            case 'n' -> readKeyword("null", JsonToken.Null.INSTANCE);
+            case 't' -> readKeyword("true", JsonToken.TRUE);
+            case 'f' -> readKeyword("false", JsonToken.FALSE);
+            case 'n' -> readKeyword("null", JsonToken.NULL);
             default -> {
                 if (c == '-' || (c >= '0' && c <= '9')) {
                     yield readNumber(c);
@@ -170,16 +203,17 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
     }
 
     /**
-     * P11 — in-buffer fast path: scans {@code buf} directly until the closing
-     * quote. When the whole string sits in the current buffer with no escape,
-     * the value is materialized with a single {@code new String(buf, start, len)}
-     * — no StringBuilder, no per-char {@code read()}/{@code track()}. Position
+     * P11/P12 — in-buffer fast path: scans {@code buf} directly until the
+     * closing quote. When the whole string sits in the current buffer with no
+     * escape, the value is recorded as a buffer <em>range</em> — zero
+     * allocation until {@code currentString()} is actually called. Position
      * tracking is bulk-applied: a JSON string cannot contain a raw newline
      * (control characters are rejected), so {@code column}/{@code offset}
      * advance by the scanned length exactly. Escapes and buffer-boundary
-     * crossings fall back to the per-char loop below.
+     * crossings fall back to the per-char loop below, accumulating in the
+     * scratch.
      */
-    private JsonToken.StringToken readString() {
+    private JsonToken readString() {
         // Fast path requires direct buffer indexing: a pending peek (only set
         // by number scanning, never active here after next()'s read()) or an
         // exhausted buffer goes straight to the slow loop.
@@ -191,29 +225,32 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
             while (p < end) {
                 char ch = b[p];
                 if (ch == '"') {
-                    String s = new String(b, start, p - start);
                     int consumed = p - start + 1;
                     offset += consumed;
                     column += consumed;
                     bufPos = p + 1;
-                    return new JsonToken.StringToken(s);
+                    valueRange(start, p - start);
+                    return JsonToken.STRING;
                 }
                 if (ch == '\\' || ch < 0x20) break;
                 p++;
             }
             // Slow path: keep the already-scanned clean prefix.
-            buffer.setLength(0);
+            valueScratchStart();
             buffer.append(b, start, p - start);
             offset += p - start;
             column += p - start;
             bufPos = p;
         } else {
-            buffer.setLength(0);
+            valueScratchStart();
         }
         while (true) {
             int c = read();
             if (c == -1) throw error("Unterminated string literal");
-            if (c == '"') return new JsonToken.StringToken(buffer.toString());
+            if (c == '"') {
+                valueScratchEnd();
+                return JsonToken.STRING;
+            }
             if (c == '\\') { buffer.append(readEscape()); continue; }
             if (c < 0x20) {
                 throw error("Unescaped control character U+" + String.format("%04X", c) + " in string");
@@ -252,16 +289,16 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
     }
 
     /**
-     * P11 — in-buffer fast path: when the whole literal lies in the current
-     * buffer (its terminator included), the maximal number-alphabet run is
-     * scanned with direct indexing, materialized with a single
-     * {@code new String(buf, start, len)} and validated against the RFC 8259
-     * number grammar in one linear pass — no per-char peek/track. Numbers
-     * cannot contain newlines, so position tracking is bulk-applied. Buffer
+     * P11/P12 — in-buffer fast path: when the whole literal lies in the
+     * current buffer (its terminator included), the maximal number-alphabet
+     * run is scanned with direct indexing, validated against the RFC 8259
+     * number grammar in one linear pass, and recorded as a buffer range — no
+     * String until a number accessor is actually called. Numbers cannot
+     * contain newlines, so position tracking is bulk-applied. Buffer
      * boundaries (and the rare pending-peek case) fall back to the original
      * per-char loop, which also owns the precise error messages.
      */
-    private JsonToken.NumberToken readNumber(int first) {
+    private JsonToken readNumber(int first) {
         // 'first' always comes from this buffer when no refill intervened:
         // both the direct read and the peek path took it at buf[bufPos-1].
         if (peek == NO_PEEK && bufPos > 0 && buf[bufPos - 1] == first) {
@@ -278,18 +315,18 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
                 }
             }
             if (q < end) { // terminator inside the buffer → the literal is complete
-                String lit = new String(b, start, q - start);
-                if (!isValidRfc8259Number(lit)) {
-                    throw error("Invalid JSON number: " + lit);
+                if (!isValidRfc8259Number(b, start, q - start)) {
+                    throw error("Invalid JSON number: " + new String(b, start, q - start));
                 }
                 int consumed = q - bufPos; // 'first' was already tracked
                 offset += consumed;
                 column += consumed;
                 bufPos = q;
-                return new JsonToken.NumberToken(lit);
+                valueRange(start, q - start);
+                return JsonToken.NUMBER;
             }
         }
-        buffer.setLength(0);
+        valueScratchStart();
         buffer.append((char) first);
 
         int c = first;
@@ -339,34 +376,35 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
             }
         }
 
-        return new JsonToken.NumberToken(buffer.toString());
+        valueScratchEnd();
+        return JsonToken.NUMBER;
     }
 
     /** Strict RFC 8259 §6 number grammar, one linear pass over the literal. */
-    private static boolean isValidRfc8259Number(String s) {
-        int i = 0;
-        int n = s.length();
-        if (s.charAt(i) == '-') i++;
+    private static boolean isValidRfc8259Number(char[] a, int off, int len) {
+        int i = off;
+        int n = off + len;
+        if (a[i] == '-') i++;
         if (i == n) return false;
-        char c = s.charAt(i);
+        char c = a[i];
         if (c == '0') {
             i++;
         } else if (c >= '1' && c <= '9') {
             i++;
-            while (i < n && isDigit(s.charAt(i))) i++;
+            while (i < n && isDigit(a[i])) i++;
         } else {
             return false;
         }
-        if (i < n && s.charAt(i) == '.') {
+        if (i < n && a[i] == '.') {
             i++;
-            if (i == n || !isDigit(s.charAt(i))) return false;
-            while (i < n && isDigit(s.charAt(i))) i++;
+            if (i == n || !isDigit(a[i])) return false;
+            while (i < n && isDigit(a[i])) i++;
         }
-        if (i < n && (s.charAt(i) == 'e' || s.charAt(i) == 'E')) {
+        if (i < n && (a[i] == 'e' || a[i] == 'E')) {
             i++;
-            if (i < n && (s.charAt(i) == '+' || s.charAt(i) == '-')) i++;
-            if (i == n || !isDigit(s.charAt(i))) return false;
-            while (i < n && isDigit(s.charAt(i))) i++;
+            if (i < n && (a[i] == '+' || a[i] == '-')) i++;
+            if (i == n || !isDigit(a[i])) return false;
+            while (i < n && isDigit(a[i])) i++;
         }
         return i == n;
     }

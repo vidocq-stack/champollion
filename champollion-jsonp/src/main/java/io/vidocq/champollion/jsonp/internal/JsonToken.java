@@ -22,43 +22,37 @@ package io.vidocq.champollion.jsonp.internal;
 /**
  * Elementary tokens recognized by the RFC 8259 JSON scanner.
  *
- * <p>Sealed hierarchy for exhaustive matching in higher layers.</p>
+ * <p>P12 — plain enum (was a sealed interface with {@code StringToken}/
+ * {@code NumberToken} records): scalar tokens no longer carry their value.
+ * The tokenizer keeps the last scanned scalar as a <em>lazy pending value</em>
+ * (a buffer range or a scratch copy) and materializes it only when
+ * {@link JsonTokenizer#currentString()} or a number accessor is actually
+ * called. Draining the event stream without reading values allocates
+ * nothing per scalar.</p>
  */
-public sealed interface JsonToken {
-
+public enum JsonToken {
     /** {@code {} */
-    enum StartObject implements JsonToken { INSTANCE }
-
+    START_OBJECT,
     /** {@code }} */
-    enum EndObject implements JsonToken { INSTANCE }
-
+    END_OBJECT,
     /** {@code [} */
-    enum StartArray implements JsonToken { INSTANCE }
-
+    START_ARRAY,
     /** {@code ]} */
-    enum EndArray implements JsonToken { INSTANCE }
-
+    END_ARRAY,
     /** {@code :} */
-    enum NameSeparator implements JsonToken { INSTANCE }
-
+    NAME_SEPARATOR,
     /** {@code ,} */
-    enum ValueSeparator implements JsonToken { INSTANCE }
-
+    VALUE_SEPARATOR,
     /** {@code true} */
-    enum True implements JsonToken { INSTANCE }
-
+    TRUE,
     /** {@code false} */
-    enum False implements JsonToken { INSTANCE }
-
+    FALSE,
     /** {@code null} */
-    enum Null implements JsonToken { INSTANCE }
-
-    /** End of stream. */
-    enum Eof implements JsonToken { INSTANCE }
-
+    NULL,
     /** Decoded JSON string (without quotes, escapes applied). RFC 8259 §7. */
-    record StringToken(String value) implements JsonToken {}
-
-    /** JSON number as text (deferred parsing to {@code BigDecimal} if needed). RFC 8259 §6. */
-    record NumberToken(String literal) implements JsonToken {}
+    STRING,
+    /** JSON number literal (deferred parsing to {@code BigDecimal} if needed). RFC 8259 §6. */
+    NUMBER,
+    /** End of stream. */
+    EOF
 }

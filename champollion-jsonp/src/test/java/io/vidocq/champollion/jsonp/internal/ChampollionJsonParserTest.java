@@ -221,6 +221,59 @@ class ChampollionJsonParserTest {
         }
     }
 
+    @Nested
+    @DisplayName("P12 — lazy value vs hasNext() look-ahead")
+    class LazyValueLookAhead {
+
+        @Test
+        void getString_valid_after_lookahead_crossing_refill() {
+            // The value ends inside the first tokenizer buffer; the trailing
+            // whitespace before '}' spans a refill, so hasNext()'s look-ahead
+            // (separator tokens only) clobbers the buffer — the pending range
+            // must have been promoted.
+            String value = "v".repeat(400);
+            String json = "{\"k\":\"" + value + "\"" + " ".repeat(JsonReaderTokenizer.BUF_SIZE) + "}";
+            try (var p = parser(json)) {
+                assertEquals(Event.START_OBJECT, p.next());
+                assertEquals(Event.KEY_NAME, p.next());
+                assertEquals("k", p.getString());
+                assertEquals(Event.VALUE_STRING, p.next());
+                assertTrue(p.hasNext()); // look-ahead scans whitespace + '}' across a refill
+                assertEquals(value, p.getString());
+                assertEquals(Event.END_OBJECT, p.next());
+            }
+        }
+
+        @Test
+        void getBigDecimal_valid_after_lookahead_crossing_refill() {
+            String json = "[98765" + " ".repeat(JsonReaderTokenizer.BUF_SIZE) + "]";
+            try (var p = parser(json)) {
+                assertEquals(Event.START_ARRAY, p.next());
+                assertEquals(Event.VALUE_NUMBER, p.next());
+                assertTrue(p.hasNext());
+                assertEquals(new BigDecimal("98765"), p.getBigDecimal());
+                assertEquals(98765, p.getInt());
+                assertTrue(p.isIntegralNumber());
+            }
+        }
+
+        @Test
+        void string_mode_parser_lazy_values() {
+            try (var p = new ChampollionJsonParser("{\"a\":\"x\",\"n\":12.5}")) {
+                assertEquals(Event.START_OBJECT, p.next());
+                assertEquals(Event.KEY_NAME, p.next());
+                assertEquals("a", p.getString());
+                assertEquals(Event.VALUE_STRING, p.next());
+                assertEquals("x", p.getString());
+                assertEquals(Event.KEY_NAME, p.next());
+                assertEquals("n", p.getString());
+                assertEquals(Event.VALUE_NUMBER, p.next());
+                assertEquals(new BigDecimal("12.5"), p.getBigDecimal());
+                assertEquals(Event.END_OBJECT, p.next());
+            }
+        }
+    }
+
     @Test
     void hasNext_idempotent() {
         try (var p = parser("[1]")) {

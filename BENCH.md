@@ -4,11 +4,68 @@ Performance comparison between **Champollion** (the in-house Jakarta JSON-P 2.1
 and JSON-B 3.0 implementation) and the reference implementations commonly used
 as baselines.
 
-> **TL;DR** — Champollion is **comparable to Yasson** on every workload,
-> **2-3× slower than Parsson** on JSON-P streaming, and **3-4× slower than
-> Jackson** on binding (expected — Jackson benefits from 15 years of POJO-specific
-> tuning and bytecode codegen for accessors). There is no performance cliff that
-> would make Champollion unusable in production.
+> **TL;DR** (updated P12, 2026-06-11) — Champollion **beats Yasson on reads**
+> (~40% faster on MEDIUM) and is at **0.54–0.77× of Parsson** on JSON-P
+> streaming (was 2-3× slower pre-P12; a pure event drain now allocates 22×
+> *less* than Parsson). Binding writes remain ~Yasson-level and **3-4× slower
+> than Jackson** (expected — 15 years of POJO-specific tuning and bytecode
+> codegen). There is no performance cliff that would make Champollion
+> unusable in production.
+
+---
+
+## 2026-06-11 — P12: lazy value materialization (the chantier announced by P11)
+
+- **Hardware / JVM**: Apple M4 Max, 128 GB RAM, OpenJDK 25 LTS (Temurin).
+- **Command**: `java -jar champollion-bench/target/benchmarks.jar "JsonpParseBench.(champollion|parsson)" -f 1 -wi 2 -i 3 -w 2s -r 3s -bm thrpt [-prof gc -p size=LARGE]`
+
+**P12 changes**: `JsonToken` records (`StringToken`/`NumberToken`) → plain enum;
+the tokenizer keeps the last scalar as a *lazy pending value* — a range
+into the source buffer on the fast paths, a scratch copy when escapes or a
+buffer boundary intervened — and `currentString()` / `currentBigDecimal()` /
+`currentIntegral()` / `currentLong()` materialize on demand (String cached).
+The look-ahead pitfall identified by P11 is handled exactly as designed:
+`refill()` promotes a live un-materialized range into the scratch (chars only,
+no String) before clobbering the buffer, so the parser's `hasNext()`
+separator-scanning look-ahead never corrupts an unread value (regression
+tests at both tokenizer and parser level). `JsonStringTokenizer` gained the
+same in-source fast paths (it previously scanned strings/numbers per char);
+its ranges point into the immutable source String and never need promotion.
+Number accessors got Parsson-style direct paths: `BigDecimal(char[],off,len)`
+from the range, direct digit parse for `getInt`/`getLong` when integral and
+≤ 18 digits. Correctness: 506 jsonp tests + JSONTestSuite corpus (318/318),
+jsonb differential suite, and **both official TCKs at their exact reference
+scores** (JSON-P 178/179 + 18 pluggability, JSON-B 289/295 — only the
+documented environmental sigtests and upstream skips).
+
+**Throughput (ops/µs)** — the allocation gap was the bottleneck:
+
+| Workload | Champollion P11 | **Champollion P12** | Parsson | ratio (was) |
+|---|---:|---:|---:|---:|
+| SMALL  | 3,573 | **5,326** (+49%) | 9,844 | **0.54×** (0.39×) |
+| MEDIUM | 0,579 | **1,106** (+91%) | 1,442 | **0.77×** (0.45×) |
+| LARGE  | 0,007 | **0,011** (+57%) | 0,016 | **0.69×** (0.47×) |
+
+**Allocation (`-prof gc`, LARGE, drain without accessors)**:
+
+| | alloc.rate.norm |
+|---|---:|
+| Champollion P11 | 307 840 B/op |
+| **Champollion P12** | **1 448 B/op** (÷213) |
+| Parsson | 32 288 B/op |
+
+Champollion now allocates **22× less than Parsson** on a pure event drain.
+The remaining LARGE gap (0.69×) is pure scanning CPU — the
+`java.lang.foreign` SIMD path (P4 ROADMAP) is the next lever toward and past
+0.8×. MEDIUM is already there (0.77×).
+
+**JSON-B read (avgt µs/op, POJO)** — the lazy tokenizer carries through
+binding: SMALL 0,307 → **0,171**, MEDIUM 2,645 → **1,645** (Yasson: 0,287 /
+2,271 — Champollion now reads ~40% faster than Yasson on MEDIUM). The LARGE
+read benchmark remains `(n/c)`: extending its coverage exposed a
+**pre-existing** runtime-binding bug (nested-POJO field aborts the enclosing
+object read inside a collection element — reproduced identically on `main`
+pre-P12), tracked as `BUG-20260611-01` in `BUG.md`.
 
 ---
 
