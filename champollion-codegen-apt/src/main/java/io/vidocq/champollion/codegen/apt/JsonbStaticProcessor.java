@@ -29,6 +29,9 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+import jakarta.json.bind.annotation.JsonbNillable;
+import jakarta.json.bind.annotation.JsonbProperty;
+import jakarta.json.bind.annotation.JsonbTransient;
 
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.RecordComponentElement;
@@ -38,7 +41,6 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
-import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -119,25 +121,10 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             }
         }
 
-        // Fast path: Class File API if all components are primitive or String.
-        // Avoids generating an intermediate .java file and recompiling it.
-        if (BindingBytecodeEmitter.eligible(comps)) {
-            try {
-                byte[] bytes = BindingBytecodeEmitter.emit(record, bindingFqn);
-                JavaFileObject classFile = processingEnv.getFiler().createClassFile(bindingFqn, record);
-                try (var os = classFile.openOutputStream()) {
-                    os.write(bytes);
-                }
-                generatedBindings.add(bindingFqn);
-                return;
-            } catch (IOException ex) {
-                error(record, "Failed to emit class file: " + ex.getMessage());
-                return;
-            }
-        }
-
-        // Slow path: generate Java sources for complex types
-        // (containers, nested records). Will be migrated to bytecode gradually.
+        // Single emission mode: Java source compiled by javac (workspace APT-first
+        // rule, codegen audit CG-03). The former Class-File fast path for
+        // primitives+String records was removed — readable, debuggable output wins
+        // over saving one javac round trip.
         try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, record).openWriter();
              PrintWriter pw = new PrintWriter(w)) {
             emit(pw, pkgName, simpleName, bindingSimple, targetFqn, comps);
@@ -234,6 +221,75 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return ((TypeElement) dt.asElement()).getQualifiedName().toString() + "$$Binding";
     }
 
+    // ============================================================
+    // JSON-B customization annotations (component or its accessor) —
+    // ported verbatim from the former BindingBytecodeEmitter (CG-03).
+    // ============================================================
+
+    /** JSON name of a component: @JsonbProperty value if present, otherwise simpleName. */
+    private static String jsonbName(RecordComponentElement c) {
+        var prop = c.getAnnotation(JsonbProperty.class);
+        if (prop != null && !prop.value().isEmpty()) return prop.value();
+        var accessor = c.getAccessor();
+        if (accessor != null) {
+            var pa = accessor.getAnnotation(JsonbProperty.class);
+            if (pa != null && !pa.value().isEmpty()) return pa.value();
+        }
+        return c.getSimpleName().toString();
+    }
+
+    /** True if the component or its accessor carry {@code @JsonbTransient}. */
+    private static boolean isJsonbTransient(RecordComponentElement c) {
+        if (c.getAnnotation(JsonbTransient.class) != null) return true;
+        var accessor = c.getAccessor();
+        return accessor != null && accessor.getAnnotation(JsonbTransient.class) != null;
+    }
+
+    /** True if the component or its accessor carry {@code @JsonbNillable}. */
+    private static boolean isJsonbNillable(RecordComponentElement c) {
+        if (c.getAnnotation(JsonbNillable.class) != null) return true;
+        var accessor = c.getAccessor();
+        return accessor != null && accessor.getAnnotation(JsonbNillable.class) != null;
+    }
+
+    /**
+     * Pre-quotes a member name for {@code RawJsonKeyWriter.writeKeyRawWithColon}
+     * (RFC 8259 section 7 escaping done once at build time).
+     * Example: {@code name} becomes {@code "name":}.
+     */
+    private static String preQuoteJson(String name) {
+        var sb = new StringBuilder(name.length() + 3).append('"');
+        appendEscaped(sb, name);
+        return sb.append('"').append(':').toString();
+    }
+
+    /** Java string literal (escaped) for emission into generated source. */
+    private static String lit(String value) {
+        var sb = new StringBuilder(value.length() + 2).append('"');
+        appendEscaped(sb, value);
+        return sb.append('"').toString();
+    }
+
+    /** Shared escaping — valid for both RFC 8259 keys and Java string literals. */
+    private static void appendEscaped(StringBuilder sb, String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (ch < 0x20) sb.append(String.format("\\u%04x", (int) ch));
+                    else sb.append(ch);
+                }
+            }
+        }
+    }
+
     private void emit(PrintWriter pw, String pkg, String recordName, String bindingName,
                       String targetFqn, List<? extends RecordComponentElement> comps) {
         if (!pkg.isEmpty()) {
@@ -256,7 +312,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println("        if (value == null) { g.writeNull(); return; }");
         pw.println("        g.writeStartObject();");
         for (var c : comps) {
-            emitWriteComponent(pw, c);
+            if (isJsonbTransient(c)) continue;   // @JsonbTransient: no write
+            emitWriteComponent(pw, c, jsonbName(c), isJsonbNillable(c));
         }
         pw.println("        g.writeEnd();");
         pw.println("    }");
@@ -277,18 +334,19 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         pw.println("            if (e != JsonParser.Event.KEY_NAME) {");
         pw.println("                throw new IllegalStateException(\"Expected KEY_NAME, got \" + e);");
         pw.println("            }");
-        pw.println("            String _key = p.getString();");
-        pw.println("            JsonParser.Event _ev = p.next();");
-        pw.println("            switch (_key) {");
+        pw.println("            String __key = p.getString();");
+        pw.println("            JsonParser.Event __ev = p.next();");
+        pw.println("            switch (__key) {");
         for (var c : comps) {
+            if (isJsonbTransient(c)) continue;   // @JsonbTransient: no read mapping
             String name = c.getSimpleName().toString();
-            pw.println("                case \"" + name + "\" -> {");
+            pw.println("                case \"" + jsonbName(c) + "\" -> {");
             emitReadComponent(pw, c, "_" + name);
             pw.println("                }");
         }
         pw.println("                default -> {");
-        pw.println("                    if (_ev == JsonParser.Event.START_OBJECT) p.skipObject();");
-        pw.println("                    else if (_ev == JsonParser.Event.START_ARRAY) p.skipArray();");
+        pw.println("                    if (__ev == JsonParser.Event.START_OBJECT) p.skipObject();");
+        pw.println("                    else if (__ev == JsonParser.Event.START_ARRAY) p.skipArray();");
         pw.println("                }");
         pw.println("            }");
         pw.println("        }");
@@ -299,6 +357,13 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         }
         pw.println(");");
         pw.println("    }");
+        pw.println();
+        // Raw-key fast path (P4): pre-quoted RFC 8259 keys when the generator is
+        // champollion's (same optimization the former bytecode emitter applied).
+        pw.println("    private static void __writeKey(JsonGenerator g, String preQuotedWithColon, String name) {");
+        pw.println("        if (g instanceof io.vidocq.champollion.spi.RawJsonKeyWriter __rw) __rw.writeKeyRawWithColon(preQuotedWithColon);");
+        pw.println("        else g.writeKey(name);");
+        pw.println("    }");
         pw.println("}");
     }
 
@@ -306,37 +371,46 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     // Code generation helpers (write side)
     // ============================================================
 
-    private void emitWriteComponent(PrintWriter pw, RecordComponentElement c) {
+    private void emitWriteComponent(PrintWriter pw, RecordComponentElement c,
+                                    String jsonName, boolean nillable) {
         String name = c.getSimpleName().toString();
         String accessor = "value." + name + "()";
+        // Key emission goes through the generated __writeKey helper: raw pre-quoted
+        // fast path when the generator implements RawJsonKeyWriter, jakarta fallback
+        // otherwise (parity with the former bytecode emitter, P4 optimization).
+        String key = "__writeKey(g, " + lit(preQuoteJson(jsonName) ) + ", " + lit(jsonName) + ");";
         TypeMirror tm = c.asType();
         switch (tm.getKind()) {
-            case INT, SHORT, BYTE -> pw.println("        g.write(\"" + name + "\", (int) " + accessor + ");");
-            case LONG -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
-            case DOUBLE, FLOAT -> pw.println("        g.write(\"" + name + "\", (double) " + accessor + ");");
-            case BOOLEAN -> pw.println("        g.write(\"" + name + "\", " + accessor + ");");
+            case INT, SHORT, BYTE -> pw.println("        " + key + " g.write((int) " + accessor + ");");
+            case LONG -> pw.println("        " + key + " g.write(" + accessor + ");");
+            case DOUBLE, FLOAT -> pw.println("        " + key + " g.write((double) " + accessor + ");");
+            case BOOLEAN -> pw.println("        " + key + " g.write(" + accessor + ");");
             case DECLARED -> {
                 DeclaredType dt = (DeclaredType) tm;
                 String fqn = dt.asElement().toString();
                 if ("java.lang.String".equals(fqn)) {
-                    pw.println("        if (" + accessor + " != null) g.write(\"" + name + "\", " + accessor + ");");
+                    pw.println("        if (" + accessor + " != null) { " + key + " g.write(" + accessor + "); }");
+                    if (nillable) {
+                        // @JsonbNillable: null values are serialized as JSON null.
+                        pw.println("        else { " + key + " g.writeNull(); }");
+                    }
                 } else if (isEnum(dt)) {
-                    pw.println("        if (" + accessor + " != null) g.write(\"" + name + "\", " + accessor + ".name());");
+                    pw.println("        if (" + accessor + " != null) { " + key + " g.write(" + accessor + ".name()); }");
                 } else if (isStaticRecord(dt)) {
                     // Nested @JsonbStatic record: direct delegation to the generated binding of the subtype.
                     String binding = bindingFqnOf(dt);
                     pw.println("        if (" + accessor + " != null) {");
-                    pw.println("            g.writeKey(\"" + name + "\");");
+                    pw.println("            " + key);
                     pw.println("            new " + binding + "().write(g, " + accessor + ");");
                     pw.println("        }");
                 } else if ("java.util.List".equals(fqn)) {
                     TypeMirror elem = dt.getTypeArguments().get(0);
                     pw.println("        if (" + accessor + " != null) {");
-                    pw.println("            g.writeKey(\"" + name + "\");");
+                    pw.println("            " + key);
                     pw.println("            g.writeStartArray();");
                     String elemFqn = ((TypeElement) ((DeclaredType) elem).asElement()).getQualifiedName().toString();
-                    pw.println("            for (" + elemFqn + " _e : " + accessor + ") {");
-                    pw.println("                if (_e == null) g.writeNull(); else " + writeInline("_e", elem) + ";");
+                    pw.println("            for (" + elemFqn + " __e : " + accessor + ") {");
+                    pw.println("                if (__e == null) g.writeNull(); else " + writeInline("__e", elem) + ";");
                     pw.println("            }");
                     pw.println("            g.writeEnd();");
                     pw.println("        }");
@@ -344,19 +418,19 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     TypeMirror inner = dt.getTypeArguments().get(0);
                     pw.println("        if (" + accessor + " != null && " + accessor + ".isPresent()) {");
                     String innerFqn = ((TypeElement) ((DeclaredType) inner).asElement()).getQualifiedName().toString();
-                    pw.println("            " + innerFqn + " _v = " + accessor + ".get();");
-                    pw.println("            g.writeKey(\"" + name + "\");");
-                    pw.println("            " + writeInline("_v", inner) + ";");
+                    pw.println("            " + innerFqn + " __v = " + accessor + ".get();");
+                    pw.println("            " + key);
+                    pw.println("            " + writeInline("__v", inner) + ";");
                     pw.println("        }");
                 } else if ("java.util.Map".equals(fqn)) {
                     TypeMirror valT = dt.getTypeArguments().get(1);
                     String valFqn = ((TypeElement) ((DeclaredType) valT).asElement()).getQualifiedName().toString();
                     pw.println("        if (" + accessor + " != null) {");
-                    pw.println("            g.writeKey(\"" + name + "\");");
+                    pw.println("            " + key);
                     pw.println("            g.writeStartObject();");
-                    pw.println("            for (java.util.Map.Entry<String, " + valFqn + "> _en : " + accessor + ".entrySet()) {");
-                    pw.println("                g.writeKey(_en.getKey());");
-                    pw.println("                if (_en.getValue() == null) g.writeNull(); else " + writeInline("_en.getValue()", valT) + ";");
+                    pw.println("            for (java.util.Map.Entry<String, " + valFqn + "> __en : " + accessor + ".entrySet()) {");
+                    pw.println("                g.writeKey(__en.getKey());");
+                    pw.println("                if (__en.getValue() == null) g.writeNull(); else " + writeInline("__en.getValue()", valT) + ";");
                     pw.println("            }");
                     pw.println("            g.writeEnd();");
                     pw.println("        }");
@@ -365,17 +439,17 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             case ARRAY -> {
                 TypeMirror comp = ((ArrayType) tm).getComponentType();
                 pw.println("        if (" + accessor + " != null) {");
-                pw.println("            g.writeKey(\"" + name + "\");");
+                pw.println("            " + key);
                 pw.println("            g.writeStartArray();");
                 switch (comp.getKind()) {
-                    case INT -> pw.println("            for (int _e : " + accessor + ") g.write(_e);");
-                    case LONG -> pw.println("            for (long _e : " + accessor + ") g.write(_e);");
-                    case DOUBLE -> pw.println("            for (double _e : " + accessor + ") g.write(_e);");
-                    case BOOLEAN -> pw.println("            for (boolean _e : " + accessor + ") g.write(_e);");
+                    case INT -> pw.println("            for (int __e : " + accessor + ") g.write(__e);");
+                    case LONG -> pw.println("            for (long __e : " + accessor + ") g.write(__e);");
+                    case DOUBLE -> pw.println("            for (double __e : " + accessor + ") g.write(__e);");
+                    case BOOLEAN -> pw.println("            for (boolean __e : " + accessor + ") g.write(__e);");
                     case DECLARED -> {
                         // String[]
-                        pw.println("            for (String _e : " + accessor + ") {");
-                        pw.println("                if (_e == null) g.writeNull(); else g.write(_e);");
+                        pw.println("            for (String __e : " + accessor + ") {");
+                        pw.println("                if (__e == null) g.writeNull(); else g.write(__e);");
                         pw.println("            }");
                     }
                     default -> {}
@@ -422,7 +496,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         String name = c.getSimpleName().toString();
         TypeMirror tm = c.asType();
         switch (tm.getKind()) {
-            case INT, SHORT, BYTE -> pw.println("        int _" + name + " = 0;");
+            case INT -> pw.println("        int _" + name + " = 0;");
+            case SHORT -> pw.println("        short _" + name + " = 0;");
+            case BYTE -> pw.println("        byte _" + name + " = 0;");
             case LONG -> pw.println("        long _" + name + " = 0L;");
             case DOUBLE -> pw.println("        double _" + name + " = 0.0;");
             case FLOAT -> pw.println("        float _" + name + " = 0.0f;");
@@ -468,107 +544,107 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private void emitReadComponent(PrintWriter pw, RecordComponentElement c, String target) {
         TypeMirror tm = c.asType();
         switch (tm.getKind()) {
-            case INT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getInt();");
-            case SHORT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = (short) p.getInt();");
-            case BYTE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = (byte) p.getInt();");
-            case LONG -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getLong();");
-            case DOUBLE -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().doubleValue();");
-            case FLOAT -> pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().floatValue();");
-            case BOOLEAN -> pw.println("                    " + target + " = (_ev == JsonParser.Event.VALUE_TRUE);");
+            case INT -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getInt();");
+            case SHORT -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = (short) p.getInt();");
+            case BYTE -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = (byte) p.getInt();");
+            case LONG -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getLong();");
+            case DOUBLE -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().doubleValue();");
+            case FLOAT -> pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getBigDecimal().floatValue();");
+            case BOOLEAN -> pw.println("                    " + target + " = (__ev == JsonParser.Event.VALUE_TRUE);");
             case DECLARED -> {
                 DeclaredType dt = (DeclaredType) tm;
                 String fqn = dt.asElement().toString();
                 if ("java.lang.String".equals(fqn)) {
-                    pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getString();");
+                    pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = p.getString();");
                 } else if (isEnum(dt)) {
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
-                    pw.println("                    if (_ev != JsonParser.Event.VALUE_NULL) " + target + " = " + f + ".valueOf(p.getString());");
+                    pw.println("                    if (__ev != JsonParser.Event.VALUE_NULL) " + target + " = " + f + ".valueOf(p.getString());");
                 } else if (isStaticRecord(dt)) {
                     // Delegation to <X>$$Binding. The binding may be bytecode (read
                     // returns Object) or parameterized source (read returns T). Cast
                     // explicitly to cover both.
                     String binding = bindingFqnOf(dt);
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
-                    pw.println("                    if (_ev == JsonParser.Event.VALUE_NULL) " + target + " = null;");
+                    pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + " = null;");
                     pw.println("                    else {");
-                    pw.println("                        JsonParser _primed = new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(_ev, p);");
-                    pw.println("                        " + target + " = (" + f + ") new " + binding + "().read(_primed);");
+                    pw.println("                        JsonParser __primed = new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(__ev, p);");
+                    pw.println("                        " + target + " = (" + f + ") new " + binding + "().read(__primed);");
                     pw.println("                    }");
                 } else if ("java.util.List".equals(fqn)) {
                     TypeMirror elem = dt.getTypeArguments().get(0);
                     String elemFqn = ((TypeElement) ((DeclaredType) elem).asElement()).getQualifiedName().toString();
-                    pw.println("                    if (_ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
-                    pw.println("                    java.util.ArrayList<" + elemFqn + "> _list = new java.util.ArrayList<>();");
-                    pw.println("                    JsonParser.Event _aev;");
-                    pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) {");
-                    pw.println("                        if (_aev == JsonParser.Event.VALUE_NULL) _list.add(null);");
-                    pw.println("                        else _list.add(" + readInline("_aev", "p", elem) + ");");
+                    pw.println("                    if (__ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
+                    pw.println("                    java.util.ArrayList<" + elemFqn + "> __list = new java.util.ArrayList<>();");
+                    pw.println("                    JsonParser.Event __aev;");
+                    pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) {");
+                    pw.println("                        if (__aev == JsonParser.Event.VALUE_NULL) __list.add(null);");
+                    pw.println("                        else __list.add(" + readInline("__aev", "p", elem) + ");");
                     pw.println("                    }");
-                    pw.println("                    " + target + " = _list;");
+                    pw.println("                    " + target + " = __list;");
                 } else if ("java.util.Optional".equals(fqn)) {
                     TypeMirror inner = dt.getTypeArguments().get(0);
-                    pw.println("                    if (_ev == JsonParser.Event.VALUE_NULL) " + target + " = java.util.Optional.empty();");
-                    pw.println("                    else " + target + " = java.util.Optional.of(" + readInline("_ev", "p", inner) + ");");
+                    pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + " = java.util.Optional.empty();");
+                    pw.println("                    else " + target + " = java.util.Optional.of(" + readInline("__ev", "p", inner) + ");");
                 } else if ("java.util.Map".equals(fqn)) {
                     TypeMirror valT = dt.getTypeArguments().get(1);
                     String valFqn = ((TypeElement) ((DeclaredType) valT).asElement()).getQualifiedName().toString();
-                    pw.println("                    if (_ev != JsonParser.Event.START_OBJECT) throw new IllegalStateException(\"Expected START_OBJECT\");");
-                    pw.println("                    java.util.LinkedHashMap<String, " + valFqn + "> _map = new java.util.LinkedHashMap<>();");
-                    pw.println("                    JsonParser.Event _mev;");
-                    pw.println("                    while ((_mev = p.next()) != JsonParser.Event.END_OBJECT) {");
-                    pw.println("                        if (_mev != JsonParser.Event.KEY_NAME) throw new IllegalStateException(\"Expected KEY_NAME\");");
-                    pw.println("                        String _k = p.getString();");
-                    pw.println("                        JsonParser.Event _vev = p.next();");
-                    pw.println("                        if (_vev == JsonParser.Event.VALUE_NULL) _map.put(_k, null);");
-                    pw.println("                        else _map.put(_k, " + readInline("_vev", "p", valT) + ");");
+                    pw.println("                    if (__ev != JsonParser.Event.START_OBJECT) throw new IllegalStateException(\"Expected START_OBJECT\");");
+                    pw.println("                    java.util.LinkedHashMap<String, " + valFqn + "> __map = new java.util.LinkedHashMap<>();");
+                    pw.println("                    JsonParser.Event __mev;");
+                    pw.println("                    while ((__mev = p.next()) != JsonParser.Event.END_OBJECT) {");
+                    pw.println("                        if (__mev != JsonParser.Event.KEY_NAME) throw new IllegalStateException(\"Expected KEY_NAME\");");
+                    pw.println("                        String __k = p.getString();");
+                    pw.println("                        JsonParser.Event __vev = p.next();");
+                    pw.println("                        if (__vev == JsonParser.Event.VALUE_NULL) __map.put(__k, null);");
+                    pw.println("                        else __map.put(__k, " + readInline("__vev", "p", valT) + ");");
                     pw.println("                    }");
-                    pw.println("                    " + target + " = _map;");
+                    pw.println("                    " + target + " = __map;");
                 }
             }
             case ARRAY -> {
                 TypeMirror comp = ((ArrayType) tm).getComponentType();
-                pw.println("                    if (_ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
+                pw.println("                    if (__ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
                 switch (comp.getKind()) {
                     case INT -> {
-                        pw.println("                    java.util.ArrayList<Integer> _ints = new java.util.ArrayList<>();");
-                        pw.println("                    JsonParser.Event _aev;");
-                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _ints.add(p.getInt());");
-                        pw.println("                    int[] _arr = new int[_ints.size()];");
-                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _ints.get(_i);");
-                        pw.println("                    " + target + " = _arr;");
+                        pw.println("                    java.util.ArrayList<Integer> __ints = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event __aev;");
+                        pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) __ints.add(p.getInt());");
+                        pw.println("                    int[] __arr = new int[__ints.size()];");
+                        pw.println("                    for (int __i = 0; __i < __arr.length; __i++) __arr[__i] = __ints.get(__i);");
+                        pw.println("                    " + target + " = __arr;");
                     }
                     case LONG -> {
-                        pw.println("                    java.util.ArrayList<Long> _longs = new java.util.ArrayList<>();");
-                        pw.println("                    JsonParser.Event _aev;");
-                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _longs.add(p.getLong());");
-                        pw.println("                    long[] _arr = new long[_longs.size()];");
-                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _longs.get(_i);");
-                        pw.println("                    " + target + " = _arr;");
+                        pw.println("                    java.util.ArrayList<Long> __longs = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event __aev;");
+                        pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) __longs.add(p.getLong());");
+                        pw.println("                    long[] __arr = new long[__longs.size()];");
+                        pw.println("                    for (int __i = 0; __i < __arr.length; __i++) __arr[__i] = __longs.get(__i);");
+                        pw.println("                    " + target + " = __arr;");
                     }
                     case DOUBLE -> {
-                        pw.println("                    java.util.ArrayList<Double> _doubles = new java.util.ArrayList<>();");
-                        pw.println("                    JsonParser.Event _aev;");
-                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _doubles.add(p.getBigDecimal().doubleValue());");
-                        pw.println("                    double[] _arr = new double[_doubles.size()];");
-                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _doubles.get(_i);");
-                        pw.println("                    " + target + " = _arr;");
+                        pw.println("                    java.util.ArrayList<Double> __doubles = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event __aev;");
+                        pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) __doubles.add(p.getBigDecimal().doubleValue());");
+                        pw.println("                    double[] __arr = new double[__doubles.size()];");
+                        pw.println("                    for (int __i = 0; __i < __arr.length; __i++) __arr[__i] = __doubles.get(__i);");
+                        pw.println("                    " + target + " = __arr;");
                     }
                     case BOOLEAN -> {
-                        pw.println("                    java.util.ArrayList<Boolean> _bools = new java.util.ArrayList<>();");
-                        pw.println("                    JsonParser.Event _aev;");
-                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) _bools.add(_aev == JsonParser.Event.VALUE_TRUE);");
-                        pw.println("                    boolean[] _arr = new boolean[_bools.size()];");
-                        pw.println("                    for (int _i = 0; _i < _arr.length; _i++) _arr[_i] = _bools.get(_i);");
-                        pw.println("                    " + target + " = _arr;");
+                        pw.println("                    java.util.ArrayList<Boolean> __bools = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event __aev;");
+                        pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) __bools.add(__aev == JsonParser.Event.VALUE_TRUE);");
+                        pw.println("                    boolean[] __arr = new boolean[__bools.size()];");
+                        pw.println("                    for (int __i = 0; __i < __arr.length; __i++) __arr[__i] = __bools.get(__i);");
+                        pw.println("                    " + target + " = __arr;");
                     }
                     case DECLARED -> {
                         // String[]
-                        pw.println("                    java.util.ArrayList<String> _ss = new java.util.ArrayList<>();");
-                        pw.println("                    JsonParser.Event _aev;");
-                        pw.println("                    while ((_aev = p.next()) != JsonParser.Event.END_ARRAY) {");
-                        pw.println("                        _ss.add(_aev == JsonParser.Event.VALUE_NULL ? null : p.getString());");
+                        pw.println("                    java.util.ArrayList<String> __ss = new java.util.ArrayList<>();");
+                        pw.println("                    JsonParser.Event __aev;");
+                        pw.println("                    while ((__aev = p.next()) != JsonParser.Event.END_ARRAY) {");
+                        pw.println("                        __ss.add(__aev == JsonParser.Event.VALUE_NULL ? null : p.getString());");
                         pw.println("                    }");
-                        pw.println("                    " + target + " = _ss.toArray(new String[0]);");
+                        pw.println("                    " + target + " = __ss.toArray(new String[0]);");
                     }
                     default -> {}
                 }

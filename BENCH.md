@@ -368,7 +368,9 @@ read    └───────────────────────
 ## 7. Static codegen (M5) — `@JsonbStatic`
 
 The `champollion-codegen-apt` APT generates, for each record annotated
-`@JsonbStatic`, a `<Type>$$Binding` (direct bytecode, final class, zero reflection).
+`@JsonbStatic`, a `<Type>$$Binding` (generated Java source compiled by javac,
+final class, zero reflection — CG-03 replaced the former direct-bytecode
+emitter, the RFC 8259 pre-quoted raw-key fast path is preserved).
 At runtime, `ChampollionJsonb` checks these bindings through `ServiceLoader`
 **before** the introspective runtime path: if a binding exists, it branches
 directly to `JsonbBinding.write/read`.
