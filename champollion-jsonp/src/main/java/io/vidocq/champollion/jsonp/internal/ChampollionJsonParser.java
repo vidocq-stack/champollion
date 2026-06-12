@@ -28,17 +28,21 @@ import jakarta.json.stream.JsonParsingException;
 
 import java.io.Reader;
 import java.math.BigDecimal;
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
  * Pull-based Jakarta JSON-P 2.1 parser, based on {@link JsonTokenizer}.
  *
- * <p>The parser maintains a stack of scopes ({@link Scope}) and a minimal state
- * machine: on each {@link #next()} call it consumes one or more tokens and emits
- * exactly one {@link Event}.</p>
+ * <p>The parser maintains a minimal state machine: on each {@link #next()}
+ * call it consumes one or more tokens and emits exactly one {@link Event}.</p>
+ *
+ * <p>P13 — the state machine is a scalar {@link Scope} field plus a
+ * <em>bit-stack</em> of open containers (one bit per nesting level:
+ * 1&nbsp;=&nbsp;object, 0&nbsp;=&nbsp;array). A parent scope is always already
+ * advanced to its {@code *_COMMA} state when a child container opens, so the
+ * container bit alone reconstructs the parent state on close — no
+ * {@code Deque} push/pop on the per-event hot path.</p>
  *
  * <p>P12 — the value accessors ({@code getString}, {@code getInt}, etc.)
  * delegate to the tokenizer's lazy pending value: nothing is materialized
@@ -50,10 +54,13 @@ public final class ChampollionJsonParser implements JsonParser {
                          ARRAY_START, ARRAY_VALUE, ARRAY_COMMA, DONE }
 
     private JsonTokenizer tokenizer;
-    // Initial capacity 4 — the average nesting depth of production JSON stays
-    // well below 8; the default ArrayDeque (16) allocates an unnecessarily
-    // large backing array on the read hot path.
-    private final Deque<Scope> scopes = new ArrayDeque<>(4);
+
+    /** Current micro-state (replaces the former scope deque's top). */
+    private Scope state = Scope.ROOT;
+    /** Container-type bits of the open nesting levels (1 = object, 0 = array). */
+    private long[] nestBits = new long[1];
+    /** Number of open containers. */
+    private int depth = 0;
 
     private Event next;
     private boolean nextReady;
@@ -61,13 +68,11 @@ public final class ChampollionJsonParser implements JsonParser {
 
     public ChampollionJsonParser(Reader reader) {
         this.tokenizer = new JsonReaderTokenizer(reader);
-        this.scopes.push(Scope.ROOT);
     }
 
     /** P10.1 — String fast path: no Reader, no intermediate char[]. */
     public ChampollionJsonParser(String src) {
         this.tokenizer = new JsonStringTokenizer(src);
-        this.scopes.push(Scope.ROOT);
     }
 
     /**
@@ -88,11 +93,31 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     private void clearState() {
-        this.scopes.clear();
-        this.scopes.push(Scope.ROOT);
+        this.state = Scope.ROOT;
+        this.depth = 0;
         this.next = null;
         this.nextReady = false;
         this.lastEvent = null;
+    }
+
+    private void pushNest(boolean object) {
+        int idx = depth >>> 6;
+        if (idx == nestBits.length) {
+            nestBits = java.util.Arrays.copyOf(nestBits, nestBits.length * 2);
+        }
+        long bit = 1L << (depth & 63);
+        if (object) nestBits[idx] |= bit;
+        else nestBits[idx] &= ~bit;
+        depth++;
+    }
+
+    /** Pops the closing container and returns the parent's resume scope. */
+    private Scope popNest() {
+        depth--;
+        if (depth == 0) return Scope.DONE;
+        int top = depth - 1;
+        boolean object = (nestBits[top >>> 6] & (1L << (top & 63))) != 0;
+        return object ? Scope.OBJECT_COMMA : Scope.ARRAY_COMMA;
     }
 
     @Override
@@ -112,173 +137,124 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     private Event computeNext() {
-        // ROOT post-value: wait for EOF or throw
-        if (scopes.peek() == Scope.DONE) {
-            JsonToken trailing = tokenizer.next();
-            if (trailing == JsonToken.EOF) return null;
-            throw parsing("Unexpected token after root value");
+        // Separator scopes (colon, comma) loop back instead of recursing.
+        while (true) {
+            switch (state) {
+                case DONE -> {
+                    // ROOT post-value: wait for EOF or throw
+                    JsonToken trailing = tokenizer.next();
+                    if (trailing == JsonToken.EOF) return null;
+                    throw parsing("Unexpected token after root value");
+                }
+                case ROOT -> {
+                    JsonToken t = tokenizer.next();
+                    if (t == JsonToken.EOF) throw parsing("Empty input");
+                    Event e = consumeValueToken(t);
+                    if (e == null) throw parsing("Unexpected token at root");
+                    // If the root did not open a container, we are done.
+                    if (state == Scope.ROOT) state = Scope.DONE;
+                    return e;
+                }
+                case OBJECT_START -> {
+                    JsonToken t = tokenizer.next();
+                    if (t == JsonToken.END_OBJECT) {
+                        state = popNest();
+                        return Event.END_OBJECT;
+                    }
+                    return consumeKey(t);
+                }
+                case OBJECT_KEY -> {
+                    return consumeKey(tokenizer.next());
+                }
+                case OBJECT_COLON -> {
+                    if (tokenizer.next() != JsonToken.NAME_SEPARATOR) {
+                        throw parsing("Expected ':' after key");
+                    }
+                    state = Scope.OBJECT_VALUE;
+                }
+                case OBJECT_VALUE, ARRAY_VALUE -> {
+                    Event e = consumeValueToken(tokenizer.next());
+                    if (e == null) throw parsing("Expected JSON value");
+                    return e;
+                }
+                case OBJECT_COMMA -> {
+                    JsonToken t = tokenizer.next();
+                    if (t == JsonToken.END_OBJECT) {
+                        state = popNest();
+                        return Event.END_OBJECT;
+                    }
+                    if (t != JsonToken.VALUE_SEPARATOR) {
+                        throw parsing("Expected ',' or '}' in object");
+                    }
+                    state = Scope.OBJECT_KEY;
+                }
+                case ARRAY_START -> {
+                    JsonToken t = tokenizer.next();
+                    if (t == JsonToken.END_ARRAY) {
+                        state = popNest();
+                        return Event.END_ARRAY;
+                    }
+                    Event e = consumeValueToken(t);
+                    if (e == null) throw parsing("Unexpected token in array");
+                    return e;
+                }
+                case ARRAY_COMMA -> {
+                    JsonToken t = tokenizer.next();
+                    if (t == JsonToken.END_ARRAY) {
+                        state = popNest();
+                        return Event.END_ARRAY;
+                    }
+                    if (t != JsonToken.VALUE_SEPARATOR) {
+                        throw parsing("Expected ',' or ']' in array");
+                    }
+                    state = Scope.ARRAY_VALUE;
+                }
+            }
         }
-
-        Scope scope = scopes.peek();
-        return switch (scope) {
-            case ROOT -> parseRootValue();
-            case OBJECT_START -> parseObjectKeyOrEnd();
-            case OBJECT_KEY -> parseObjectKey();
-            case OBJECT_COLON -> parseObjectColon();
-            case OBJECT_VALUE -> parseValue(/*inObject*/ true);
-            case OBJECT_COMMA -> parseObjectCommaOrEnd();
-            case ARRAY_START -> parseArrayValueOrEnd();
-            case ARRAY_VALUE -> parseValue(/*inObject*/ false);
-            case ARRAY_COMMA -> parseArrayCommaOrEnd();
-            case DONE -> null;
-        };
-    }
-
-    private Event parseRootValue() {
-        JsonToken t = tokenizer.next();
-        if (t == JsonToken.EOF) {
-            throw parsing("Empty input");
-        }
-        Event e = consumeValueToken(t, /*topLevel*/ true);
-        if (e == null) throw parsing("Unexpected token at root");
-        // If the root did not open a scope, we are done.
-        if (scopes.peek() == Scope.ROOT) {
-            scopes.pop();
-            scopes.push(Scope.DONE);
-        }
-        return e;
-    }
-
-    private Event parseObjectKeyOrEnd() {
-        JsonToken t = tokenizer.next();
-        if (t == JsonToken.END_OBJECT) {
-            scopes.pop();
-            transitionAfterValue();
-            return Event.END_OBJECT;
-        }
-        return consumeKey(t);
-    }
-
-    private Event parseObjectKey() {
-        JsonToken t = tokenizer.next();
-        return consumeKey(t);
     }
 
     private Event consumeKey(JsonToken t) {
         if (t != JsonToken.STRING) {
             throw parsing("Expected string key in object");
         }
-        scopes.pop();
-        scopes.push(Scope.OBJECT_COLON);
+        state = Scope.OBJECT_COLON;
         return Event.KEY_NAME;
     }
 
-    private Event parseObjectColon() {
-        JsonToken t = tokenizer.next();
-        if (t != JsonToken.NAME_SEPARATOR) {
-            throw parsing("Expected ':' after key");
-        }
-        scopes.pop();
-        scopes.push(Scope.OBJECT_VALUE);
-        return computeNext();
-    }
-
-    private Event parseObjectCommaOrEnd() {
-        JsonToken t = tokenizer.next();
-        if (t == JsonToken.END_OBJECT) {
-            scopes.pop();
-            transitionAfterValue();
-            return Event.END_OBJECT;
-        }
-        if (t != JsonToken.VALUE_SEPARATOR) {
-            throw parsing("Expected ',' or '}' in object");
-        }
-        scopes.pop();
-        scopes.push(Scope.OBJECT_KEY);
-        return computeNext();
-    }
-
-    private Event parseArrayValueOrEnd() {
-        JsonToken t = tokenizer.next();
-        if (t == JsonToken.END_ARRAY) {
-            scopes.pop();
-            transitionAfterValue();
-            return Event.END_ARRAY;
-        }
-        Event e = consumeValueToken(t, /*topLevel*/ false);
-        if (e == null) throw parsing("Unexpected token in array");
-        return e;
-    }
-
-    private Event parseValue(boolean inObject) {
-        JsonToken t = tokenizer.next();
-        Event e = consumeValueToken(t, /*topLevel*/ false);
-        if (e == null) throw parsing("Expected JSON value");
-        return e;
-    }
-
-    private Event parseArrayCommaOrEnd() {
-        JsonToken t = tokenizer.next();
-        if (t == JsonToken.END_ARRAY) {
-            scopes.pop();
-            transitionAfterValue();
-            return Event.END_ARRAY;
-        }
-        if (t != JsonToken.VALUE_SEPARATOR) {
-            throw parsing("Expected ',' or ']' in array");
-        }
-        scopes.pop();
-        scopes.push(Scope.ARRAY_VALUE);
-        return computeNext();
-    }
-
     /**
-     * Consumes a value token and emits the corresponding event. Updates the stack.
-     * Returns {@code null} if the token is not a value token.
+     * Consumes a value token and emits the corresponding event. Updates the
+     * state (and the nesting bit-stack for containers). Returns {@code null}
+     * if the token is not a value token.
      */
-    private Event consumeValueToken(JsonToken t, boolean topLevel) {
-        if (t == JsonToken.START_OBJECT) {
-            replaceTopForValueConsumed();
-            scopes.push(Scope.OBJECT_START);
-            return Event.START_OBJECT;
-        }
-        if (t == JsonToken.START_ARRAY) {
-            replaceTopForValueConsumed();
-            scopes.push(Scope.ARRAY_START);
-            return Event.START_ARRAY;
-        }
-        if (t == JsonToken.STRING) {
-            replaceTopForValueConsumed();
-            return Event.VALUE_STRING;
-        }
-        if (t == JsonToken.NUMBER) {
-            replaceTopForValueConsumed();
-            return Event.VALUE_NUMBER;
-        }
-        if (t == JsonToken.TRUE) { replaceTopForValueConsumed(); return Event.VALUE_TRUE; }
-        if (t == JsonToken.FALSE) { replaceTopForValueConsumed(); return Event.VALUE_FALSE; }
-        if (t == JsonToken.NULL) { replaceTopForValueConsumed(); return Event.VALUE_NULL; }
-        return null;
+    private Event consumeValueToken(JsonToken t) {
+        return switch (t) {
+            case START_OBJECT -> {
+                advanceAfterValue();
+                pushNest(true);
+                state = Scope.OBJECT_START;
+                yield Event.START_OBJECT;
+            }
+            case START_ARRAY -> {
+                advanceAfterValue();
+                pushNest(false);
+                state = Scope.ARRAY_START;
+                yield Event.START_ARRAY;
+            }
+            case STRING -> { advanceAfterValue(); yield Event.VALUE_STRING; }
+            case NUMBER -> { advanceAfterValue(); yield Event.VALUE_NUMBER; }
+            case TRUE -> { advanceAfterValue(); yield Event.VALUE_TRUE; }
+            case FALSE -> { advanceAfterValue(); yield Event.VALUE_FALSE; }
+            case NULL -> { advanceAfterValue(); yield Event.VALUE_NULL; }
+            default -> null;
+        };
     }
 
-    /** After consuming a primitive value (or opening a container), updates the stack. */
-    private void replaceTopForValueConsumed() {
-        Scope top = scopes.peek();
-        switch (top) {
-            case OBJECT_VALUE -> { scopes.pop(); scopes.push(Scope.OBJECT_COMMA); }
-            case ARRAY_START, ARRAY_VALUE -> { scopes.pop(); scopes.push(Scope.ARRAY_COMMA); }
-            case ROOT -> { /* handled by parseRootValue after return */ }
-            default -> {}
-        }
-    }
-
-    /** After closing a container, returns to the parent scope and switches to COMMA. */
-    private void transitionAfterValue() {
-        Scope top = scopes.peek();
-        switch (top) {
-            case OBJECT_VALUE -> { scopes.pop(); scopes.push(Scope.OBJECT_COMMA); }
-            case ARRAY_START, ARRAY_VALUE -> { scopes.pop(); scopes.push(Scope.ARRAY_COMMA); }
-            case ROOT -> { scopes.pop(); scopes.push(Scope.DONE); }
+    /** After consuming a value (or opening a container), advances the scope. */
+    private void advanceAfterValue() {
+        switch (state) {
+            case OBJECT_VALUE -> state = Scope.OBJECT_COMMA;
+            case ARRAY_START, ARRAY_VALUE -> state = Scope.ARRAY_COMMA;
+            case ROOT -> { /* handled by the ROOT case after return */ }
             default -> {}
         }
     }
@@ -455,8 +431,8 @@ public final class ChampollionJsonParser implements JsonParser {
     @Override public void close() {
         // Spec §3.6: closes the underlying Reader/InputStream; propagates
         // IOException as JsonException.
-        scopes.clear();
-        scopes.push(Scope.DONE);
+        state = Scope.DONE;
+        depth = 0;
         tokenizer.close();
     }
 

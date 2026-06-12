@@ -289,14 +289,16 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
     }
 
     /**
-     * P11/P12 — in-buffer fast path: when the whole literal lies in the
-     * current buffer (its terminator included), the maximal number-alphabet
-     * run is scanned with direct indexing, validated against the RFC 8259
-     * number grammar in one linear pass, and recorded as a buffer range — no
-     * String until a number accessor is actually called. Numbers cannot
-     * contain newlines, so position tracking is bulk-applied. Buffer
-     * boundaries (and the rare pending-peek case) fall back to the original
-     * per-char loop, which also owns the precise error messages.
+     * P11/P12/P13 — in-buffer fast path: when the whole literal lies in the
+     * current buffer (its terminator included), the literal is scanned by
+     * RFC 8259 §6 grammar phases (int / frac / exp) in a SINGLE pass — the
+     * former separate validation pass over the alphabet run is fused into the
+     * scan — and recorded as a buffer range; no String until a number accessor
+     * is actually called. Numbers cannot contain newlines, so position
+     * tracking is bulk-applied. Buffer boundaries (any phase hitting
+     * {@code bufEnd}, and the rare pending-peek case) fall back to the
+     * original per-char loop, which also owns the precise error messages for
+     * literals spanning a refill.
      */
     private JsonToken readNumber(int first) {
         // 'first' always comes from this buffer when no refill intervened:
@@ -306,17 +308,56 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
             int end = bufEnd;
             int start = bufPos - 1;
             int q = bufPos;
-            while (q < end) {
-                char ch = b[q];
-                if ((ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') {
-                    q++;
-                } else {
-                    break;
+            boolean valid = true;
+            fast:
+            {
+                // integer part — 'first' is '-' or a digit
+                if (first == '-') {
+                    if (q >= end) break fast;
+                    char d = b[q];
+                    if (d == '0') q++;
+                    else if (d >= '1' && d <= '9') {
+                        q++;
+                        while (q < end && b[q] >= '0' && b[q] <= '9') q++;
+                    } else valid = false;
+                } else if (first != '0') {
+                    while (q < end && b[q] >= '0' && b[q] <= '9') q++;
                 }
-            }
-            if (q < end) { // terminator inside the buffer → the literal is complete
-                if (!isValidRfc8259Number(b, start, q - start)) {
-                    throw error("Invalid JSON number: " + new String(b, start, q - start));
+                // frac part
+                if (valid && q < end && b[q] == '.') {
+                    q++;
+                    if (q >= end) break fast;
+                    if (b[q] >= '0' && b[q] <= '9') {
+                        q++;
+                        while (q < end && b[q] >= '0' && b[q] <= '9') q++;
+                    } else valid = false;
+                }
+                // exp part
+                if (valid && q < end && (b[q] == 'e' || b[q] == 'E')) {
+                    q++;
+                    if (q < end && (b[q] == '+' || b[q] == '-')) q++;
+                    if (q >= end) break fast;
+                    if (b[q] >= '0' && b[q] <= '9') {
+                        q++;
+                        while (q < end && b[q] >= '0' && b[q] <= '9') q++;
+                    } else valid = false;
+                }
+                if (q >= end) break fast; // terminator unknown → literal may span a refill
+                // grammar complete, but a trailing number-alphabet char means
+                // the maximal run is invalid (e.g. "01", "1.2.3", "1e2e3")
+                char t = b[q];
+                if (valid && ((t >= '0' && t <= '9') || t == '.' || t == 'e' || t == 'E' || t == '+' || t == '-')) {
+                    valid = false;
+                }
+                if (!valid) {
+                    // error message = the maximal alphabet run, as before
+                    int r = q;
+                    while (r < end) {
+                        char ch = b[r];
+                        if ((ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') r++;
+                        else break;
+                    }
+                    throw error("Invalid JSON number: " + new String(b, start, r - start));
                 }
                 int consumed = q - bufPos; // 'first' was already tracked
                 offset += consumed;
@@ -380,36 +421,4 @@ public final class JsonReaderTokenizer extends JsonTokenizer {
         return JsonToken.NUMBER;
     }
 
-    /** Strict RFC 8259 §6 number grammar, one linear pass over the literal. */
-    private static boolean isValidRfc8259Number(char[] a, int off, int len) {
-        int i = off;
-        int n = off + len;
-        if (a[i] == '-') i++;
-        if (i == n) return false;
-        char c = a[i];
-        if (c == '0') {
-            i++;
-        } else if (c >= '1' && c <= '9') {
-            i++;
-            while (i < n && isDigit(a[i])) i++;
-        } else {
-            return false;
-        }
-        if (i < n && a[i] == '.') {
-            i++;
-            if (i == n || !isDigit(a[i])) return false;
-            while (i < n && isDigit(a[i])) i++;
-        }
-        if (i < n && (a[i] == 'e' || a[i] == 'E')) {
-            i++;
-            if (i < n && (a[i] == '+' || a[i] == '-')) i++;
-            if (i == n || !isDigit(a[i])) return false;
-            while (i < n && isDigit(a[i])) i++;
-        }
-        return i == n;
-    }
-
-    private static boolean isDigit(char c) {
-        return c >= '0' && c <= '9';
-    }
 }

@@ -231,30 +231,69 @@ public final class JsonStringTokenizer extends JsonTokenizer {
     }
 
     /**
-     * P12 — in-source fast path: the maximal number-alphabet run is scanned
-     * with direct indexing (end-of-input is a legal terminator in String
-     * mode), validated against the RFC 8259 grammar in one linear pass, and
-     * recorded as a source range. The per-char slow loop only remains for the
-     * pending-peek case and owns the precise error messages.
+     * P12/P13 — in-source fast path: the literal is scanned by RFC 8259 §6
+     * grammar phases (int / frac / exp) in a SINGLE pass — the former separate
+     * validation pass over the alphabet run is fused into the scan — and
+     * recorded as a source range (end-of-input is a legal terminator in
+     * String mode). The per-char slow loop only remains for the pending-peek
+     * case and owns the precise error messages.
      */
     private JsonToken readNumber(int first) {
         // 'first' always comes from src when no peek is pending: read() took
         // it at src.charAt(srcPos - 1).
         if (peek == NO_PEEK && srcPos > 0 && src.charAt(srcPos - 1) == first) {
+            final String s = src;
             int start = srcPos - 1;
             int q = srcPos;
             int end = srcLen;
-            while (q < end) {
-                char ch = src.charAt(q);
-                if ((ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') {
+            boolean valid = true;
+            // integer part — 'first' is '-' or a digit
+            if (first == '-') {
+                if (q < end) {
+                    char d = s.charAt(q);
+                    if (d == '0') q++;
+                    else if (d >= '1' && d <= '9') {
+                        q++;
+                        while (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') q++;
+                    } else valid = false;
+                } else valid = false; // bare "-" at end of input
+            } else if (first != '0') {
+                while (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') q++;
+            }
+            // frac part
+            if (valid && q < end && s.charAt(q) == '.') {
+                q++;
+                if (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') {
                     q++;
-                } else {
-                    break;
+                    while (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') q++;
+                } else valid = false;
+            }
+            // exp part
+            if (valid && q < end && (s.charAt(q) == 'e' || s.charAt(q) == 'E')) {
+                q++;
+                if (q < end && (s.charAt(q) == '+' || s.charAt(q) == '-')) q++;
+                if (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') {
+                    q++;
+                    while (q < end && s.charAt(q) >= '0' && s.charAt(q) <= '9') q++;
+                } else valid = false;
+            }
+            // grammar complete, but a trailing number-alphabet char means the
+            // maximal run is invalid (e.g. "01", "1.2.3", "1e2e3")
+            if (valid && q < end) {
+                char t = s.charAt(q);
+                if ((t >= '0' && t <= '9') || t == '.' || t == 'e' || t == 'E' || t == '+' || t == '-') {
+                    valid = false;
                 }
             }
-            // Unlike Reader mode, end-of-input completes the literal.
-            if (!isValidRfc8259Number(src, start, q - start)) {
-                throw error("Invalid JSON number: " + src.substring(start, q));
+            if (!valid) {
+                // error message = the maximal alphabet run, as before
+                int r = q;
+                while (r < end) {
+                    char ch = s.charAt(r);
+                    if ((ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') r++;
+                    else break;
+                }
+                throw error("Invalid JSON number: " + s.substring(start, r));
             }
             int consumed = q - srcPos; // 'first' was already tracked
             offset += consumed;
@@ -317,36 +356,4 @@ public final class JsonStringTokenizer extends JsonTokenizer {
         return JsonToken.NUMBER;
     }
 
-    /** Strict RFC 8259 §6 number grammar, one linear pass over the literal. */
-    private static boolean isValidRfc8259Number(String s, int off, int len) {
-        int i = off;
-        int n = off + len;
-        if (s.charAt(i) == '-') i++;
-        if (i == n) return false;
-        char c = s.charAt(i);
-        if (c == '0') {
-            i++;
-        } else if (c >= '1' && c <= '9') {
-            i++;
-            while (i < n && isDigit(s.charAt(i))) i++;
-        } else {
-            return false;
-        }
-        if (i < n && s.charAt(i) == '.') {
-            i++;
-            if (i == n || !isDigit(s.charAt(i))) return false;
-            while (i < n && isDigit(s.charAt(i))) i++;
-        }
-        if (i < n && (s.charAt(i) == 'e' || s.charAt(i) == 'E')) {
-            i++;
-            if (i < n && (s.charAt(i) == '+' || s.charAt(i) == '-')) i++;
-            if (i == n || !isDigit(s.charAt(i))) return false;
-            while (i < n && isDigit(s.charAt(i))) i++;
-        }
-        return i == n;
-    }
-
-    private static boolean isDigit(char c) {
-        return c >= '0' && c <= '9';
-    }
 }
