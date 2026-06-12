@@ -4,13 +4,77 @@ Performance comparison between **Champollion** (the in-house Jakarta JSON-P 2.1
 and JSON-B 3.0 implementation) and the reference implementations commonly used
 as baselines.
 
-> **TL;DR** (updated P12, 2026-06-11) — Champollion **beats Yasson on reads**
-> (~40% faster on MEDIUM) and is at **0.54–0.77× of Parsson** on JSON-P
-> streaming (was 2-3× slower pre-P12; a pure event drain now allocates 22×
-> *less* than Parsson). Binding writes remain ~Yasson-level and **3-4× slower
+> **TL;DR** (updated P13, 2026-06-12) — Champollion now **beats Parsson on
+> JSON-P streaming for MEDIUM (1.17×) and LARGE (1.08×)** payloads; only
+> SMALL remains behind (0.66×, per-parse fixed costs). It **beats Yasson on
+> reads** (~40% faster on MEDIUM) and a pure event drain allocates 22×
+> *less* than Parsson. Binding writes remain ~Yasson-level and **3-4× slower
 > than Jackson** (expected — 15 years of POJO-specific tuning and bytecode
 > codegen). There is no performance cliff that would make Champollion
 > unusable in production.
+
+---
+
+## BENCH-20260612-02 — P13: single-pass numbers + bit-stack state machine (Parsson overtaken on MEDIUM/LARGE)
+
+- **Date** : 2026-06-12
+- **Commit** : 0098c33 (`pr/ybl/p13-parser-fast-path`)
+- **JVM** : Temurin 25+36 LTS
+- **Hardware** : Apple M4 Max / 128 GB RAM
+- **OS** : macOS (Darwin 25.5.0)
+- **Commande exacte** :
+  ```bash
+  mvn -ntp -pl champollion-jsonp,champollion-bench package -DskipTests
+  java -jar champollion-bench/target/benchmarks.jar 'JsonpParseBench.(champollion|parsson)' -f 1 -wi 3 -i 5 -w 2s -r 3s
+  ```
+
+**P13 changes** (the profile after P12 was FLAT — `readString` 16%, parser
+state machine ~14%, `next()` 9%, number validation 4% — so the win came from
+distributed per-event overhead, not from one scan loop):
+
+1. **Single-pass number scan**: both tokenizers scanned the maximal
+   number-alphabet run, then re-validated it with a second
+   `isValidRfc8259Number` pass. The RFC 8259 §6 grammar phases (int / frac /
+   exp) are now fused into the scan itself; error messages are byte-identical
+   (the maximal run is only re-scanned on the error path).
+2. **Bit-stack parser state machine**: `ChampollionJsonParser` replaced its
+   `ArrayDeque<Scope>` (2-3 virtual pop/push per event + `computeNext()`
+   recursion for separators) with a scalar `Scope` field plus ONE BIT per open
+   container (1 = object, 0 = array, growable `long[]`). A parent scope is
+   always already advanced to `*_COMMA` when a child opens, so the bit alone
+   reconstructs the parent state on close. Separators loop instead of recursing.
+
+Tried and REJECTED on measurement: SWAR 4-chars-per-long string scan via
+`MemorySegment.ofArray` (the P4 ROADMAP "FFM SIMD" idea) — workload strings
+are too short (sku-like), the closing quote almost always sits in the first
+word, so the word test is pure overhead (MEDIUM −10%, LARGE flat); and
+`BUF_SIZE` 512→4096 (LARGE flat, MEDIUM −18% from per-parse allocation).
+The alignment/refill test matrix written for SWAR is kept
+(`JsonTokenizerScanBoundaryTest`).
+
+- **Résultats** (`thrpt` ops/µs and `avgt` µs/op, same run):
+  ```
+  Benchmark                    (size)   Mode  Cnt   Score    Error   Units
+  JsonpParseBench.champollion   SMALL  thrpt    5   6,143 ±  0,368  ops/us
+  JsonpParseBench.champollion  MEDIUM  thrpt    5   1,554 ±  0,029  ops/us
+  JsonpParseBench.champollion   LARGE  thrpt    5   0,017 ±  0,001  ops/us
+  JsonpParseBench.parsson       SMALL  thrpt    5   9,352 ±  0,061  ops/us
+  JsonpParseBench.parsson      MEDIUM  thrpt    5   1,333 ±  0,020  ops/us
+  JsonpParseBench.parsson       LARGE  thrpt    5   0,016 ±  0,001  ops/us
+  JsonpParseBench.champollion  MEDIUM   avgt    5   0,651 ±  0,015   us/op
+  JsonpParseBench.champollion   LARGE   avgt    5  59,744 ±  1,600   us/op
+  JsonpParseBench.parsson      MEDIUM   avgt    5   0,693 ±  0,017   us/op
+  JsonpParseBench.parsson       LARGE   avgt    5  64,605 ±  1,713   us/op
+  ```
+- **Comparaison vs run précédent** (P12, ratios champollion/parsson same-run):
+  SMALL 0.54× → **0.66×**, MEDIUM 0.77× → **1.17×**, LARGE 0.69× → **1.08×**.
+  Champollion LARGE went from 89,5 µs (same-day pre-P13 baseline) to 59,7 µs
+  (**−33%**). The 0.8× ROADMAP target is passed — Parsson is now BEHIND on
+  MEDIUM and LARGE.
+- **Notes** : SMALL (0.66×) is dominated by per-parse fixed costs (parser +
+  tokenizer instantiation; Parsson pools its buffers). Correctness gates:
+  514 jsonp tests incl. JSONTestSuite 318/318, full reactor green, official
+  TCK scores recorded with the P13 merge.
 
 ---
 
