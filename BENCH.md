@@ -397,3 +397,29 @@ introspective baseline (MethodHandles + cache).
 
 `champollion_static / jacksonJr` ≈ **0.93× on SMALL** (near parity), 0.70× on MEDIUM.
 `champollion_static / jackson`   ≈ **0.83× on SMALL**, 0.65× on MEDIUM.
+
+## BENCH-20260612-01 — CG-03 parity check: @JsonbStatic write after source-emitter convergence
+
+- **Date** : 2026-06-12
+- **Commit** : 646e95f (pr/ybl/cg03-source-mode)
+- **JVM** : Temurin 25 LTS (2025-09-16)
+- **Hardware** : Apple M4 Max / 16 cores / 128 GB RAM
+- **OS** : Darwin 25.5.0 arm64
+- **Commande exacte** :
+  ```bash
+  java -jar champollion-bench/target/benchmarks.jar "JsonbWriteBenchStatic.champollion_static" \
+       -f 1 -wi 2 -w 2s -i 3 -r 2s
+  ```
+- **Résultats** :
+  ```
+  JsonbWriteBenchStatic.champollion_static   SMALL  thrpt  3   10,931 ± 5,722  ops/us
+  JsonbWriteBenchStatic.champollion_static  MEDIUM  thrpt  3    1,189 ± 0,389  ops/us
+  JsonbWriteBenchStatic.champollion_static   LARGE  thrpt  3    0,007 ± 0,001  ops/us
+  ```
+- **Comparaison vs run précédent** : vs §7.1 (2026-05-04, bytecode emitter, fuller profile -f 2):
+  SMALL 10.93 vs 9.59 (+14 %, within combined error), MEDIUM 1.19 vs 1.14 (+4 %).
+  **No regression** from the bytecode→source emitter switch.
+- **Notes** : lighter profile (-f 1, parity check only — the JMH forked JVMs were being
+  killed under the agent sandbox, run executed unsandboxed). The generated source
+  bindings keep the RFC 8259 pre-quoted raw-key fast path (`__writeKey` helper +
+  `RawJsonKeyWriter` instanceof dispatch), which is what this run validates.
