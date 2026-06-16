@@ -61,7 +61,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 | M3 — JsonPointer + JsonPatch + MergePatch | ✅ |
 | M4 — JSON-B runtime introspective | ✅ |
 | M5 — Codegen APT + Maven plugin | ✅ MVP |
-| M6 — TCK 100% PASS | 🟡 baseline in progress |
+| M6 — TCK 100% PASS | ✅ |
 | M7 — JMH benchmarks vs Parsson / Yasson / Jackson | ⏳ planned |
 
 Details per sub-module and phase progress: see [`STATUS.md`](./STATUS.md) and [`ROADMAP.md`](./ROADMAP.md).

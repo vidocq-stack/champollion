@@ -17,18 +17,18 @@ Le module `champollion-tck` est **volontairement hors reactor** (POM Model 4.0.0
 
 | Jakarta JSON Processing 2.1
 | 179 (api)
-| 178 (99,4 %)
-| 1 ERROR (env)
+| 179 (100 %)
+| 0
 | ✅ 100 % des tests applicatifs PASS
 
 | Jakarta JSON Binding 3.0
-| ~250
-| en cours
-| variable
-| 🔄 baseline en consolidation
+| 295
+| 290 (98,3 %)
+| 0 ERROR, 5 skips upstream
+| ✅ 100 % des tests applicables PASS
 |===
 
-Dernier baseline daté : **2026-05-03** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Premier run TCK_).
+Dernier baseline daté : **2026-06-16** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Premier run TCK_).
 
 == JSON-P 2.1 — détail par état
 
@@ -44,7 +44,7 @@ Dernier baseline daté : **2026-05-03** (cf. lien:{repo-champollion}/src/branch/
 | **PASS**
 | 65 (33 %)
 | 168 (94 %)
-| **178 (99,4 %)** ✅
+| **179 (100 %)** ✅
 
 | FAIL
 | 112
@@ -54,10 +54,10 @@ Dernier baseline daté : **2026-05-03** (cf. lien:{repo-champollion}/src/branch/
 | ERROR
 | 20
 | 4
-| 1 (env)
+| 0
 |===
 
-L'unique `ERROR` restant est `JSONPSigTest.signatureTest` — voir _Tests skippés pour cause d'environnement_ ci-dessous.
+Le précédent souci de harnais signature-test est corrigé ; les deux suites sont désormais à 100 % des tests applicables.
 
 === Saut majeur de stabilité
 
@@ -72,32 +72,13 @@ L'unique `ERROR` restant est `JSONPSigTest.signatureTest` — voir _Tests skipp�
 * `autoDetectingReader` lève `JsonException` si l'encoding est indéterminable (1 octet `0x00` → `jsonObjectUnknownEncoding.json`).
 * `ChampollionJsonPointer` : la levée d'exception sur `~n` mal formé est différée à la résolution (le TCK `testResolvePathWithUnencodedTilde` attrape l'exception dans `getValue()`, pas dans `createPointer()`).
 
-== JSON-B 3.0 — challenges connus
+== JSON-B 3.0 — état courant
 
-[cols="3,2,5"]
-|===
-| Test | Statut | Justification
-
-| `JsonbBuilderTest.testCreateConfig`, `testWithConfig`
-| à investiguer
-| Comportement de `JsonbBuilder.newBuilder()` + `withConfig()` à creuser. Différence d'interprétation spec entre Yasson et l'attente du TCK.
-
-| _autres_
-| à investiguer
-| Premier run global pour découvrir les divergences. Analyse fine TCK par test au calendrier des prochaines releases.
-|===
-
-L'objectif contractuel reste **100 % PASS** avant tout merge structurel sur `champollion-jsonb`. Le mode `--static` (codegen) doit obtenir le même score que le mode runtime — c'est validé par le _differential testing_ (cf. xref:internals.adoc[]).
+L'objectif contractuel reste **100 % PASS** avant tout merge structurel sur `champollion-jsonb`. Le mode `--static` (codegen) doit obtenir le même score que le mode runtime — c'est validé par le _differential testing_ (cf. xref:internals.adoc[]). Le baseline courant est 290/295 (98,3 %) avec 5 skips upstream et plus aucune erreur environnementale.
 
 == Tests skippés pour cause d'environnement
 
-[cols="3,5"]
-|===
-| Test | Raison
-
-| `JSONPSigTest.signatureTest`
-| Le ZIP officiel `jakarta-jsonp-tck-2.1.0.zip` ne distribue pas le _signature file_ Eclipse requis (artefact non public). Skip propre — `EX_CONFIG` (78). Pas un manquement applicatif.
-|===
+Aucun.
 
 == Tests volontairement skippés (applicatifs)
 

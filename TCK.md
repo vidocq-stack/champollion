@@ -135,13 +135,12 @@ match runtime behavior — `--static` would only confirm that on the TCK corpus.
 | Metric | 2026-05-03 baseline | After M2.x + M3.4 | After M6.x |
 |---|---|---|---|
 | Tests run | 197 | 179 (API only) | 179 |
-| **PASS** | **65** (33%) | **168** (94%) | **178** (99.4%) ✅ |
+| **PASS** | **65** (33%) | **168** (94%) | **179** (100%) ✅ |
 | FAIL | 112 | 7 | 0 |
-| ERROR | 20 | 4 | 1 (sigtest env) |
+| ERROR | 20 | 4 | 0 |
 
-**100% of applicable tests PASS** — the only remaining ERROR is
-`JSONPSigTest.signatureTest`, an environmental challenge (Eclipse signature
-file not distributed in the 2.1.0 TCK ZIP).
+**100% of applicable tests PASS** — the previous signature-test harness issue
+has been fixed by providing `jimage.dir` and `signature.sigTestClasspath`.
 
 **M6.x fixes**:
 - `ChampollionJsonObject.getString/getInt/getBoolean/isNull` throw NPE if the
@@ -178,17 +177,17 @@ were self-marked as TODO):
 
 ### JSON-B 3.0
 
-| Metric | 2026-05-03 baseline | After M7.x | After M7.8–M7.15 | After M7.16 (CDI §5) | **After M7.17 (creator/property split)** |
+| Metric | 2026-05-03 baseline | After M7.x | After M7.8–M7.15 | After M7.16 (CDI §5) | **After M7.17 + harness fix** |
 |---|---|---|---|---|---|
 | Tests run | 295 | 295 | 295 | 295 | 295 |
-| **PASS** | **78** (26.4%) | 248 (84.1%) | 287 (97.3%) | 288 (97.6%) | **289 (97.97%)** ✅ |
+| **PASS** | **78** (26.4%) | 248 (84.1%) | 287 (97.3%) | 288 (97.6%) | **290 (100% applicable)** ✅ |
 | FAIL | 179 | 35 | 0 | 0 | 0 |
-| ERROR | 33 | 7 | 3 (env) | 2 | **1** (env) |
+| ERROR | 33 | 7 | 3 (env) | 2 | **0** |
 | SKIP | 5 | 5 | 5 | 5 | 5 |
 
-**100% of functionally applicable tests PASS** — the only remaining ERROR
-(`JSONBSigTest.signatureTest`) is purely environmental (binary signature file,
-`.sig` not distributed in the 3.0.0 ZIP).
+**100% of functionally applicable tests PASS** — the previous signature-test
+harness issue has been fixed by providing `jimage.dir` and
+`signature.sigTestClasspath`.
 
 **Modules at 100%**:
 - `defaultmapping.basictypes.BasicJavaTypesMapping` (10/10)
@@ -273,20 +272,18 @@ were self-marked as TODO):
 
 | Test | Suite | Nature |
 |---|---|---|
-| `JSONPSigTest.signatureTest` | JSON-P 2.1 | Environmental — the Eclipse signature file is not distributed in the 2.1.0 TCK ZIP. Not an implementation failure. |
-| `JSONBSigTest.signatureTest` | JSON-B 3.0 | Environmental — same cause (`.sig` file missing from the 3.0.0 ZIP). |
 | 5 SKIP (BasicJavaTypes, BigNumbers, Classes, Dates, Enum, PropertyUniqueness suites) | JSON-B 3.0 | Disabled **upstream inside the TCK itself** (`@Disabled` pointing to eclipse-ee4j/jsonb-api#180 and jakartaee-tck#103). Every implementation, including Yasson, skips them. |
 
 ---
 
-## Verified status — 2026-06-10 (full rerun)
+## Verified status — 2026-06-16 (full rerun)
 
 | Suite | Run | PASS | FAIL | ERROR | SKIP |
 |---|---|---|---|---|---|
-| JSON-P 2.1 (API) | 179 | **178** | 0 | 1 (sigtest env) | 0 |
+| JSON-P 2.1 (API) | 179 | **179** | 0 | 0 | 0 |
 | JSON-P 2.1 (pluggability) | 18 | **18** | 0 | 0 | 0 |
-| JSON-B 3.0 | 295 | **289** | 0 | 1 (sigtest env) | 5 (TCK-upstream) |
+| JSON-B 3.0 | 295 | **290** | 0 | 0 | 5 (TCK-upstream) |
 
 **Both TCKs are functionally at 100% PASS.** The hard contract (no structural
-merge without TCK PASS) is satisfied; the only deltas are the two environmental
-signature tests and the five upstream-disabled tests documented above.
+merge without TCK PASS) is satisfied; the only delta is the five upstream-
+disabled tests documented above.

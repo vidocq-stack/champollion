@@ -92,6 +92,12 @@
                     <scope>test</scope>
                 </dependency>
                 <dependency>
+                    <groupId>jakarta.tck</groupId>
+                    <artifactId>sigtest-maven-plugin</artifactId>
+                    <version>2.5</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.junit.jupiter</groupId>
                     <artifactId>junit-jupiter</artifactId>
                     <version>5.11.4</version>
@@ -109,6 +115,11 @@
                                 <dependency>jakarta.json:jakarta.json-tck-tests</dependency>
                             </dependenciesToScan>
                             <reportsDirectory>${project.build.directory}/tck-reports/jsonp</reportsDirectory>
+                            <systemPropertyVariables>
+                                <jimage.dir>${project.build.directory}/jimage</jimage.dir>
+                                <signature.sigTestClasspath>${user.home}/.m2/repository/jakarta/json/jakarta.json-api/${jakarta.json.version}/jakarta.json-api-${jakarta.json.version}.jar${path.separator}${project.build.directory}/jimage/java.base${path.separator}${project.build.directory}/jimage/java.xml</signature.sigTestClasspath>
+                                <sigTestClasspath>${user.home}/.m2/repository/jakarta/json/jakarta.json-api/${jakarta.json.version}/jakarta.json-api-${jakarta.json.version}.jar${path.separator}${project.build.directory}/jimage/java.base${path.separator}${project.build.directory}/jimage/java.xml</sigTestClasspath>
+                            </systemPropertyVariables>
                             <!--
                                 Le TCK contient JsonProviderTest.systemProperty() qui
                                 set System.setProperty("jakarta.json.provider", DummyJsonProvider)
@@ -226,6 +237,11 @@
                                 <dependency>jakarta.json.bind:jakarta.json.bind-tck</dependency>
                             </dependenciesToScan>
                             <reportsDirectory>${project.build.directory}/tck-reports/jsonb</reportsDirectory>
+                            <systemPropertyVariables>
+                                <jimage.dir>${project.build.directory}/jimage</jimage.dir>
+                                <signature.sigTestClasspath>${user.home}/.m2/repository/jakarta/json/bind/jakarta.json.bind-api/${jakarta.json.bind.version}/jakarta.json.bind-api-${jakarta.json.bind.version}.jar${path.separator}${project.build.directory}/jimage/java.base${path.separator}${project.build.directory}/jimage/java.xml</signature.sigTestClasspath>
+                                <sigTestClasspath>${user.home}/.m2/repository/jakarta/json/bind/jakarta.json.bind-api/${jakarta.json.bind.version}/jakarta.json.bind-api-${jakarta.json.bind.version}.jar${path.separator}${project.build.directory}/jimage/java.base${path.separator}${project.build.directory}/jimage/java.xml</sigTestClasspath>
+                            </systemPropertyVariables>
                         </configuration>
                     </plugin>
                 </plugins>
