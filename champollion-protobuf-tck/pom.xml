@@ -14,7 +14,7 @@
 
     <groupId>io.vidocq.champollion</groupId>
     <artifactId>champollion-protobuf-tck</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.3.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Champollion :: Protobuf TCK (Conformance Runner)</name>
@@ -29,7 +29,7 @@
         <dependency>
             <groupId>io.vidocq.champollion</groupId>
             <artifactId>champollion-protobuf</artifactId>
-            <version>0.1.0-SNAPSHOT</version>
+            <version>0.3.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -51,7 +51,7 @@
                         <path>
                             <groupId>io.vidocq.champollion</groupId>
                             <artifactId>champollion-protobuf-codegen</artifactId>
-                            <version>0.1.0-SNAPSHOT</version>
+                            <version>0.3.0-SNAPSHOT</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
