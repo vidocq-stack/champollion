@@ -12,7 +12,8 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 M2="${HOME}/.m2/repository"
-VERSION="0.1.0-SNAPSHOT"
+# Derived from the reactor pom — never hardcode the dev version (issue #3 follow-up).
+VERSION="$(cd "${HERE}/.." && ./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)"
 
 CP="${M2}/io/vidocq/champollion/champollion-protobuf-codegen/${VERSION}/champollion-protobuf-codegen-${VERSION}.jar"
 CP+=":${M2}/io/vidocq/champollion/champollion-protobuf/${VERSION}/champollion-protobuf-${VERSION}.jar"

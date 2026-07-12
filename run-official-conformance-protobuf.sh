@@ -93,7 +93,12 @@ if [ -f "$FAILURE_LIST" ]; then
     ARGS+=(--failure_list "$FAILURE_LIST")
 fi
 
-JAR="$TCK_DIR/target/champollion-protobuf-tck-0.1.0-SNAPSHOT.jar"
+# Resolve the built jar without hardcoding the reactor version (issue #3 follow-up).
+JAR="$(ls "$TCK_DIR"/target/champollion-protobuf-tck-*.jar 2>/dev/null | grep -vE '(sources|javadoc)' | head -n 1)"
+if [ -z "$JAR" ]; then
+    echo "[ERROR] champollion-protobuf-tck jar not found in $TCK_DIR/target — build it first." >&2
+    exit 1
+fi
 
 # Génère le classpath complet (dépendances Maven) via dependency:build-classpath.
 # Le `java -jar JAR` standard ne charge pas les deps externes (NoClassDefFoundError
