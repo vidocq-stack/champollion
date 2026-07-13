@@ -5,7 +5,7 @@
 <h1 align="center">Champollion</h1>
 
 <p align="center">
-  <strong>Jakarta JSON-P 2.1 + JSON-B 3.0 implementation — zero dependencies, static APT codegen, native JPMS</strong><br>
+  <strong>Jakarta JSON-P 2.1 + JSON-B 3.0 implementation — zero dependencies, static APT codegen, native Java Modules</strong><br>
   <a href="https://jakarta.ee/specifications/jsonp/2.1/">Jakarta JSON-P 2.1</a> | <a href="https://jakarta.ee/specifications/jsonb/3.0/">Jakarta JSON-B 3.0</a> | Virtual Threads | JDK 25
 </p>
 
@@ -21,7 +21,7 @@
 
 Champollion is the **Jakarta JSON Processing 2.1** and **Jakarta JSON Binding 3.0**
 implementation of the [Vidocq](https://forge.vidocq.dev/vidocq) ecosystem: zero dependencies
-beyond Jakarta specs, pure JDK 25, strict JPMS, virtual threads, **compile-time static binding
+beyond Jakarta specs, pure JDK 25, strict Java Modules, virtual threads, **compile-time static binding
 generation via APT** to avoid runtime reflection.
 
 The name pays homage to **Jean-François Champollion** (1790–1832), decipherer of Egyptian
@@ -42,7 +42,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 
 ## Philosophy (inherited from Vidocq)
 
-- **Strict JPMS**, no classpath.
+- **Strict Java Modules**, no classpath.
 - **Class-File API (JEP 484) + APT** to generate `JsonbBinding<T>` at compile time. No runtime reflection when the static binding exists; runtime introspective fallback only for non-recompilable types.
 - **Zero external dependencies** beyond `jakarta.json-api`, `jakarta.json.bind-api`. No Parsson, Yasson, or Jackson.
 - **Virtual Threads** — no `synchronized`, no `ThreadLocal`. `ConcurrentHashMap` / `ClassValue` caches. Propagation via `ScopedValue`.
@@ -55,7 +55,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 
 | Phase | Status |
 | --- | --- |
-| M0 — Multi-module bootstrap, JPMS, ServiceLoader | ✅ |
+| M0 — Multi-module bootstrap, Java Modules, ServiceLoader | ✅ |
 | M1 — JSON-P (tokenizer, parser, generator, provider) | ✅ |
 | M2 — Object model + builders + Reader/Writer | ✅ |
 | M3 — JsonPointer + JsonPatch + MergePatch | ✅ |

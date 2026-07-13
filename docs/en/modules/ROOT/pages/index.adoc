@@ -6,7 +6,7 @@ image::champollion-logo.png[Champollion,300,role=module-logo]
 
 
 [.lead]
-Champollion is the Jakarta **JSON Processing 2.1** + **JSON Binding 3.0** implementation of the Vidocq ecosystem. Zero dependency outside specs, strict JPMS, virtual threads, and JSON-B bindings emitted at compile time by an APT — no runtime reflection, AOT-friendly (GraalVM, Leyden CDS).
+Champollion is the Jakarta **JSON Processing 2.1** + **JSON Binding 3.0** implementation of the Vidocq ecosystem. Zero dependency outside specs, strict Java Modules, virtual threads, and JSON-B bindings emitted at compile time by an APT — no runtime reflection, AOT-friendly (GraalVM, Leyden CDS).
 
 == Origin of the name
 
@@ -29,7 +29,7 @@ The metaphor is direct: **decoding arbitrary JSON and translating it into typed 
 | Java
 | 25 (LTS)
 
-| JPMS modules
+| Java modules
 | `io.vidocq.champollion.api`, `io.vidocq.champollion.jsonp`, `io.vidocq.champollion.jsonb`, `io.vidocq.champollion.codegen.apt`
 
 | Runtime dependencies
@@ -74,5 +74,5 @@ Champollion is a **leaf** module on the JSON side. It depends on nothing in the 
 * xref:concepts.adoc[Concepts] — JSON-P and JSON-B vocabulary
 * xref:internals.adoc[Internals] — APT codegen, Class-File API, parser pipeline
 * xref:tck.adoc[TCK status] — official JSON-P 2.1 + JSON-B 3.0 coverage
-* xref:reference.adoc[Reference] — public API, annotations, JPMS
+* xref:reference.adoc[Reference] — public API, annotations, Java Modules
 * xref:migration.adoc[Migration] — from Parsson, Yasson or Jackson

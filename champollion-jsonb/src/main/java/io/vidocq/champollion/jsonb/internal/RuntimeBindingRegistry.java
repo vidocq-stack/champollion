@@ -1618,7 +1618,7 @@ final class RuntimeBindingRegistry {
      * Accessor via {@link java.lang.invoke.MethodHandle} — used for records
      * (public canonical accessors) to avoid {@code setAccessible} and {@code opens}.
      * {@code invoke} on a pre-bound MethodHandle is faster than {@code Method.invoke}
-     * and compatible with strict JPMS.
+     * and compatible with strict Java Modules.
      */
     private record MhAccessor(java.lang.invoke.MethodHandle mh) implements Accessor {
         public Object read(Object target) throws Throwable { return mh.invoke(target); }

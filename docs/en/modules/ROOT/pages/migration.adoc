@@ -38,7 +38,7 @@ Champollion is roughly **2-3× slower than Parsson** on streaming (pull parser a
 === Benefits of switching
 
 * Zero dependency — Parsson pulls `jakarta.json-api`; Champollion re-exports the spec without additional external dependencies.
-* Strict JPMS, internal packages not exported.
+* Strict Java Modules, internal packages not exported.
 * Consistency with the rest of the Vidocq ecosystem (`io.vidocq.*`).
 
 == From Yasson (Eclipse JSON-B RI)
@@ -180,7 +180,7 @@ Jackson remains **3-4× faster** than Champollion on binding (15 years of POJO-s
 * Conformance to Jakarta JSON-B 3.0 — portable across all Jakarta implementations.
 * Native AOT compatibility (GraalVM, Leyden) in static codegen mode.
 * Zero external dependency.
-* Strict JPMS, native virtual threads.
+* Strict Java Modules, native virtual threads.
 
 == From Gson, Genson, JSON-Simple...
 

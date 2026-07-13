@@ -1,7 +1,7 @@
 # Champollion — Implementation plan
 
 > Jakarta JSON Processing 2.1 (JSON-P) + Jakarta JSON Binding 3.0 (JSON-B)
-> implementation in the Vidocq style: zero dependency, JDK 25, virtual threads, strict JPMS,
+> implementation in the Vidocq style: zero dependency, JDK 25, virtual threads, strict Java Modules,
 > static binding compilation via APT/Maven plugin.
 
 ## Design principles
@@ -12,7 +12,7 @@
 | Virtual threads | No `synchronized`, no `ThreadLocal`. `ConcurrentHashMap`/`ClassValue` caches. Propagation via `ScopedValue`. |
 | Static compilation (2 separate artifacts) | `champollion-codegen-apt` = pure JDK Annotation Processor (usable on its own, without Maven). `champollion-codegen-maven-plugin` = Mojo that scans the classpath and delegates to the APT for non-annotatable classes. |
 | Reflective runtime fallback | If no `BindingFactoryProvider` is found for a type, the introspective runtime takes over. Enables progressive bootstrap and compatibility with non-recompilable third-party classes. |
-| JPMS strict | `module-info.java` everywhere, `internal.*` not exported, SPI via `provides/uses`. |
+| Java Modules strict | `module-info.java` everywhere, `internal.*` not exported, SPI via `provides/uses`. |
 | Strict TDD | Red → Green → Refactor. Tests written before production code. See the TDD section below. |
 | TCK PASS 100 % | Hard contract on JSON-P 2.1 and JSON-B 3.0, in both runtime and static codegen modes. |
 | Measured performance | JMH from M1 onward, systematic comparison with Parsson/Yasson/Jackson, baseline ratchet. |
@@ -50,7 +50,7 @@ The TCKs are run in two modes:
 - [ ] `README.md`
 - [ ] Validation that `mvn -ntp install -DskipTests` succeeds (empty reactor)
 
-**Deliverable:** `mvn -ntp install -DskipTests` succeeds on an empty reactor, JPMS resolves all modules.
+**Deliverable:** `mvn -ntp install -DskipTests` succeeds on an empty reactor, Java Modules resolves all modules.
 
 ---
 
@@ -206,7 +206,7 @@ as fallback.
 |---|---|
 | Strict RFC 8259 JSON parser conformance (edge cases like "JSONTestSuite") | Integrate the `nst/JSONTestSuite` corpus from M1 onward, parallel to the TCK |
 | JSON-B 3.0 polymorphism (`@JsonbTypeInfo`) — new feature, few examples | Read the spec and then the TCK before coding; study Yasson 3.x as a reference implementation |
-| APT codegen and JPMS: `provides` generated dynamically, but `module-info` is fixed in source | The Maven plugin generates a `module-info-extra.java` or adds `provides` via `--add-modules`; otherwise manual descriptor + factory of factories |
+| APT codegen and Java Modules: `provides` generated dynamically, but `module-info` is fixed in source | The Maven plugin generates a `module-info-extra.java` or adds `provides` via `--add-modules`; otherwise manual descriptor + factory of factories |
 | Accessible official JSON-P/JSON-B TCKs? | Check availability in the local Eclipse Foundation M2; otherwise use the community TCK |
 | GraalVM AOT compatibility | Test `native-image` on `champollion-examples` from M5 onward to validate the absence of reflection |
 

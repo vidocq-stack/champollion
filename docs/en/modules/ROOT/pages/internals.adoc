@@ -125,7 +125,7 @@ Key traits:
 
 * **No `synchronized`**, **no exported `ThreadLocal`**.
 * Context propagation during `toJson` / `fromJson` (current config, recursion guard) goes through `ScopedValue` (`JsonbContext.CURRENT`).
-* A parser pool is exposed JPMS-qualified: `exports io.vidocq.champollion.internal.jsonp.parser to io.vidocq.champollion.jsonb` (cf. lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.4).
+* A parser pool is exposed Java Modules-qualified: `exports io.vidocq.champollion.internal.jsonp.parser to io.vidocq.champollion.jsonb` (cf. lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.4).
 
 == AOT compatibility
 
@@ -145,5 +145,5 @@ Key traits:
 
 * **Zero dependency**: Champollion embeds in any runtime without dragging Parsson, Yasson, Jackson, or their transitives. Minimal attack surface, fast startup.
 * **Codegen over reflection**: predictable (no first-hit surprise), AOT-friendly, debuggable (the generated code is readable).
-* **Strict JPMS**: strong encapsulation, `internal.*` may break between versions without notice.
+* **Strict Java Modules**: strong encapsulation, `internal.*` may break between versions without notice.
 * **Virtual threads**: modern REST servers (xref:cassini::index.adoc[Cassini]) run thousands of concurrent threads — no contention point in the serializer.

@@ -31,7 +31,7 @@ import java.util.ServiceLoader;
 /**
  * Entry point for Protocol Buffers serialization and deserialization.
  *
- * <p>Stable, JPMS-friendly API. Runtime implementations are provided by
+ * <p>Stable, Java Modules-friendly API. Runtime implementations are provided by
  * {@link RuntimeBinding} (reflective introspection + cache by {@link Class}).
  * The static mode (codegen via {@code champollion-protobuf-codegen}) will be
  * exposed via {@link java.util.ServiceLoader} in M3.</p>
