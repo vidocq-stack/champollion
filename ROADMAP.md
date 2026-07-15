@@ -26,7 +26,7 @@ is written before a test justifies it. Beyond the internal TDD cycle:
 - **Layer 2 — JSONTestSuite (RFC 8259)**: integrated scanner conformance harness from M1 onward; it does
   not depend on the TCK and remains reliable for RFC coverage.
 - **Layer 3 — official TCKs** (`jakarta.json-tck` + `jakarta.json.bind-tck`): 100% PASS contract
-  before any structural merge on `jsonp`/`jsonb`. Module outside the reactor (POM Model 4.0.0).
+  before any structural merge on `jsonp`/`jsonb`. Module in-reactor behind the `tck` Maven profile (since 2026-07-15; was out-of-reactor before the Maven 3.9.16 / Model 4.0.0 migration made ShrinkWrap parsing a non-issue).
 - **Layer 4 — Differential testing**: between reflective runtime and static codegen, across 100+ heterogeneous
   types, on every commit touching `jsonb` or `codegen-apt`.
 
@@ -166,7 +166,7 @@ as fallback.
 
 | Task | Notes |
 |---|---|
-| `champollion-tck/pom.xml` standalone Model 4.0.0 | Same as `cassini-tck`/`foy-tck` |
+| `champollion-tck` in-reactor behind the `tck` Maven profile (2026-07-15) | TCK harmonisation, dirac pilot pattern — supersedes the standalone out-of-reactor decision |
 | `run-official-tck-jsonp-2.1.sh` | Smoke + full + targeted |
 | `run-official-tck-jsonb-3.0.sh` | Same |
 | `TCK.md` | Documents any challenges (tests disabled with spec justification) |

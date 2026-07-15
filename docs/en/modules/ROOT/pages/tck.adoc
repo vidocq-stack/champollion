@@ -6,7 +6,7 @@ This page consolidates the **official TCK** results for Jakarta JSON Processing 
 
 [NOTE]
 ====
-The `champollion-tck` module is **deliberately out of reactor** (standalone Model 4.0.0 POM, no `<parent>`) to bypass ShrinkWrap Maven Resolver 3.3 which cannot parse Maven Model 4.1.0 POMs. Always invoke through the `run-official-tck-*.sh` scripts — never via `mvn -pl champollion-tck`.
+The `champollion-tck` module is **in-reactor, gated behind the `tck` Maven profile** (TCK harmonisation, same pattern as the `vidocq-runtime-tck-*` runners): a plain `mvn install` neither downloads nor runs anything TCK-related. Invoke through the `run-official-tck-*.sh` scripts, or directly via `./mvnw -Ptck,jsonp-tck -pl champollion-tck test` / `./mvnw -Ptck,jsonb-tck -pl champollion-tck test`. (Historical note: it used to be a standalone out-of-reactor POM to bypass ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — obsolete since the Maven 3.9.16 / Model 4.0.0 migration.)
 ====
 
 == Global summary

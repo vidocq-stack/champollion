@@ -6,7 +6,7 @@ Jakarta JSON-B 3.0 TCKs against Champollion, and lists any challenges
 
 ## Meta
 
-- **Module**: `champollion-tck` (deliberately **out of reactor**, Model 4.0.0 POM
+- **Module**: `champollion-tck` (in-reactor, gated behind the **`tck` Maven profile**
   to avoid ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0)
 - **Scripts**: `run-official-tck-jsonp-2.1.sh` and `run-official-tck-jsonb-3.0.sh`
   at the project root
