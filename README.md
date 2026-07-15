@@ -36,7 +36,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 | `champollion-jsonb` | JSON-B 3.0 implementation — `toJson`/`fromJson` runtime + lookup-first via `JsonbBinding<T>` SPI. Covers primitives, `java.time`, UUID, enum, records, POJOs, containers. |
 | `champollion-codegen-apt` | Pure JDK annotation processor. Generates one `JsonbBinding<T>` per record annotated `@JsonbStatic` + ServiceLoader file. Automatic static vs runtime differential. |
 | `champollion-codegen-maven-plugin` | `generate` mojo that scans the compile classpath and delegates to APT for non-annotable classes (third-party POJOs). `maven-plugin-plugin 4.0.0-beta-2`, Java 25. |
-| `champollion-tck` | **Out-of-reactor** (POM Model 4.0.0). Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Clean skip (exit 78) if official TCK is absent. |
+| `champollion-tck` | In-reactor behind the `tck` Maven profile. Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Clean skip (exit 78) if official TCK is absent. |
 | `champollion-bench` | JMH POM ready — comparisons vs Parsson / Yasson / Jackson to come. |
 | `champollion-examples` | Usage examples — to be written. |
 

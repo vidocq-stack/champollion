@@ -1,27 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    champollion-tck — runner des TCK officiels Jakarta JSON-P 2.1 et JSON-B 3.0.
+    champollion-tck — official Jakarta JSON-P 2.1 and JSON-B 3.0 TCK runner.
 
-    Module HORS REACTOR (volontairement pas listé dans <modules> du parent
-    champollion 0.3.0-SNAPSHOT) — POM Maven Model 4.0.0 standalone pour
-    contourner ShrinkWrap Maven Resolver 3.3 qui ne sait pas parser les POMs
-    Model 4.1.0. Même contrainte que cassini-tck/foy-tck.
+    In-reactor module gated by the `tck` Maven profile of champollion-parent
+    (TCK harmonisation — same pattern as the vidocq-runtime-tck-* runners and
+    the dirac pilot): a plain `mvn install` neither downloads nor runs
+    anything TCK-related.
 
-    Invocation : ./run-official-tck-jsonp-2.1.sh ou ./run-official-tck-jsonb-3.0.sh
-    après avoir lancé `mvn -ntp install -DskipTests` à la racine du reactor.
+    History: this module used to be a STANDALONE out-of-reactor POM to work
+    around ShrinkWrap Maven Resolver 3.3 (could not parse Model 4.1.0 POMs).
+    That constraint disappeared with the Maven 3.9.16 / Model 4.0.0 migration.
+
+    Invocation: ./run-official-tck-jsonp-2.1.sh or ./run-official-tck-jsonb-3.0.sh
+    (thin wrappers), or directly:
+        ./mvnw -Ptck,jsonp-tck -pl champollion-tck test
+        ./mvnw -Ptck,jsonb-tck -pl champollion-tck test
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.vidocq.champollion</groupId>
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-parent</artifactId>
+        <version>0.3.0-SNAPSHOT</version>
+    </parent>
+
     <artifactId>champollion-tck</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Champollion :: TCK Runner</name>
-    <description>Runner des TCK officiels Jakarta JSON-P 2.1 et JSON-B 3.0 — hors reactor</description>
+    <description>Official Jakarta JSON-P 2.1 and JSON-B 3.0 TCK runner — in-reactor, tck Maven profile</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

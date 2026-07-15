@@ -29,7 +29,10 @@ java -jar champollion-bench/target/benchmarks.jar
 ./run-official-tck-jsonb-3.0.sh
 ```
 
-> `champollion-tck` is **out-of-reactor** (standalone POM Model 4.0.0) to work around
+> `champollion-tck` is **in-reactor, gated behind the `tck` Maven profile** (TCK
+> harmonisation, same pattern as the vidocq-runtime-tck-* runners): a plain
+> `mvn install` neither downloads nor runs anything TCK-related. Historical
+> constraint, now obsolete — it used to be out-of-reactor to work around
 > ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — same constraint as `cassini-tck`
 > and `foy-tck`. Do not change this model.
 
@@ -117,7 +120,7 @@ Concrete rules:
 
 ## TCK — Technology Compatibility Kits
 
-Two official TCKs, run in an out-of-reactor module (`champollion-tck`, POM Model 4.0.0)
+Two official TCKs, run in the `champollion-tck` module (in-reactor, `tck` Maven profile)
 to work around ShrinkWrap Maven Resolver 3.3:
 
 | TCK | Artifact | Target |

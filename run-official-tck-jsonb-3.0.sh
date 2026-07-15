@@ -48,19 +48,19 @@ fi
 echo ">>> 2. Run TCK JSON-B 3.0 ($MODE)"
 mkdir -p "$TCK_DIR/target"
 
-cd "$TCK_DIR"
+# champollion-tck est in-reactor, activé par le profil Maven `tck`
+# (harmonisation TCK, même pattern que les runners vidocq-runtime-tck-*).
 case "$MODE" in
     smoke)
-        mvn -B -ntp -Pjsonb-tck test -Dtest=BasicSmokeTest 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test -Dtest=BasicSmokeTest 2>&1 | tee "$LOG" || true
         ;;
     all)
-        mvn -B -ntp -Pjsonb-tck test 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test 2>&1 | tee "$LOG" || true
         ;;
     *)
-        mvn -B -ntp -Pjsonb-tck test "$MODE" "$@" 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test "$MODE" "$@" 2>&1 | tee "$LOG" || true
         ;;
 esac
-cd ..
 
 echo ""
 echo ">>> 3. Génération du rapport ($REPORT)"

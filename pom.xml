@@ -69,10 +69,14 @@
     </properties>
 
     <!--
-        champollion-tck est volontairement HORS reactor (POM Model 4.0.0 standalone)
-        pour contourner ShrinkWrap Maven Resolver 3.3 qui ne sait pas parser
-        les POMs Model 4.1.0. Il sera invoqué par run-official-tck-jsonp.sh
-        et run-official-tck-jsonb.sh après installation locale du reactor.
+        champollion-tck joins the reactor only under the `tck` profile (see
+        <profiles> below) — TCK harmonisation, same pattern as the
+        vidocq-runtime-tck-* runners and the dirac pilot: a plain `mvn install`
+        neither downloads nor runs anything TCK-related. The historical
+        out-of-reactor constraint (ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0
+        POMs) disappeared with the Maven 3.9.16 / Model 4.0.0 migration.
+        champollion-protobuf-tck keeps its own standalone execution model
+        (executable conformance jar, not a Jakarta TCK).
     -->
     <modules>
         <module>champollion-api</module>
@@ -173,4 +177,23 @@
             </plugins>
         </pluginManagement>
     </build>
+    <profiles>
+        <!--
+            TCK harmonisation: the official Jakarta JSON-P 2.1 / JSON-B 3.0 TCK
+            runner joins the reactor only when this profile is active.
+
+                ./mvnw -Ptck,jsonp-tck -pl champollion-tck test               # JSON-P api suite
+                ./mvnw -Ptck,jsonp-tck-pluggability -pl champollion-tck test  # JSON-P pluggability
+                ./mvnw -Ptck,jsonb-tck -pl champollion-tck test               # JSON-B suite
+
+            run-official-tck-jsonp-2.1.sh / run-official-tck-jsonb-3.0.sh
+            remain the friendly wrappers.
+        -->
+        <profile>
+            <id>tck</id>
+            <modules>
+                <module>champollion-tck</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

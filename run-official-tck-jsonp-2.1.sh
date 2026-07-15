@@ -38,25 +38,25 @@ echo ">>> 1. Build Champollion reactor (skip tests)"
 echo ">>> 2. Run TCK JSON-P 2.1 ($MODE)"
 mkdir -p "$TCK_DIR/target"
 
-cd "$TCK_DIR"
+# champollion-tck est in-reactor, activé par le profil Maven `tck`
+# (harmonisation TCK, même pattern que les runners vidocq-runtime-tck-*).
 case "$MODE" in
     smoke)
-        mvn -B -ntp -Pjsonp-tck test -Dtest=BasicSmokeTest 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonp-tck" -pl champollion-tck test -Dtest=BasicSmokeTest 2>&1 | tee "$LOG" || true
         ;;
     all)
         # Deux invocations séparées : api/* avec Champollion provider, puis
         # pluggability/* avec MyJsonProvider tiers. Ces deux suites ne peuvent
         # pas coexister sur le même classpath (collision ServiceLoader).
         echo "    [1/2] suite api avec Champollion provider"
-        mvn -B -ntp -Pjsonp-tck test 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonp-tck" -pl champollion-tck test 2>&1 | tee "$LOG" || true
         echo "    [2/2] suite pluggability avec MyJsonProvider"
-        mvn -B -ntp -Pjsonp-tck-pluggability test 2>&1 | tee -a "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonp-tck-pluggability" -pl champollion-tck test 2>&1 | tee -a "$LOG" || true
         ;;
     *)
-        mvn -B -ntp -Pjsonp-tck test "$@" 2>&1 | tee "../$LOG" || true
+        mvn -B -ntp -P"tck,jsonp-tck" -pl champollion-tck test "$@" 2>&1 | tee "$LOG" || true
         ;;
 esac
-cd ..
 
 echo ""
 echo ">>> 3. Génération du rapport ($REPORT)"
