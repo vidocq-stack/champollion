@@ -185,7 +185,7 @@ class DifferentialBindingTest {
                 JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignore) { return source; }
         };
-        // Surefire en JPMS pose les dépendances sur le module path, pas le classpath.
+        // Surefire en Java Modules pose les dépendances sur le module path, pas le classpath.
         // On concatène les deux pour garantir que javac voit JsonbStatic / JsonbBinding.
         String cp = System.getProperty("java.class.path");
         String mp = System.getProperty("jdk.module.path", "");

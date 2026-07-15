@@ -36,7 +36,7 @@ java -jar champollion-bench/target/benchmarks.jar
 ## Architecture
 
 Champollion is a Jakarta JSON Processing 2.1 + Jakarta JSON Binding 3.0 implementation,
-**zero dependencies beyond Jakarta specs**, virtual threads, strict JPMS, and static
+**zero dependencies beyond Jakarta specs**, virtual threads, strict Java Modules, and static
 compilation of bindings via APT to avoid runtime reflection.
 
 ```
@@ -68,7 +68,7 @@ Object model `JsonObject/JsonArray/JsonValue` on top. Patch/Pointer/MergePatch a
    JUnit/JMH only in `scope=test`/`scope=provided`.
 2. **`champollion-jsonb` depends on `champollion-jsonp`** but never the reverse — the binding
    layer knows how to compose on the processing layer, not vice versa.
-3. **Strict JPMS**: all modules have a `module-info.java`, `internal.*` packages not exported,
+3. **Strict Java Modules**: all modules have a `module-info.java`, `internal.*` packages not exported,
    SPI exposed only via `provides ... with`.
 4. **No `synchronized`, no `ThreadLocal`** — virtual-thread-friendly. Use `ScopedValue`
    for contextual propagation (e.g. `JsonbContext.CURRENT` during a `toJson`).
@@ -193,3 +193,9 @@ Follow Vauban's `index.adoc`: page title (`= <Project>`), `:description:`, a cen
 Provide `modules/ROOT/images/<project>-logo.png` (PNG), referenced from `index.adoc`.
 
 > When you change these documentation rules, keep `AGENTS.md` and `CLAUDE.md` in sync.
+
+## Terminology
+
+Use **Java Modules** (or **Java module** for a single module) when referring to
+the Java Platform Module System. Do **not** use the abbreviation **JPMS** — in
+prose, identifiers, or documentation.

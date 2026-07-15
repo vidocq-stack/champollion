@@ -29,7 +29,7 @@
 
 | Phase | Scope | Status |
 |---|---|---|
-| M0 | Multi-module bootstrap, JPMS, ServiceLoader | ✅ |
+| M0 | Multi-module bootstrap, Java Modules, ServiceLoader | ✅ |
 | M1.1 | JSON-P RFC 8259 tokenizer | ✅ 19 tests |
 | M1.2 | JsonParser pull (events) | ✅ 21 tests |
 | M1.3 | JsonGenerator push | ✅ 27 tests |

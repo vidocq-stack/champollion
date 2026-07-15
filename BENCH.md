@@ -209,7 +209,7 @@ differential suite — a dedicated chantier.
 
 | Library | Version | Role |
 |---|---|---|
-| **Champollion** | 0.1.0-SNAPSHOT | In-house zero-dep, strict-JPMS JSON-P 2.1 + JSON-B 3.0 |
+| **Champollion** | 0.1.0-SNAPSHOT | In-house zero-dep, strict Java Modules JSON-P 2.1 + JSON-B 3.0 |
 | **Yasson** | 3.0.4 | Eclipse JSON-B 3.0 reference |
 | **Parsson** | 1.1.7 | Eclipse JSON-P 2.1 reference |
 | **Jackson databind** | 2.18.2 | General-purpose binding (perf reference) |

@@ -19,7 +19,7 @@
             Requis pour le canonical JSON mapping (M1.5) : Timestamp, Duration,
             FieldMask, Any sérialisés via JsonGenerator de champollion-jsonp.
             En M1.1..M1.4 le module ne touche pas à JSON et la dépendance est
-            donc inutilisée — elle reste déclarée pour stabiliser le graphe JPMS.
+            donc inutilisée — elle reste déclarée pour stabiliser le graphe Java Modules.
         -->
         <dependency>
             <groupId>io.vidocq.champollion</groupId>

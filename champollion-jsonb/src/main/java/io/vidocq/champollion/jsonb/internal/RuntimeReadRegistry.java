@@ -510,7 +510,7 @@ final class RuntimeReadRegistry {
                 }
             }
             // §R-2 — prefer publicLookup for the setter when it is public
-            // AND in a public class (strict JPMS). Otherwise fall back to Reflection.
+            // AND in a public class (strict Java Modules). Otherwise fall back to Reflection.
             BeanWriter setter = null;
             if (Modifier.isPublic(m.getModifiers()) && Modifier.isPublic(m.getDeclaringClass().getModifiers())) {
                 try {
@@ -861,7 +861,7 @@ final class RuntimeReadRegistry {
     /**
      * Setter via {@link java.lang.invoke.MethodHandle} (publicLookup) — used for
      * public POJOs with public setters. Avoids {@code setAccessible} and
-     * {@code opens}, consistent with strict JPMS.
+     * {@code opens}, consistent with strict Java Modules.
      */
     private record MhSetter(java.lang.invoke.MethodHandle mh, Method m, BindingReader reader) implements BeanWriter {
         public void apply(Object target, JsonParser p) {

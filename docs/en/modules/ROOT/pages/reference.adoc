@@ -1,8 +1,8 @@
 = Reference
-:description: Public API, JSON-B annotations, configuration, exported JPMS attributes.
+:description: Public API, JSON-B annotations, configuration, exported Java Modules attributes.
 
 [.lead]
-Consolidated reference for the Maven artifacts, JPMS modules, supported annotations, `JsonbConfig` properties, and runtime configuration points of Champollion.
+Consolidated reference for the Maven artifacts, Java modules, supported annotations, `JsonbConfig` properties, and runtime configuration points of Champollion.
 
 == Maven artifacts
 
@@ -35,7 +35,7 @@ Consolidated reference for the Maven artifacts, JPMS modules, supported annotati
 | Official TCK runners JSON-P 2.1 + JSON-B 3.0. Invocation via `run-official-tck-*.sh` only.
 |===
 
-== JPMS modules
+== Java modules
 
 [cols="2,3,3"]
 |===
@@ -60,7 +60,7 @@ Consolidated reference for the Maven artifacts, JPMS modules, supported annotati
 
 Internal packages (`internal.*`) are **not exported** — do not depend on them, they may break between versions.
 
-// TODO@user: confirm exact JPMS module names and ChampollionJsonProvider/ChampollionJsonbProvider class names by reading module-info.java once M5 lands
+// TODO@user: confirm exact Java module names and ChampollionJsonProvider/ChampollionJsonbProvider class names by reading module-info.java once M5 lands
 
 == Supported JSON-B annotations
 
@@ -204,7 +204,7 @@ Bound to `generate-sources`. 100% delegation to `champollion-codegen-apt` — no
 
 * **Java**: 25 (LTS).
 * **Maven**: 3.9.16 (Model 4.0.0 — the whole Vidocq stack moved to Maven 3.9; see xref:tck.adoc[] for the historical ShrinkWrap note).
-* **JPMS**: strict, every module has a `module-info.java`.
+* **Java Modules**: strict, every module has a `module-info.java`.
 * **Virtual threads**: no `synchronized`, no exported `ThreadLocal`.
 * **AOT**: GraalVM `native-image` and Leyden CDS friendly in static codegen mode.
 * **Specs**: conformant to {spec-jsonp-2-1} and {spec-jsonb-3-0}.

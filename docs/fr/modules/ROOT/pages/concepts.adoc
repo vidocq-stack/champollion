@@ -118,7 +118,7 @@ JSON-B repose sur JSON-P : `Jsonb.toJson(obj)` finit toujours par pousser dans u
 [cols="1,4"]
 |===
 | **Mode runtime**
-| Binding JSON-B par introspection `MethodHandles` à la première rencontre, cache `ClassValue`. Coût amorti après warmup. Nécessite `--add-opens` JPMS si le module cible n'`opens` pas le package au binding.
+| Binding JSON-B par introspection `MethodHandles` à la première rencontre, cache `ClassValue`. Coût amorti après warmup. Nécessite `--add-opens` Java Modules si le module cible n'`opens` pas le package au binding.
 
 | **Mode statique** (ou « codegen »)
 | Binding JSON-B généré à la compilation par `champollion-codegen-apt`. `<Type>$$Binding` : zéro réflexion, `MethodHandles.privateLookupIn` non requis. Compatible AOT (GraalVM, Leyden).

@@ -32,7 +32,7 @@ import java.util.ServiceLoader;
  * {@link ServiceLoader}.
  *
  * <p>Collision strategy: <em>first registered wins</em> (deterministic source
- * order). Consistent with JPMS {@code provides ... with} semantics.</p>
+ * order). Consistent with Java Modules {@code provides ... with} semantics.</p>
  */
 final class StaticBindings {
 
