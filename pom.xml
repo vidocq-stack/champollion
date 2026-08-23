@@ -19,7 +19,7 @@
 
     <name>Champollion</name>
     <description>Implémentation Jakarta JSON Processing 2.1 + Jakarta JSON Binding 3.0 — zéro dépendance, virtual threads, compilation statique (APT + plugin Maven)</description>
-    <url>https://codeberg.org/Vidocq/champollion</url>
+    <url>https://codefloe.com/Vidocq/champollion</url>
 
     <developers>
         <developer>
@@ -54,8 +54,8 @@
     </licenses>
 
     <scm>
-        <url>https://codeberg.org/Vidocq/champollion</url>
-        <connection>scm:git:https://codeberg.org/Vidocq/champollion.git</connection>
+        <url>https://codefloe.com/Vidocq/champollion</url>
+        <connection>scm:git:https://codefloe.com/Vidocq/champollion.git</connection>
         <developerConnection>scm:git:git@forge.vidocq.dev:vidocq/champollion.git</developerConnection>
     </scm>
 
