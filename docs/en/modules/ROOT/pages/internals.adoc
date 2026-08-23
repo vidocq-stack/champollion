@@ -41,17 +41,17 @@ The parser implements an **RFC 8259 state machine** scanning character by charac
 ....
 stateDiagram-v2
     [*] --> START
-    START --> IN_OBJECT: '{'
-    START --> IN_ARRAY: '['
+    START --> IN_OBJECT: open brace
+    START --> IN_ARRAY: open bracket
     START --> VALUE: literal
-    IN_OBJECT --> KEY: '"'
-    KEY --> AFTER_KEY: '"'
-    AFTER_KEY --> VALUE: ':'
+    IN_OBJECT --> KEY: quote
+    KEY --> AFTER_KEY: quote
+    AFTER_KEY --> VALUE: colon
     VALUE --> AFTER_VALUE
-    AFTER_VALUE --> IN_OBJECT: ','
-    AFTER_VALUE --> END_OBJECT: '}'
-    AFTER_VALUE --> IN_ARRAY: ','
-    AFTER_VALUE --> END_ARRAY: ']'
+    AFTER_VALUE --> IN_OBJECT: comma
+    AFTER_VALUE --> END_OBJECT: close brace
+    AFTER_VALUE --> IN_ARRAY: comma
+    AFTER_VALUE --> END_ARRAY: close bracket
     END_OBJECT --> [*]
     END_ARRAY --> [*]
 ....
@@ -72,7 +72,7 @@ The symmetric `JsonGenerator` pushes through an automatically buffered `Writer` 
 sequenceDiagram
     participant App
     participant Jsonb as ChampollionJsonb
-    participant Cache as ClassValue&lt;BindingPlan&gt;
+    participant Cache as BindingPlan cache (ClassValue)
     participant MH as MethodHandles
     participant Gen as JsonGenerator
 
