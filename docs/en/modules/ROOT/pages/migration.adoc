@@ -33,7 +33,7 @@ Nothing changes. Application code only uses `jakarta.json.*` (the spec) — `Jso
 
 === Expected performance
 
-Since the P13 parser work (single-pass number scan + bit-stack state machine, run of 2026-06-12), Champollion **beats Parsson on the pull parser** for MEDIUM (**1.17×**) and LARGE (**1.08×**) payloads; only SMALL remains behind (**0.66×**, dominated by per-parse fixed costs — Parsson pools its buffers). A pure event drain also allocates ~22× less than Parsson. Details and raw JMH numbers in lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md].
+Since the P13 parser work (single-pass number scan + bit-stack state machine, run of 2026-06-12), Champollion **beats Parsson on the pull parser** for MEDIUM (**1.17×**) and LARGE (**1.08×**) payloads; only SMALL remains behind (**0.66×**, dominated by per-parse fixed costs — Parsson pools its buffers). A pure event drain also allocates ~22× less than Parsson. Details and raw JMH numbers in link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md].
 
 === Benefits of switching
 
@@ -88,7 +88,7 @@ To benefit from reflection-free bindings (Champollion's identity-defining streng
 
 === Expected performance
 
-Champollion **beats Yasson on reads** (~40% faster on MEDIUM `fromJson`) and sits at ~Yasson level on writes (runtime mode, BENCH.md run of 2026-06-12). Static codegen mode removes the introspection warmup on top — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.
+Champollion **beats Yasson on reads** (~40% faster on MEDIUM `fromJson`) and sits at ~Yasson level on writes (runtime mode, BENCH.md run of 2026-06-12). Static codegen mode removes the introspection warmup on top — see link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.
 
 === Subtle differences
 
