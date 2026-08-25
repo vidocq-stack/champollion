@@ -6,7 +6,7 @@ This page consolidates the **official TCK** results for Jakarta JSON Processing 
 
 [NOTE]
 ====
-The `champollion-tck` module is **in-reactor, gated behind the `tck` Maven profile** (TCK harmonisation, same pattern as the `vidocq-runtime-tck-*` runners): a plain `mvn install` neither downloads nor runs anything TCK-related. Invoke through the `run-official-tck-*.sh` scripts, or directly via `./mvnw -Ptck,jsonp-tck -pl champollion-tck test` / `./mvnw -Ptck,jsonb-tck -pl champollion-tck test`. (Historical note: it used to be a standalone out-of-reactor POM to bypass ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — obsolete since the Maven 3.9.16 / Model 4.0.0 migration.)
+The `champollion-tck` module is **in-reactor, gated behind the `tck` Maven profile** (TCK harmonisation, same pattern as the `vidocq-runtime-tck-*` runners): a plain `mvn install` neither downloads nor runs anything TCK-related. Invoke through the `run-official-tck-*.sh` scripts, or directly via `./mvnw -Ptck,jsonp-tck -pl champollion-tck test` / `./mvnw -Ptck,jsonp-tck-pluggability -pl champollion-tck test` / `./mvnw -Ptck,jsonb-tck -pl champollion-tck test`. (Historical note: it used to be a standalone out-of-reactor POM to bypass ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0 — obsolete since the Maven 3.9.16 / Model 4.0.0 migration.)
 ====
 
 == Global summary
@@ -28,7 +28,7 @@ The `champollion-tck` module is **in-reactor, gated behind the `tck` Maven profi
 | ✅ 100% of applicable tests PASS
 |===
 
-Last baseline date: **2026-06-16** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_First TCK run_).
+Last baseline date: **2026-06-16** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Verified status — 2026-06-16 (full rerun)_; that run also has the JSON-P pluggability suite at 18/18).
 
 == JSON-P 2.1 — detailed status
 
@@ -78,7 +78,7 @@ The contractual target remains **100% PASS** before any structural merge on `cha
 
 == Tests skipped due to environment
 
-Aucun.
+None.
 
 == Tests deliberately skipped (applicative)
 
@@ -100,7 +100,9 @@ cd champollion
 
 Maven coordinates installed:
 
-* `jakarta.json:jakarta-json-tck:2.1.0`
+* `jakarta.json:jakarta.json-tck-common:2.1.0`
+* `jakarta.json:jakarta.json-tck-tests:2.1.0`
+* `jakarta.json:jakarta.json-tck-tests-pluggability:2.1.0`
 * `jakarta.json.bind:jakarta.json.bind-tck:3.0.0`
 
 === Run the JSON-P 2.1 TCK

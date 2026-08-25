@@ -33,7 +33,7 @@ Nothing changes. Application code only uses `jakarta.json.*` (the spec) — `Jso
 
 === Expected performance
 
-Champollion is roughly **2-3× slower than Parsson** on streaming (pull parser and push generator). For pure JSON-P intensive workloads, Parsson remains faster. Details in lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md].
+Since the P13 parser work (single-pass number scan + bit-stack state machine, run of 2026-06-12), Champollion **beats Parsson on the pull parser** for MEDIUM (**1.17×**) and LARGE (**1.08×**) payloads; only SMALL remains behind (**0.66×**, dominated by per-parse fixed costs — Parsson pools its buffers). A pure event drain also allocates ~22× less than Parsson. Details and raw JMH numbers in lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md].
 
 === Benefits of switching
 
@@ -83,16 +83,16 @@ To benefit from reflection-free bindings (Champollion's identity-defining streng
   <scope>provided</scope>
 </dependency>
 ----
-. Annotate root types with `@JsonbStatic` (optional — the APT also scans types annotated with `@JsonbProperty` etc.).
-. Recompile. The runtime auto-discovers `<Type>$$Binding` via ServiceLoader. Set `champollion.jsonb.warn-on-fallback=true` to verify no type falls back to reflection.
+. Annotate the records to bind with `@JsonbStatic` (`io.vidocq.champollion.jsonb.spi`) — it is the APT's trigger; un-annotated types keep using runtime introspection.
+. Recompile. The runtime auto-discovers each `<Type>$$Binding` via ServiceLoader. To verify which types are statically bound, inspect the `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding` entries in the produced jar.
 
 === Expected performance
 
-Champollion is **on par with Yasson** on every workload (runtime mode). In static codegen mode, the gap narrows further — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.
+Champollion **beats Yasson on reads** (~40% faster on MEDIUM `fromJson`) and sits at ~Yasson level on writes (runtime mode, BENCH.md run of 2026-06-12). Static codegen mode removes the introspection warmup on top — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] §7.
 
 === Subtle differences
 
-* No `synchronized`, no `ThreadLocal` — better behavior under virtual threads.
+* No `synchronized`, no application-visible thread-local state — better behavior under virtual threads (the only `ThreadLocal` is an internal per-thread parser cache).
 * The error on a missing key in `JsonObject.getString(key)` is stricter (NPE per spec §2.1.4) — Yasson tolerated silently.
 
 == From Jackson
@@ -188,10 +188,12 @@ Same principles as Jackson: these libs are proprietary and migration to Champoll
 
 == Validating the migration
 
+Champollion guards its own two modes with a differential suite — for each covered type, the APT-generated binding must produce byte-identical JSON to the introspective runtime:
+
 [source,bash]
 ----
-# Differential test: emit JSON with the old lib and the new one, compare
-mvn -ntp -Dtest=MigrationDifferentialTest test
+# Runtime vs static-codegen differential suite (in the Champollion repo)
+mvn -ntp -pl champollion-codegen-apt -Dtest=DifferentialBindingTest test
 ----
 
-For an existing project, we recommend introducing Champollion alongside the legacy lib for one test cycle, then switching definitively after output validation.
+For your own project, apply the same idea against the legacy lib: keep Champollion alongside it for one test cycle, compare the emitted JSON in your tests, then switch definitively after output validation.
