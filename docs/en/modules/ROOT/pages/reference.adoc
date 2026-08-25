@@ -23,7 +23,7 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 | Annotation Processor (scope `provided`) generating `JsonbBinding<T>` at compile time.
 
 | `io.vidocq.champollion:champollion-codegen-maven-plugin`
-| `champollion:generate` Mojo bound to `generate-sources`; scans the classpath and invokes the APT on detected-but-unannotated types.
+| `champollion:generate` Mojo bound to `generate-sources`; generates bindings for the record FQNs listed explicitly in `<targets>` (no classpath scanning) — for types you cannot annotate yourself.
 
 | `io.vidocq.champollion:champollion-bench`
 | JMH — Parsson/Yasson/Jackson comparisons. No runtime scope.
@@ -31,8 +31,8 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 | `io.vidocq.champollion:champollion-examples`
 | Runnable examples.
 
-| `io.vidocq.champollion:champollion-tck` (out of reactor)
-| Official TCK runners JSON-P 2.1 + JSON-B 3.0. Invocation via `run-official-tck-*.sh` only.
+| `io.vidocq.champollion:champollion-tck` (in-reactor, `tck` Maven profile)
+| Official TCK runner JSON-P 2.1 + JSON-B 3.0. Joins the reactor only under `-Ptck`; invoke through `run-official-tck-*.sh` (see xref:tck.adoc[]).
 |===
 
 == Java modules
@@ -42,25 +42,23 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 | Module | Public exports | SPI / provides
 
 | `io.vidocq.champollion.api`
-| `jakarta.json` (transitive), `jakarta.json.bind` (transitive)
+| `io.vidocq.champollion.spi` (stable public SPI, e.g. `RawJsonKeyWriter`); `requires transitive jakarta.json` and `jakarta.json.bind`
 | —
 
 | `io.vidocq.champollion.jsonp`
-| `io.vidocq.champollion.jsonp.spi`
-| `provides jakarta.json.spi.JsonProvider with io.vidocq.champollion.jsonp.ChampollionJsonProvider`
+| No public exports (one qualified export: `io.vidocq.champollion.jsonp.internal` to `io.vidocq.champollion.jsonb` only, for the P9 parser pool)
+| `provides jakarta.json.spi.JsonProvider with io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider`
 
 | `io.vidocq.champollion.jsonb`
-| `io.vidocq.champollion.jsonb.spi`, `io.vidocq.champollion.jsonb.annotation`
-| `provides jakarta.json.bind.spi.JsonbProvider with io.vidocq.champollion.jsonb.ChampollionJsonbProvider`
+| `io.vidocq.champollion.jsonb.spi` (`JsonbBinding`, `@JsonbStatic`, `PrimedJsonParser`)
+| `provides jakarta.json.bind.spi.JsonbProvider with io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider`; `uses io.vidocq.champollion.jsonb.spi.JsonbBinding`
 
 | `io.vidocq.champollion.codegen.apt`
 | —
 | `provides javax.annotation.processing.Processor with io.vidocq.champollion.codegen.apt.JsonbStaticProcessor`
 |===
 
-Internal packages (`internal.*`) are **not exported** — do not depend on them, they may break between versions.
-
-// TODO@user: confirm exact Java module names and ChampollionJsonProvider/ChampollionJsonbProvider class names by reading module-info.java once M5 lands
+Internal packages (`*.internal`) are **not exported** — do not depend on them, they may break between versions. The provider classes above live in `internal` packages on purpose: they are reached through `ServiceLoader`, never referenced directly.
 
 == Supported JSON-B annotations
 
@@ -108,8 +106,8 @@ Champollion-specific annotations:
 
 [cols="2,5"]
 |===
-| `@JsonbStatic`
-| Marks a type for binding generation by `champollion-codegen-apt`. Optional — the APT also scans types annotated with `@JsonbProperty` etc.
+| `@JsonbStatic` (`io.vidocq.champollion.jsonb.spi`)
+| Marks a **record** for binding generation by `champollion-codegen-apt`. It is the APT's only trigger — types carrying just `@JsonbProperty` etc. stay on the runtime introspection path.
 |===
 
 == `JsonbConfig` properties
@@ -148,30 +146,26 @@ All standard `jakarta.json.bind.JsonbConfig` properties are supported (cf. {spec
 | Global registration.
 |===
 
-Champollion-specific properties (`champollion.` prefix):
-
-[cols="2,5"]
-|===
-| `champollion.jsonb.warn-on-fallback`
-| If `true`, logs `WARN` when the runtime falls back to reflection (no static binding found). Useful for production audits. Default `false`.
-
-| `champollion.jsonp.buffer-pool-size`
-| Parser buffer pool size. Default: 8.
-|===
+There are **no Champollion-specific configuration properties** — configuration is the standard `JsonbConfig` surface only. Static bindings are discovered automatically via `ServiceLoader` (`META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding`); to audit which types are statically bound, inspect that services file in the produced jar.
 
 == `JsonProvider` & `JsonbProvider`
 
 Auto-discovered via `ServiceLoader`:
 
-* `META-INF/services/jakarta.json.spi.JsonProvider` → `io.vidocq.champollion.jsonp.ChampollionJsonProvider`
-* `META-INF/services/jakarta.json.bind.spi.JsonbProvider` → `io.vidocq.champollion.jsonb.ChampollionJsonbProvider`
+* `META-INF/services/jakarta.json.spi.JsonProvider` → `io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider`
+* `META-INF/services/jakarta.json.bind.spi.JsonbProvider` → `io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider`
 
-To force the implementation (multi-impl on the classpath):
+To force the implementation (multi-impl on the classpath) — JSON-P defines a system property; JSON-B is selected programmatically:
 
 [source,properties]
 ----
--Djakarta.json.provider=io.vidocq.champollion.jsonp.ChampollionJsonProvider
--Djakarta.json.bind.provider=io.vidocq.champollion.jsonb.ChampollionJsonbProvider
+-Djakarta.json.provider=io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider
+----
+
+[source,java]
+----
+Jsonb jsonb = JsonbBuilder.newBuilder(
+        "io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider").build();
 ----
 
 == `champollion-codegen-maven-plugin` Maven plugin
@@ -189,23 +183,21 @@ To force the implementation (multi-impl on the classpath):
   </executions>
   <configuration>
     <targets>
-      <target>com.acme.dto.*</target>
+      <target>com.acme.dto.Order</target>
+      <target>com.acme.dto.Customer</target>
     </targets>
-    <excludes>
-      <exclude>com.acme.dto.internal.*</exclude>
-    </excludes>
   </configuration>
 </plugin>
 ----
 
-Bound to `generate-sources`. 100% delegation to `champollion-codegen-apt` — no duplication.
+Bound to `generate-sources`. `<targets>` takes **explicit record FQNs** (present on the compile classpath) — there is no package scanning, no wildcards, no excludes. For each target the Mojo emits a `<FQN>$$Trigger.java` annotated `@JsonbStatic` and runs `javac` with `JsonbStaticProcessor` — 100% delegation to `champollion-codegen-apt`, no duplicated generation logic. Generated sources land in `target/generated-sources/champollion` (added to the compile source roots). If your types are annotated `@JsonbStatic` directly, you do not need this plugin: the APT runs during normal compilation.
 
 == Compatibility
 
 * **Java**: 25 (LTS).
 * **Maven**: 3.9.16 (Model 4.0.0 — the whole Vidocq stack moved to Maven 3.9; see xref:tck.adoc[] for the historical ShrinkWrap note).
 * **Java Modules**: strict, every module has a `module-info.java`.
-* **Virtual threads**: no `synchronized`, no exported `ThreadLocal`.
+* **Virtual threads**: no `synchronized`; the only thread-local state is an internal per-thread parser cache, invisible to applications.
 * **AOT**: GraalVM `native-image` and Leyden CDS friendly in static codegen mode.
 * **Specs**: conformant to {spec-jsonp-2-1} and {spec-jsonb-3-0}.
 

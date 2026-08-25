@@ -2,7 +2,7 @@
 :description: Advanced JSON-P and JSON-B recipes — streaming, Patch, adapters, locales, formats.
 
 [.lead]
-Recurring patterns with Champollion: event-based streaming, manipulation by JSON Pointer / Patch, JSON-B customization (adapters, serializers, date formats, locales). All recipes are virtual-thread-safe — no `synchronized`, no exported `ThreadLocal`.
+Recurring patterns with Champollion: event-based streaming, manipulation by JSON Pointer / Patch, JSON-B customization (adapters, serializers, date formats, locales). All recipes are virtual-thread-friendly — no `synchronized`, no application-visible thread-local state.
 
 == JSON-P streaming — parser and generator
 
@@ -45,7 +45,7 @@ Configuration via `Json.createGeneratorFactory(Map.of(JsonGenerator.PRETTY_PRINT
 
 == JSON-P object model
 
-`JsonValue` is a `sealed interface` — exhaustive pattern matching is possible:
+`JsonValue` is the root interface of the object model (the Jakarta API type — a plain interface, not sealed). Pattern matching over its subtypes works; close the switch with a total `JsonValue` case to make it exhaustive:
 
 [source,java]
 ----
@@ -163,6 +163,6 @@ public final class GeoPointSerializer implements JsonbSerializer<GeoPoint> {
 public sealed interface Shape permits Rect, Circle {}
 ----
 
-== Virtual threads and ScopedValue
+== Virtual threads
 
-Champollion has no `synchronized` and no exported `ThreadLocal`. The current context during `toJson` / `fromJson` is carried by `ScopedValue` (cf. xref:internals.adoc[]) — use it freely from `Executors.newVirtualThreadPerTaskExecutor()` without precaution.
+Champollion has no `synchronized`. A `Jsonb` instance is immutable and thread-safe — create it once and share it. During `toJson` / `fromJson`, per-call state travels in explicit per-operation context objects; the only thread-local state is an internal per-thread parser cache that avoids reallocating buffers on every `fromJson` (cf. xref:internals.adoc[]). Use Champollion freely from `Executors.newVirtualThreadPerTaskExecutor()` without precaution.

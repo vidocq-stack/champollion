@@ -36,13 +36,13 @@ The metaphor is direct: **decoding arbitrary JSON and translating it into typed 
 | None outside Jakarta specs — no transitive baggage
 
 | TCK JSON-P 2.1
-| 178 / 179 PASS (99.4%) — details xref:tck.adoc[here]
+| **179 / 179 PASS** (100%), pluggability suite 18/18 — run of 2026-06-16, details xref:tck.adoc[here]
 
 | TCK JSON-B 3.0
-| Baseline run in progress — see xref:tck.adoc[detailed status]
+| **290 / 295 PASS**, 0 FAIL (the 5 SKIP are disabled upstream inside the TCK itself) — run of 2026-06-16, see xref:tck.adoc[detailed status]
 
 | Performance
-| On par with Yasson, ~2.5× slower than Parsson on streaming, ~3-4× slower than Jackson on binding (production-ready band) — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md]
+| JSON-P streaming **beats Parsson** on MEDIUM (1.17×) and LARGE (1.08×) payloads (SMALL at 0.66×, per-parse fixed costs); JSON-B reads ~40% faster than Yasson on MEDIUM, writes ~Yasson-level and ~3-4× slower than Jackson (P13 run, 2026-06-12) — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md]
 |===
 
 == Position in the ecosystem

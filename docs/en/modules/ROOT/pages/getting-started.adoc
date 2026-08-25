@@ -113,9 +113,11 @@ The `champollion-codegen-apt` annotation processor generates `Hieroglyph$$Bindin
 
 == Verify the install
 
+From a clone of the Champollion repo, run the provider-resolution test — it asserts that `ServiceLoader` picks up `ChampollionJsonProvider`:
+
 [source,bash]
 ----
-mvn -ntp -Dtest=ChampollionSmokeTest test
+mvn -ntp -pl champollion-jsonp -Dtest=ChampollionJsonProviderTest test
 ----
 
 See xref:usage.adoc[Usage] for advanced recipes (Patch / Pointer, adapters, date formats).
