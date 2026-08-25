@@ -203,6 +203,6 @@ Bound to `generate-sources`. `<targets>` takes **explicit record FQNs** (present
 
 == Resources
 
-* lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] — JMH benchmarks vs Parsson / Yasson / Jackson
-* lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] — TCK details
-* lien:{repo-champollion}/src/branch/main/ROADMAP.md[ROADMAP.md] — phases M0..M7
+* link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] — JMH benchmarks vs Parsson / Yasson / Jackson
+* link:{repo-champollion}/src/branch/main/TCK.md[TCK.md] — TCK details
+* link:{repo-champollion}/src/branch/main/ROADMAP.md[ROADMAP.md] — phases M0..M7

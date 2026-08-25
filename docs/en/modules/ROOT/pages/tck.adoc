@@ -2,7 +2,7 @@
 :description: Conformance status against the official Jakarta Technology Compatibility Kits.
 
 [.lead]
-This page consolidates the **official TCK** results for Jakarta JSON Processing 2.1 and Jakarta JSON Binding 3.0 run against Champollion. Daily source of truth: lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] in the repo.
+This page consolidates the **official TCK** results for Jakarta JSON Processing 2.1 and Jakarta JSON Binding 3.0 run against Champollion. Daily source of truth: link:{repo-champollion}/src/branch/main/TCK.md[TCK.md] in the repo.
 
 [NOTE]
 ====
@@ -28,7 +28,7 @@ The `champollion-tck` module is **in-reactor, gated behind the `tck` Maven profi
 | ✅ 100% of applicable tests PASS
 |===
 
-Last baseline date: **2026-06-16** (cf. lien:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Verified status — 2026-06-16 (full rerun)_; that run also has the JSON-P pluggability suite at 18/18).
+Last baseline date: **2026-06-16** (cf. link:{repo-champollion}/src/branch/main/TCK.md[TCK.md] §_Verified status — 2026-06-16 (full rerun)_; that run also has the JSON-P pluggability suite at 18/18).
 
 == JSON-P 2.1 — detailed status
 

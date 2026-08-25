@@ -123,7 +123,7 @@ Key traits:
 
 * **No `synchronized`** anywhere on the hot paths — caches are `ClassValue` / `ConcurrentHashMap`, safe under `Executors.newVirtualThreadPerTaskExecutor()`.
 * Per-call state (current config, serialization / deserialization contexts) lives in explicit per-operation objects (`ChampollionSerializationContext` / `ChampollionDeserializationContext`) passed down the call chain — no application-visible thread-local state, no ambient context mechanism.
-* The one piece of thread-local state is internal: `ChampollionJsonb` keeps a per-thread `ChampollionJsonParser` (P9) so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
+* The one piece of thread-local state is internal: `ChampollionJsonb` keeps a per-thread `ChampollionJsonParser` (P9) so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
 
 == AOT compatibility
 

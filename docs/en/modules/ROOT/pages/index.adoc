@@ -12,7 +12,7 @@ Champollion is the Jakarta **JSON Processing 2.1** + **JSON Binding 3.0** implem
 
 **Jean-François Champollion** (1790-1832) is the French Egyptologist who deciphered Egyptian hieroglyphs in 1822 thanks to the Rosetta Stone. He moved an opaque symbol system to a rigorous grammatical reading by combining phonetic signs and ideograms.
 
-See lien:https://en.wikipedia.org/wiki/Jean-Fran%C3%A7ois_Champollion[Wikipedia — Jean-François Champollion].
+See link:https://en.wikipedia.org/wiki/Jean-Fran%C3%A7ois_Champollion[Wikipedia — Jean-François Champollion].
 
 The metaphor is direct: **decoding arbitrary JSON and translating it into typed Java objects** is exactly deciphering a sequence of symbols to make it intelligible. Champollion (the module) reads JSON structures, just as Champollion (the man) read royal cartouches.
 
@@ -42,7 +42,7 @@ The metaphor is direct: **decoding arbitrary JSON and translating it into typed 
 | **290 / 295 PASS**, 0 FAIL (the 5 SKIP are disabled upstream inside the TCK itself) — run of 2026-06-16, see xref:tck.adoc[detailed status]
 
 | Performance
-| JSON-P streaming **beats Parsson** on MEDIUM (1.17×) and LARGE (1.08×) payloads (SMALL at 0.66×, per-parse fixed costs); JSON-B reads ~40% faster than Yasson on MEDIUM, writes ~Yasson-level and ~3-4× slower than Jackson (P13 run, 2026-06-12) — see lien:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md]
+| JSON-P streaming **beats Parsson** on MEDIUM (1.17×) and LARGE (1.08×) payloads (SMALL at 0.66×, per-parse fixed costs); JSON-B reads ~40% faster than Yasson on MEDIUM, writes ~Yasson-level and ~3-4× slower than Jackson (P13 run, 2026-06-12) — see link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md]
 |===
 
 == Position in the ecosystem
