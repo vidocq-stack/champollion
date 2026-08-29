@@ -13,7 +13,7 @@ WHAT="${1:-all}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-JSONP_URL="https://download.eclipse.org/jakartaee/jsonp/2.1/jakarta-jsonp-tck-2.1.0.zip"
+JSONP_URL="https://download.eclipse.org/jakartaee/jsonp/2.1/jakarta-jsonp-tck-2.1.1.zip"
 JSONB_URL="https://download.eclipse.org/jakartaee/jsonb/3.0/jakarta-jsonb-tck-3.0.0.zip"
 
 install_artifact() {
@@ -26,7 +26,7 @@ install_artifact() {
 
 install_jsonp() {
     echo ">>> JSON-P 2.1 TCK"
-    if [ -f "$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.0/jakarta.json-tck-tests-2.1.0.jar" ]; then
+    if [ -f "$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.1/jakarta.json-tck-tests-2.1.1.jar" ]; then
         echo "    déjà installé. Skip."
         return
     fi
@@ -35,14 +35,14 @@ install_jsonp() {
     curl -fsSL -o jsonp.zip "$JSONP_URL"
     unzip -q jsonp.zip
     cd jsonp-tck/artifacts
-    install_artifact jakarta.json-tck-common-2.1.0.jar       jakarta.json-tck-common-2.1.0.pom
-    install_artifact jakarta.json-tck-tests-2.1.0.jar        jakarta.json-tck-tests-2.1.0.pom
-    install_artifact jakarta.json-tck-tests-pluggability-2.1.0.jar \
-                     jakarta.json-tck-tests-pluggability-2.1.0.pom
+    install_artifact jakarta.json-tck-common-2.1.1.jar       jakarta.json-tck-common-2.1.1.pom
+    install_artifact jakarta.json-tck-tests-2.1.1.jar        jakarta.json-tck-tests-2.1.1.pom
+    install_artifact jakarta.json-tck-tests-pluggability-2.1.1.jar \
+                     jakarta.json-tck-tests-pluggability-2.1.1.pom
     # POM agrégateur (parent)
     mvn -q -B -ntp install:install-file \
-        -Dfile=jakarta.json-tck-2.1.0.pom \
-        -DpomFile=jakarta.json-tck-2.1.0.pom \
+        -Dfile=jakarta.json-tck-2.1.1.pom \
+        -DpomFile=jakarta.json-tck-2.1.1.pom \
         -Dpackaging=pom \
         -DcreateChecksum=true
     cd "$OLDPWD"
@@ -72,5 +72,5 @@ esac
 
 echo ""
 echo "✅ TCK installation terminée. Vérification :"
-ls -1 "$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.0/" 2>/dev/null | grep -E "\.jar$|\.pom$" | sed 's/^/    JSON-P /' || true
+ls -1 "$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.1/" 2>/dev/null | grep -E "\.jar$|\.pom$" | sed 's/^/    JSON-P /' || true
 ls -1 "$HOME/.m2/repository/jakarta/json/bind/jakarta.json.bind-tck/3.0.0/" 2>/dev/null | grep -E "\.jar$|\.pom$" | sed 's/^/    JSON-B /' || true

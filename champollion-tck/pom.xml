@@ -45,7 +45,7 @@
             Versions des TCK officiels Eclipse Foundation. Non publiées sur
             Maven Central public — voir TCK.md pour l'installation manuelle.
         -->
-        <jakarta.json.tck.version>2.1.0</jakarta.json.tck.version>
+        <jakarta.json.tck.version>2.1.1</jakarta.json.tck.version>
         <jakarta.json.bind.tck.version>3.0.0</jakarta.json.bind.tck.version>
     </properties>
 

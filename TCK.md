@@ -38,16 +38,16 @@ Idempotent: it does not re-download if the JARs are already present in `~/.m2/`.
 
 | Coordinates | Source |
 |---|---|
-| `jakarta.json:jakarta.json-tck-common:2.1.0` | JSON-P ZIP |
-| `jakarta.json:jakarta.json-tck-tests:2.1.0` | JSON-P ZIP |
-| `jakarta.json:jakarta.json-tck-tests-pluggability:2.1.0` | JSON-P ZIP |
+| `jakarta.json:jakarta.json-tck-common:2.1.1` | JSON-P ZIP |
+| `jakarta.json:jakarta.json-tck-tests:2.1.1` | JSON-P ZIP |
+| `jakarta.json:jakarta.json-tck-tests-pluggability:2.1.1` | JSON-P ZIP |
 | `jakarta.json.bind:jakarta.json.bind-tck:3.0.0` | JSON-B ZIP |
 
 ### Manual method
 
 If you prefer:
 
-1. Download https://download.eclipse.org/jakartaee/jsonp/2.1/jakarta-jsonp-tck-2.1.0.zip
+1. Download https://download.eclipse.org/jakartaee/jsonp/2.1/jakarta-jsonp-tck-2.1.1.zip
 2. Unzip it, go to `jsonp-tck/artifacts/`, and run for each JAR:
    ```bash
    mvn install:install-file -Dfile=<jar> -DpomFile=<pom>
