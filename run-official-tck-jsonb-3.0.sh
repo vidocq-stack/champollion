@@ -13,7 +13,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODE="${1:-smoke}"
+# `all` is the default: the `smoke` mode below names BasicSmokeTest, which exists
+# nowhere in this repository, so the default run failed — silently, until the exit
+# code was fixed. Keep the mode for the day a smoke test exists again.
+MODE="${1:-all}"
 shift || true
 STATIC="${1:-}"
 TCK_DIR="champollion-tck"
@@ -50,15 +53,22 @@ mkdir -p "$TCK_DIR/target"
 
 # champollion-tck est in-reactor, activé par le profil Maven `tck`
 # (harmonisation TCK, même pattern que les runners vidocq-runtime-tck-*).
+# Exit code of the TCK itself. `set -o pipefail` above makes each pipeline below carry
+# mvn's status rather than tee's, and the trailing `||` keeps `set -e` from aborting so the
+# report is still produced on a red suite. It used to be `|| true`, which also threw the
+# status away: the script exited 0 whatever happened, and a run that cannot fail certifies
+# nothing (Vidocq/GestionProjet#9).
+tck_rc=0
+
 case "$MODE" in
     smoke)
-        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test -Dtest=BasicSmokeTest 2>&1 | tee "$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test -Dtest=BasicSmokeTest 2>&1 | tee "$LOG" || tck_rc=1
         ;;
     all)
-        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test 2>&1 | tee "$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test 2>&1 | tee "$LOG" || tck_rc=1
         ;;
     *)
-        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test "$MODE" "$@" 2>&1 | tee "$LOG" || true
+        mvn -B -ntp -P"tck,jsonb-tck" -pl champollion-tck test "$MODE" "$@" 2>&1 | tee "$LOG" || tck_rc=1
         ;;
 esac
 
@@ -74,3 +84,10 @@ echo ">>> 3. Génération du rapport ($REPORT)"
 
 echo ""
 cat "$REPORT"
+
+# The report is printed; now tell the caller the truth.
+if [ "$tck_rc" -ne 0 ]; then
+    echo ""
+    echo "!!! TCK FAILED — see $LOG"
+fi
+exit "$tck_rc"
