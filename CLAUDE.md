@@ -22,10 +22,10 @@ mvn test
 mvn -pl champollion-bench -am package
 java -jar champollion-bench/target/benchmarks.jar
 
-# JSON-P TCK — smoke test only
+# JSON-P TCK — full suite (default)
 ./run-official-tck-jsonp-2.1.sh
 
-# JSON-B TCK — smoke test only
+# JSON-B TCK — full suite (default)
 ./run-official-tck-jsonb-3.0.sh
 ```
 
@@ -130,9 +130,12 @@ to work around ShrinkWrap Maven Resolver 3.3:
 
 The `run-official-tck-jsonp-2.1.sh` and `run-official-tck-jsonb-3.0.sh` scripts:
 
-- support `smoke` (default), `all`, and targeted `-Dtest=TestName`;
+- run the full suite by default (same as `all`) and accept a targeted `-Dtest=TestName`;
+  the `smoke` mode is still accepted but fails, because the `BasicSmokeTest` it names does
+  not exist in the repository;
+- exit non-zero when the TCK fails;
 - install the reactor locally (`mvn install -DskipTests`) before invocation;
-- produce a `target/tck-report.txt` report with the PASS/FAIL/SKIP score.
+- produce a `champollion-tck/target/tck-report-jsonp.txt` / `tck-report-jsonb.txt` report with the PASS/FAIL/SKIP score.
 
 **Release discipline:**
 

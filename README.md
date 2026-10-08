@@ -80,8 +80,8 @@ Official TCKs (non-public artifacts, must be installed in local M2):
 
 ```bash
 ./install-tck.sh                  # download the official Eclipse ZIPs
-./run-official-tck-jsonp-2.1.sh   # JSON-P smoke test
-./run-official-tck-jsonb-3.0.sh   # JSON-B smoke test
+./run-official-tck-jsonp-2.1.sh   # JSON-P full suite (default; `smoke` fails, no smoke test exists)
+./run-official-tck-jsonb-3.0.sh   # JSON-B full suite (default; `smoke` fails, no smoke test exists)
 ```
 
 ## Documentation

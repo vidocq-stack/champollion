@@ -110,7 +110,7 @@ Maven coordinates installed:
 [source,bash]
 ----
 cd champollion
-./run-official-tck-jsonp-2.1.sh             # smoke test (default)
+./run-official-tck-jsonp-2.1.sh             # full suite (default, same as `all`)
 ./run-official-tck-jsonp-2.1.sh all         # full suite
 ./run-official-tck-jsonp-2.1.sh -Dtest=Foo  # targeted test
 ----
@@ -122,11 +122,13 @@ Report: `champollion-tck/target/tck-report-jsonp.txt`.
 [source,bash]
 ----
 cd champollion
-./run-official-tck-jsonb-3.0.sh                    # smoke test (default)
+./run-official-tck-jsonb-3.0.sh                    # full suite (default, same as `all`)
 ./run-official-tck-jsonb-3.0.sh all                # full suite (runtime mode)
 ./run-official-tck-jsonb-3.0.sh all --static       # static codegen mode
 ./run-official-tck-jsonb-3.0.sh -Dtest=Foo         # targeted test
 ----
+
+NOTE: Both scripts run the full suite when called without an argument. They still accept `smoke`, but that mode names a `BasicSmokeTest` class that does not exist in the repository, so it fails with "No tests matching pattern". Both scripts exit non-zero when the TCK fails.
 
 The `--static` flag recompiles the TCK fixtures with `champollion-codegen-apt` to validate runtime ↔ codegen consistency.
 
