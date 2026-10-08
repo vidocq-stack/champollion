@@ -49,7 +49,7 @@ champollion-jsonb      ← JSON-B 3.0 implementation (Jsonb, JsonbBuilder, ser/d
 champollion-codegen    ← APT + Maven plugin: generates JSON-B serializers/deserializers at compile time
 champollion-bench      ← JMH: comparison Parsson/Yasson/Jackson, throughput/latency, allocations
 champollion-examples   ← Usage examples
-champollion-tck        ← Official JSON-P 2.1 and JSON-B 3.0 TCK runners (OUT OF REACTOR)
+champollion-tck        ← Official JSON-P 2.1 and JSON-B 3.0 TCK runners (in reactor, `tck` profile only)
 ```
 
 **JSON-P flow:** `JsonParser` (pull) ↔ `JsonGenerator` (push) on `Reader/Writer/InputStream/OutputStream`.
@@ -120,8 +120,8 @@ Concrete rules:
 
 ## TCK — Technology Compatibility Kits
 
-Two official TCKs, run in the `champollion-tck` module (in-reactor, `tck` Maven profile)
-to work around ShrinkWrap Maven Resolver 3.3:
+Two official TCKs, run in the `champollion-tck` module, in the reactor but listed only
+under the `tck` Maven profile, so a plain build never pulls the TCKs:
 
 | TCK | Artifact | Target |
 |---|---|---|

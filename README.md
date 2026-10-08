@@ -86,8 +86,7 @@ Official TCKs (non-public artifacts, must be installed in local M2):
 
 ## Documentation
 
-The Vidocq ecosystem's Antora site aggregates Champollion documentation (FR + EN):
-[doc.vidocq.dev/champollion-fr](https://doc.vidocq.dev/champollion-fr/) ·
+The Vidocq ecosystem's Antora site aggregates the Champollion documentation (English only):
 [doc.vidocq.dev/champollion](https://doc.vidocq.dev/champollion/).
 
 ## License

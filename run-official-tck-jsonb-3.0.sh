@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# run-official-tck-jsonb-3.0.sh — exécute le TCK officiel Jakarta JSON-B 3.0
+# run-official-tck-jsonb-3.0.sh — runs the official Jakarta JSON-B 3.0 TCK
 #
-# Usage :
-#   ./run-official-tck-jsonb-3.0.sh                    # smoke test (défaut)
-#   ./run-official-tck-jsonb-3.0.sh all                # suite complète
-#   ./run-official-tck-jsonb-3.0.sh all --static       # mode codegen statique
-#   ./run-official-tck-jsonb-3.0.sh -Dtest=Foo         # test ciblé
+# Usage:
+#   ./run-official-tck-jsonb-3.0.sh                    # full suite (default, same as `all`)
+#   ./run-official-tck-jsonb-3.0.sh all                # full suite
+#   ./run-official-tck-jsonb-3.0.sh all --static       # static codegen mode
+#   ./run-official-tck-jsonb-3.0.sh -Dtest=Foo         # targeted test
 #
-# Le TCK officiel jakarta.json.bind:jakarta-json-bind-tck doit être
-# installé dans le M2 local (cf. TCK.md).
+# The official jakarta.json.bind:jakarta-json-bind-tck TCK must be
+# installed in the local M2 repository (see TCK.md).
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -23,16 +23,16 @@ TCK_DIR="champollion-tck"
 LOG="$TCK_DIR/target/tck-jsonb-output.log"
 REPORT="$TCK_DIR/target/tck-report-jsonb.txt"
 
-# Vérification présence TCK dans M2 local
+# Check that the TCK is present in the local M2 repository
 TCK_JAR="$HOME/.m2/repository/jakarta/json/bind/jakarta.json.bind-tck/3.0.0/jakarta.json.bind-tck-3.0.0.jar"
 if [ ! -f "$TCK_JAR" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════════"
-    echo "  TCK Jakarta JSON-B 3.0 non trouvé dans le M2 local."
-    echo "  Attendu : $TCK_JAR"
+    echo "  Jakarta JSON-B 3.0 TCK not found in the local M2 repository."
+    echo "  Expected: $TCK_JAR"
     echo ""
-    echo "  Lance ./install-tck.sh pour télécharger et installer."
-    echo "  Voir aussi TCK.md."
+    echo "  Run ./install-tck.sh to download and install it."
+    echo "  See also TCK.md."
     echo "═══════════════════════════════════════════════════════════════════"
     echo ""
     exit 78  # EX_CONFIG (skip)
@@ -41,18 +41,18 @@ fi
 echo ">>> 1. Build Champollion reactor (skip tests)"
 ./mvnw -ntp install -DskipTests >/dev/null 2>&1 || mvn -ntp install -DskipTests >/dev/null
 
-# Mode static : recompile les fixtures TCK avec champollion-codegen-apt
+# Static mode: recompile the TCK fixtures with champollion-codegen-apt
 if [ "$STATIC" = "--static" ]; then
-    echo ">>> 1b. Mode --static : préparation des bindings AOT"
-    echo "    (M5.13 : extraction du TCK + recompilation avec JsonbStaticProcessor)"
-    echo "    Implémentation reportée — voir TCK.md."
+    echo ">>> 1b. --static mode: preparing the AOT bindings"
+    echo "    (M5.13: TCK extraction + recompilation with JsonbStaticProcessor)"
+    echo "    Implementation deferred — see TCK.md."
 fi
 
 echo ">>> 2. Run TCK JSON-B 3.0 ($MODE)"
 mkdir -p "$TCK_DIR/target"
 
-# champollion-tck est in-reactor, activé par le profil Maven `tck`
-# (harmonisation TCK, même pattern que les runners vidocq-runtime-tck-*).
+# champollion-tck is in the reactor, enabled by the `tck` Maven profile
+# (TCK harmonisation, same pattern as the vidocq-runtime-tck-* runners).
 # Exit code of the TCK itself. `set -o pipefail` above makes each pipeline below carry
 # mvn's status rather than tee's, and the trailing `||` keeps `set -e` from aborting so the
 # report is still produced on a red suite. It used to be `|| true`, which also threw the
@@ -73,7 +73,7 @@ case "$MODE" in
 esac
 
 echo ""
-echo ">>> 3. Génération du rapport ($REPORT)"
+echo ">>> 3. Writing the report ($REPORT)"
 {
     echo "Champollion JSON-B 3.0 TCK Report"
     echo "Generated : $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
