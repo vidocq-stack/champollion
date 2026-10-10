@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-it-other-containers</artifactId>
+        <version>0.4.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>champollion-it-weld</artifactId>
+    <name>Champollion :: Integration tests on Weld</name>
+    <description>Portability proof: the Champollion jars, unchanged, on a class path under Weld SE
+        (CDI 4.1) — JSON-B adapters, serializers and deserializers resolved as CDI beans, with
+        injection (JSON-B 3.0 §5, vidocq-workspace#15).</description>
+
+    <properties>
+        <!-- Weld 6.0 implements CDI 4.1, the level the Vidocq runtime targets (Weld 7 is CDI 5.0). -->
+        <weld.version>6.0.4.Final</weld.version>
+    </properties>
+
+    <!--
+        Every dependency is test-scoped: the module ships nothing. Champollion does not depend on CDI;
+        when a container runs, it resolves JSON-B adapters through CDI.current(). Weld is that
+        container here, on a class path, with no Vauban.
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.weld.se</groupId>
+            <artifactId>weld-se-core</artifactId>
+            <version>${weld.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- A class path, as in an application server or a plain Weld SE application: the
+                 module descriptors (and their `provides`) are ignored, only META-INF/services and
+                 META-INF/beans.xml count. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

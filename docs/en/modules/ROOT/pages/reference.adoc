@@ -168,6 +168,32 @@ Jsonb jsonb = JsonbBuilder.newBuilder(
         "io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider").build();
 ----
 
+[#other-containers]
+== Other containers [.tag-new]#NEW#
+
+Champollion does not depend on CDI or on Vauban. When a CDI container runs, it resolves JSON-B adapters, serializers and deserializers through `CDI.current()` first, as JSON-B 3.0 §5 requires, and falls back to their no-arg constructor otherwise. Two integration-test modules, grouped under `champollion-it-other-containers`, prove it on every build (champollion#19):
+
+[cols="1,2"]
+|===
+| Module | What it runs
+
+| `champollion-it-weld`
+| Weld SE 6.0 (CDI 4.1), class path, no Vauban: `JsonProvider.provider()` and `JsonbBuilder.create()` answer with Champollion, and a `@JsonbTypeAdapter` adapter is a CDI bean with an injected field, in both directions.
+
+| `champollion-it-openliberty`
+| A WAR bundling `champollion-jsonb` on Open Liberty 26.0.0.10, MicroProfile 7 distribution (CDI 4.0, Jakarta REST 3.1): the same checks, over HTTP.
+|===
+
+Neither module is published.
+
+[WARNING]
+.Deploying on an application server
+====
+* **Keep the server's JSON-B off** — `jsonb-3.0` on Open Liberty. With it, `JsonbBuilder.create()` answers with the server's provider (Yasson), not with the Champollion the application bundles; `champollion-it-openliberty` catches it. The server's JSON-P (`jsonp-2.1`, which `restfulWS-3.1` brings) is harmless: `JsonProvider.provider()` still answers with Champollion. Open Liberty's "bring your own provider" features, `jsonpContainer-2.1` and `jsonbContainer-3.0`, are not part of the MicroProfile 7 distribution.
+* **Without the server's JSON-B, Jakarta REST does not map JSON entities** — read and write the body with `Jsonb` yourself, or register a `MessageBodyReader`/`MessageBodyWriter` that does.
+* **Nothing to exclude** — the WAR carries `champollion-jsonb`, `champollion-jsonp`, `champollion-api` and the JSON-P and JSON-B API jars; with `jsonb-3.0` off, the application's copies are used. `champollion-it-openliberty` builds its WAR with exactly these dependencies.
+====
+
 == `champollion-codegen-maven-plugin` Maven plugin
 
 [source,xml]

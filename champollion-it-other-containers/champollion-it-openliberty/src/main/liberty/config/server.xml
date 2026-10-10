@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Champollion on Open Liberty (MicroProfile 7 distribution). The WAR bundles Champollion and the test
+    checks that the application gets it from the JSON-P and JSON-B APIs.
+    - jsonb-3.0 stays off: with it, JsonbBuilder.create() answers with the server's Yasson, not with the
+      provider the application bundles. Liberty's jsonbContainer-3.0 (bring your own provider) is not
+      in this distribution.
+    - jsonp-2.1 comes with restfulWS-3.1 and is harmless: JsonProvider.provider() still answers with
+      the application's Champollion.
+-->
+<server description="champollion-it-openliberty">
+    <featureManager>
+        <feature>cdi-4.0</feature>
+        <feature>restfulWS-3.1</feature>
+    </featureManager>
+
+    <httpEndpoint id="defaultHttpEndpoint" host="localhost" httpPort="${http.port}" httpsPort="${https.port}"/>
+
+    <webApplication location="champollion-it-openliberty.war" contextRoot="/champollion"/>
+</server>

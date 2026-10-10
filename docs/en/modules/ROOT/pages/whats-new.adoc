@@ -1,0 +1,10 @@
+= What's new
+:description: Everything that changed in Champollion since the {release-version} release — Champollion proven on Weld and Open Liberty, and the Annotation API no longer shipped.
+
+[.lead]
+New in the `{project-version}` development line — everything listed here landed **after the {release-version} release** and is not part of it. Every entry links to the section that documents it, and those sections carry the [.tag-new]#NEW# badge. Each brick of the suite keeps its own page of this kind; xref:home::whats-new.adoc[the ecosystem index] gathers them. When the next release train ships, this page is frozen with it and restarts empty on the dev line.
+
+== Other containers
+
+* **Proven on Weld and Open Liberty** — two new test modules run the Champollion jars, unchanged, outside the Vidocq runtime: `champollion-it-weld` with Weld SE 6.0 on a class path, and `champollion-it-openliberty` as a WAR on Open Liberty 26.0.0.10 (MicroProfile 7). In both, the application gets Champollion from the JSON-P and JSON-B APIs, and a JSON-B adapter is resolved as a CDI bean, with injection (JSON-B 3.0 §5). Neither module is published (champollion#19). On Open Liberty, keep the server's `jsonb-3.0` feature off: with it, `JsonbBuilder.create()` answers with the server's Yasson. xref:reference.adoc#other-containers[Other containers].
+* **The Annotation API is `provided`** — `champollion-api` no longer ships `jakarta.annotation-api`: no Champollion code uses it at run time (`requires static`), and a WAR now carries no second copy of a Jakarta platform API (vidocq-workspace#17). An application that compiled against `jakarta.annotation` through Champollion alone now declares it itself. xref:reference.adoc#other-containers[Other containers].

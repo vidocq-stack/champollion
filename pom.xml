@@ -82,6 +82,7 @@
         <module>champollion-api</module>
         <module>champollion-jsonp</module>
         <module>champollion-jsonb</module>
+        <module>champollion-it-other-containers</module>
         <module>champollion-protobuf</module>
         <module>champollion-protobuf-codegen</module>
         <module>champollion-protobuf-maven-plugin</module>

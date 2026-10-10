@@ -23,9 +23,12 @@
             <groupId>jakarta.json.bind</groupId>
             <artifactId>jakarta.json.bind-api</artifactId>
         </dependency>
+        <!-- A Jakarta platform API, read only at compile time (`requires static`): `provided`, so a
+             WAR never ships a second copy (vidocq-workspace#17). -->
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
