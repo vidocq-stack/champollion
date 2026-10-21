@@ -30,6 +30,9 @@
         <yasson.version>3.0.4</yasson.version>
         <parsson.version>1.1.7</parsson.version>
         <jackson.version>2.18.2</jackson.version>
+        <!-- SonarQube: JMH benchmarks, neither shipped nor tested; their code would only count as
+             uncovered (Vidocq/vidocq#284). -->
+        <sonar.skip>true</sonar.skip>
     </properties>
 
     <dependencies>

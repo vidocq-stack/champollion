@@ -66,6 +66,18 @@
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
 
         <jmh.version>1.37</jmh.version>
+
+        <!--
+            SonarQube (Vidocq/vidocq#284): every module reads the aggregated JaCoCo report of
+            champollion-coverage (quality profile), so the tests of champollion-it-weld count for
+            the code they exercise in the other modules. champollion-examples stays analysed, out
+            of the coverage figures, and may print to System.out (rule java:S106).
+        -->
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/champollion-coverage/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.exclusions>**/champollion-examples/**</sonar.coverage.exclusions>
+        <sonar.issue.ignore.multicriteria>examples</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria.examples.ruleKey>java:S106</sonar.issue.ignore.multicriteria.examples.ruleKey>
+        <sonar.issue.ignore.multicriteria.examples.resourceKey>**/champollion-examples/**/src/main/java/**</sonar.issue.ignore.multicriteria.examples.resourceKey>
     </properties>
 
     <!--
@@ -194,6 +206,16 @@
             <id>tck</id>
             <modules>
                 <module>champollion-tck</module>
+            </modules>
+        </profile>
+        <!--
+            Quality profile (with the one of vidocq-parent, which runs the JaCoCo agent): adds
+            the aggregated coverage report that SonarQube reads (Vidocq/vidocq#284).
+        -->
+        <profile>
+            <id>quality</id>
+            <modules>
+                <module>champollion-coverage</module>
             </modules>
         </profile>
     </profiles>

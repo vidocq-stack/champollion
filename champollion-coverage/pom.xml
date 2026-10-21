@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-parent</artifactId>
+        <version>0.4.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>champollion-coverage</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Champollion Coverage</name>
+    <description>Aggregated JaCoCo report of the reactor, read by SonarQube (quality profile only)</description>
+
+    <properties>
+        <!-- Quality-only module, listed by the quality profile of champollion-parent: never
+             released, installed or deployed. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.install.skip>true</maven.install.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <gpg.skip>true</gpg.skip>
+    </properties>
+
+    <!--
+        report-aggregate reads these dependencies: in compile scope, their classes, sources and
+        execution data make up the report; in test scope, only their execution data counts.
+        champollion-it-weld only holds tests of the other modules, so without this report they
+        would not count for the code they exercise (Vidocq/vidocq#284). champollion-it-openliberty
+        runs inside Open Liberty, which JaCoCo does not instrument, champollion-bench only holds
+        JMH benchmarks, and champollion-examples stays out of the coverage figures.
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-protobuf</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-protobuf-codegen</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-protobuf-maven-plugin</artifactId>
+            <version>${project.version}</version>
+            <type>maven-plugin</type>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-codegen-apt</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-codegen-maven-plugin</artifactId>
+            <version>${project.version}</version>
+            <type>maven-plugin</type>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-it-weld</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>report-aggregate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-aggregate</goal>
+                        </goals>
+                        <configuration>
+                            <formats>
+                                <format>XML</format>
+                            </formats>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
