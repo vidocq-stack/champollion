@@ -136,7 +136,9 @@ Report: `champollion-tck/target/tck-report-jsonb.txt`.
 
 === Behaviour when the TCK is not installed
 
-The scripts check the presence of the TCK jar in `~/.m2/`. If absent: exit `78` (`EX_CONFIG`, clean _skip_). The Forgejo CI job (`.forgejo/workflows/ci.yml`) treats this exit code as a skip and does not fail the build — useful while TCKs are not pre-installed on the runner.
+The scripts check the presence of the TCK jar in `~/.m2/`. If absent: exit `78` (`EX_CONFIG`, clean _skip_), so that a caller can tell a missing TCK from a failing one.
+
+No CI workflow runs these scripts today: `main` builds, tests and deploys in one pass without the TCK, and the root `pom.xml` declares no `ci.tck.modules` or `ci.tck.command`, so pull requests are not gated on the official TCK either. Run both suites locally before merging a change they cover.
 
 == Release discipline
 

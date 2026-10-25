@@ -94,18 +94,13 @@ Output: `champollion-tck/target/tck-report-jsonb.txt`
 ### When the TCK is not installed
 
 The scripts check for the TCK JAR in the local M2 and **exit with code 78**
-(`EX_CONFIG`) if it is missing. CI runners interpret that as a **skip** (not a
-failure). See `.forgejo/workflows/ci.yml`:
+(`EX_CONFIG`) if it is missing, so that a caller can tell a missing TCK (a
+skip) from a failing one.
 
-```yaml
-- name: Jakarta JSON-P 2.1 TCK
-  run: |
-    if [ -x ./run-official-tck-jsonp-2.1.sh ]; then
-        ./run-official-tck-jsonp-2.1.sh all
-    else
-        echo "::notice::TCK script not yet present — skipped."
-    fi
-```
+No CI workflow runs these scripts today: `main` builds, tests and deploys in
+one pass without the TCK, and the root `pom.xml` declares no `ci.tck.modules`
+or `ci.tck.command`, so pull requests are not gated on the official TCK either.
+Run both suites locally before merging a change they cover.
 
 ---
 
