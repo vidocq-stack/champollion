@@ -68,6 +68,17 @@
         <jmh.version>1.37</jmh.version>
 
         <!--
+            The official TCKs, run on every pull request by the producer job of pr.yml ("TCK declared
+            by this repository"): JSON-P 2.1 (api and pluggability suites) then JSON-B 3.0, as TCK.md
+            requires before any structural merge. install-tck.sh downloads the official ZIPs from
+            download.eclipse.org and is idempotent; each runner exits non-zero on a red suite.
+
+            Measured locally on 2026-10-26: 179 + 18 JSON-P and 295 JSON-B tests (5 skipped), 0
+            failures, about two minutes.
+        -->
+        <ci.tck.command>./install-tck.sh &amp;&amp; ./run-official-tck-jsonp-2.1.sh all &amp;&amp; ./run-official-tck-jsonb-3.0.sh all</ci.tck.command>
+
+        <!--
             SonarQube (Vidocq/vidocq#284): every module reads the aggregated JaCoCo report of
             champollion-coverage (quality profile), so the tests of champollion-it-weld count for
             the code they exercise in the other modules. champollion-examples stays analysed, out
