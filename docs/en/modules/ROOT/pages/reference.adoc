@@ -169,7 +169,7 @@ Jsonb jsonb = JsonbBuilder.newBuilder(
 ----
 
 [#other-containers]
-== Other containers [.tag-new]#NEW#
+== Other containers
 
 Champollion does not depend on CDI or on Vauban. When a CDI container runs, it resolves JSON-B adapters, serializers and deserializers through `CDI.current()` first, as JSON-B 3.0 §5 requires, and falls back to their no-arg constructor otherwise. Two integration-test modules, grouped under `champollion-it-other-containers`, prove it on every build (champollion#19):
 
