@@ -21,7 +21,7 @@ LOG="$TCK_DIR/target/tck-jsonp-output.log"
 REPORT="$TCK_DIR/target/tck-report-jsonp.txt"
 
 # Check that the TCK is present in the local M2 repository
-TCK_JAR="$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.0/jakarta.json-tck-tests-2.1.0.jar"
+TCK_JAR="$HOME/.m2/repository/jakarta/json/jakarta.json-tck-tests/2.1.1/jakarta.json-tck-tests-2.1.1.jar"
 if [ ! -f "$TCK_JAR" ]; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════════"
