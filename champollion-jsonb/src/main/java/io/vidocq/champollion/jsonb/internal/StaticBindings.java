@@ -53,10 +53,23 @@ final class StaticBindings {
         return new StaticBindings(idx);
     }
 
-    static StaticBindings fromServiceLoader(ClassLoader loader) {
+    /**
+     * The bindings the services files of {@code loaders} list, the first loader's first. A loader given twice, or
+     * {@code null}, counts once: a binding is created once whatever the number of paths that lead to it.
+     *
+     * <p>The library's own loader is not enough in a layered runtime: Champollion sits in a parent layer, and the
+     * application's {@code META-INF/services/...JsonbBinding} in a child one that the parent cannot see.
+     * Vidocq/vidocq#382.</p>
+     */
+    static StaticBindings fromServiceLoader(ClassLoader... loaders) {
         var found = new java.util.ArrayList<JsonbBinding<?>>();
-        for (JsonbBinding<?> b : ServiceLoader.load(JsonbBinding.class, loader)) {
-            found.add(b);
+        var seen = new java.util.ArrayList<ClassLoader>();
+        for (ClassLoader loader : loaders) {
+            if (loader == null || seen.contains(loader)) continue;
+            seen.add(loader);
+            for (JsonbBinding<?> b : ServiceLoader.load(JsonbBinding.class, loader)) {
+                found.add(b);
+            }
         }
         return of(found);
     }
