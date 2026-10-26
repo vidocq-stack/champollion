@@ -1,20 +1,17 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
-         >
+<?xml version='1.0' encoding='utf-8'?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>io.vidocq</groupId>
         <artifactId>vidocq-parent</artifactId>
-        <version>0.4.0-SNAPSHOT</version>
-        <relativePath/>
+        <version>0.4.0-RC1</version>
+        <relativePath />
     </parent>
 
     <groupId>io.vidocq.champollion</groupId>
     <artifactId>champollion-parent</artifactId>
-    <version>0.4.0-SNAPSHOT</version>
+    <version>0.4.0-RC1</version>
     <packaging>pom</packaging>
 
     <name>Champollion</name>
@@ -28,13 +25,7 @@
         </developer>
     </developers>
 
-    <!--
-        Disjunctive triple license: a recipient may use this software under
-        ANY ONE of the three licences below, at their option. EPL-2.0 is the
-        anchor (see the LICENSE file); per EPL-2.0 section 1, GPL-2.0-or-later
-        is offered as a Secondary License.
-        SPDX-License-Identifier: EPL-2.0 OR EUPL-1.2 OR GPL-2.0-or-later
-    -->
+    
     <licenses>
         <license>
             <name>EPL-2.0</name>
@@ -60,30 +51,17 @@
     </scm>
 
     <properties>
-        <!-- Specs Jakarta -->
+        
         <jakarta.json.version>2.1.3</jakarta.json.version>
         <jakarta.json.bind.version>3.0.1</jakarta.json.bind.version>
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
 
         <jmh.version>1.37</jmh.version>
 
-        <!--
-            The official TCKs, run on every pull request by the producer job of pr.yml ("TCK declared
-            by this repository"): JSON-P 2.1 (api and pluggability suites) then JSON-B 3.0, as TCK.md
-            requires before any structural merge. install-tck.sh downloads the official ZIPs from
-            download.eclipse.org and is idempotent; each runner exits non-zero on a red suite.
-
-            Measured locally on 2026-10-26: 179 + 18 JSON-P and 295 JSON-B tests (5 skipped), 0
-            failures, about two minutes.
-        -->
+        
         <ci.tck.command>./install-tck.sh &amp;&amp; ./run-official-tck-jsonp-2.1.sh all &amp;&amp; ./run-official-tck-jsonb-3.0.sh all</ci.tck.command>
 
-        <!--
-            SonarQube (Vidocq/vidocq#284): every module reads the aggregated JaCoCo report of
-            champollion-coverage (quality profile), so the tests of champollion-it-weld count for
-            the code they exercise in the other modules. champollion-examples stays analysed, out
-            of the coverage figures, and may print to System.out (rule java:S106).
-        -->
+        
         <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/champollion-coverage/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.coverage.exclusions>**/champollion-examples/**</sonar.coverage.exclusions>
         <sonar.issue.ignore.multicriteria>examples</sonar.issue.ignore.multicriteria>
@@ -91,16 +69,7 @@
         <sonar.issue.ignore.multicriteria.examples.resourceKey>**/champollion-examples/**/src/main/java/**</sonar.issue.ignore.multicriteria.examples.resourceKey>
     </properties>
 
-    <!--
-        champollion-tck joins the reactor only under the `tck` profile (see
-        <profiles> below) — TCK harmonisation, same pattern as the
-        vidocq-runtime-tck-* runners and the dirac pilot: a plain `mvn install`
-        neither downloads nor runs anything TCK-related. The historical
-        out-of-reactor constraint (ShrinkWrap Maven Resolver 3.3 vs Model 4.1.0
-        POMs) disappeared with the Maven 3.9.16 / Model 4.0.0 migration.
-        champollion-protobuf-tck keeps its own standalone execution model
-        (executable conformance jar, not a Jakarta TCK).
-    -->
+    
     <modules>
         <module>champollion-api</module>
         <module>champollion-jsonp</module>
@@ -117,7 +86,7 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Jakarta APIs -->
+            
             <dependency>
                 <groupId>jakarta.json</groupId>
                 <artifactId>jakarta.json-api</artifactId>
@@ -134,7 +103,7 @@
                 <version>${jakarta.annotation.version}</version>
             </dependency>
 
-            <!-- JMH -->
+            
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
                 <artifactId>jmh-core</artifactId>
@@ -146,7 +115,7 @@
                 <version>${jmh.version}</version>
             </dependency>
 
-            <!-- Champollion modules internes -->
+            
             <dependency>
                 <groupId>io.vidocq.champollion</groupId>
                 <artifactId>champollion-api</artifactId>
@@ -202,27 +171,14 @@
         </pluginManagement>
     </build>
     <profiles>
-        <!--
-            TCK harmonisation: the official Jakarta JSON-P 2.1 / JSON-B 3.0 TCK
-            runner joins the reactor only when this profile is active.
-
-                ./mvnw -Ptck,jsonp-tck -pl champollion-tck test               # JSON-P api suite
-                ./mvnw -Ptck,jsonp-tck-pluggability -pl champollion-tck test  # JSON-P pluggability
-                ./mvnw -Ptck,jsonb-tck -pl champollion-tck test               # JSON-B suite
-
-            run-official-tck-jsonp-2.1.sh / run-official-tck-jsonb-3.0.sh
-            remain the friendly wrappers.
-        -->
+        
         <profile>
             <id>tck</id>
             <modules>
                 <module>champollion-tck</module>
             </modules>
         </profile>
-        <!--
-            Quality profile (with the one of vidocq-parent, which runs the JaCoCo agent): adds
-            the aggregated coverage report that SonarQube reads (Vidocq/vidocq#284).
-        -->
+        
         <profile>
             <id>quality</id>
             <modules>
