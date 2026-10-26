@@ -97,6 +97,7 @@ public final class ChampollionJsonb implements Jsonb {
         this.writeRegistry.setGlobalSerializers(collectSerializers(config));
         this.readRegistry.setGlobalDeserializers(collectDeserializers(config));
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
+        this.writeRegistry.setStaticBindings(this.staticBindings);
     }
 
     private static boolean booleanProp(JsonbConfig config, String key) {

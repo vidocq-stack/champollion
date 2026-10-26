@@ -19,6 +19,7 @@
  */
 package io.vidocq.champollion.jsonb.internal;
 
+import io.vidocq.champollion.jsonb.spi.JsonbBinding;
 import jakarta.json.bind.JsonbException;
 import jakarta.json.stream.JsonGenerator;
 
@@ -65,6 +66,17 @@ final class RuntimeBindingRegistry {
     void setGlobalSerializers(java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> map) {
         this.globalSerializers.clear();
         if (map != null) this.globalSerializers.putAll(map);
+    }
+
+    /**
+     * The generated bindings of the application. A type that has one is written by it wherever it appears: as the
+     * root, as an element of a collection, as a map value or as a member of another object. Set before the first
+     * write, since the per-class writers are cached. Vidocq/vidocq#382.
+     */
+    private StaticBindings staticBindings = StaticBindings.EMPTY;
+
+    void setStaticBindings(StaticBindings bindings) {
+        this.staticBindings = bindings == null ? StaticBindings.EMPTY : bindings;
     }
 
     RuntimeBindingRegistry() {
@@ -372,6 +384,12 @@ final class RuntimeBindingRegistry {
     // ===== Resolution =====
 
     private BindingWriter resolveClass(Class<?> type) {
+        // Static-first, as at the root: a generated binding replaces the introspective writer of its type.
+        @SuppressWarnings("rawtypes")
+        JsonbBinding staticBinding = staticBindings.get(type);
+        if (staticBinding != null) {
+            return staticBinding::write;
+        }
         BindingWriter built = Builtins.lookup(type);
         if (built != null) return built;
         if (type.isEnum()) return Builtins.ENUM;

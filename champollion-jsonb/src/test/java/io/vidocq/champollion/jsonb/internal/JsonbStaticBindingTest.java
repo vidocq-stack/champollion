@@ -169,4 +169,71 @@ class JsonbStaticBindingTest {
             assertEquals("{\"from\":\"A\"}", json);
         }
     }
+
+    /** Generic types to hand to {@code toJson(Object, Type)}, as a JAX-RS runtime does with the method's return type. */
+    @SuppressWarnings("unused")
+    private List<Coord> coords;
+    @SuppressWarnings("unused")
+    private java.util.Map<String, Coord> coordsByName;
+    @SuppressWarnings("unused")
+    private List<Object> anything;
+
+    private static java.lang.reflect.Type typeOf(String field) throws NoSuchFieldException {
+        return JsonbStaticBindingTest.class.getDeclaredField(field).getGenericType();
+    }
+
+    /** A record that holds a {@link Coord}: the binding must serve the nested value too. */
+    public record Segment(Coord from, Coord to) {}
+
+    @Nested
+    @DisplayName("Static bindings below the root (Vidocq/vidocq#382)")
+    class BelowTheRoot {
+
+        @Test
+        void elements_of_a_list_use_the_static_binding() throws Exception {
+            CoordStaticBinding.writeCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            String json = jsonb.toJson(List.of(new Coord(1, 2), new Coord(3, 4)), typeOf("coords"));
+            assertEquals("[{\"x\":1,\"y\":2},{\"x\":3,\"y\":4}]", json);
+            assertEquals(2, CoordStaticBinding.writeCalls,
+                    "Each element of a List<Coord> must go through the static binding, not the runtime registry.");
+        }
+
+        @Test
+        void values_of_a_map_use_the_static_binding() throws Exception {
+            CoordStaticBinding.writeCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            String json = jsonb.toJson(java.util.Map.of("a", new Coord(1, 2)), typeOf("coordsByName"));
+            assertEquals("{\"a\":{\"x\":1,\"y\":2}}", json);
+            assertEquals(1, CoordStaticBinding.writeCalls);
+        }
+
+        @Test
+        void a_record_component_uses_the_static_binding() {
+            CoordStaticBinding.writeCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            String json = jsonb.toJson(new Segment(new Coord(1, 2), new Coord(3, 4)));
+            assertEquals("{\"from\":{\"x\":1,\"y\":2},\"to\":{\"x\":3,\"y\":4}}", json);
+            assertEquals(2, CoordStaticBinding.writeCalls);
+        }
+
+        @Test
+        void an_element_typed_object_uses_the_static_binding_of_its_runtime_class() throws Exception {
+            CoordStaticBinding.writeCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            String json = jsonb.toJson(List.of(new Coord(1, 2)), typeOf("anything"));
+            assertEquals("[{\"x\":1,\"y\":2}]", json);
+            assertEquals(1, CoordStaticBinding.writeCalls);
+        }
+
+        @Test
+        void a_type_without_binding_next_to_one_with_still_uses_the_runtime() throws Exception {
+            record Pair(String a, String b) {}
+            CoordStaticBinding.writeCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            String json = jsonb.toJson(List.of(new Pair("x", "y")), typeOf("anything"));
+            assertEquals("[{\"a\":\"x\",\"b\":\"y\"}]", json);
+            assertEquals(0, CoordStaticBinding.writeCalls);
+        }
+    }
 }
