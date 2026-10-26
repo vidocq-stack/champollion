@@ -52,7 +52,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 
 - **Date** : 2026-10-26
 - **Statut** : FIXED (branch `fix/jsonb-static-bindings-app-layer`, Vidocq/vidocq#382)
-- **Module touché** : `champollion-jsonb` — `ChampollionJsonbBuilder.buildChampollion`, `StaticBindings.fromServiceLoader`
+- **Module touché** : `champollion-jsonb` — `ChampollionJsonbBuilder.buildChampollion`, `StaticBindings.fromServiceLoader`, `RuntimeBindingRegistry.resolveClass`
 - **Symptôme** : in a Vidocq application whose records are annotated `@JsonbStatic` (with
   `champollion-codegen-apt` on the annotation processor path), the build generates `Todo$$Binding` and lists it in
   `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding`, but at runtime every response still goes through
@@ -74,6 +74,21 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-10-26 : fix = `StaticBindings.fromServiceLoader` takes several loaders, in order, a loader given twice or
     `null` counting once, and the builder passes its own loader then the thread's context class loader. Red then
     green on `StaticBindingsClassLoaderTest`; the 514 tests of the reactor pass.
+  - 2026-10-26 : the benchmark session (JFR at 30 000 req/s on the PR's first commit) showed the profile
+    unchanged, so the lookup was only the first of two causes. **Second cause**: the static binding was consulted at
+    the root only, by the raw class of the value. A `List<Todo>` (what a JAX-RS method returns) has the raw class
+    `List`, and its elements, map values and nested members are written by `RuntimeBindingRegistry`, which never read
+    `StaticBindings`: so `resolveRecord`, `collectionWriter` and `dynamicWriter` stayed on the hot path.
+    Fix: `RuntimeBindingRegistry.resolveClass` asks `StaticBindings` first, as the root does, and every per-class writer
+    is cached by `ClassValue`. Tests first in `JsonbStaticBindingTest.BelowTheRoot` (list element, map value, record
+    component, `Object`-typed element red; a type with no binding stays on the runtime, green).
+  - A binding is looked up by the exact `Class`: with a type loaded twice (the application module is in the boot layer
+    and in the application layer of a packaged run) a binding of one copy is never applied to the other. The binding
+    found through the application layer's loader names the application layer's `Todo`, the one Cassini writes.
+  - Not covered: reading. `RuntimeReadRegistry` does not consult `StaticBindings` either, so the elements of a
+    `List<Todo>` request body are still read by the runtime; a root-typed body (`TodoInput`) uses its binding.
+  - Like the root before it, a static binding ignores the `JsonbConfig` (naming strategy, null values, date format):
+    it now ignores it below the root too.
   - Open follow-up, not part of this fix: Cassini keeps its default `Jsonb` in a static holder
     (`CassiniJsonbReaderWriter.DefaultJsonb`) created on the first request. After an in-JVM dev reload the holder
     still carries the bindings of the first application layer: the reloaded records are other `Class` objects, so
