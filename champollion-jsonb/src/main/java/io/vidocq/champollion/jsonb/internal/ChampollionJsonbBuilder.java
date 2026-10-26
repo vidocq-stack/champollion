@@ -70,7 +70,8 @@ public final class ChampollionJsonbBuilder implements JsonbBuilder {
         JsonProvider provider = jsonProvider != null ? jsonProvider : JsonProvider.provider();
         StaticBindings sb = staticBindings != null
                 ? StaticBindings.of(staticBindings)
-                : StaticBindings.fromServiceLoader(ChampollionJsonbBuilder.class.getClassLoader());
+                : StaticBindings.fromServiceLoader(ChampollionJsonbBuilder.class.getClassLoader(),
+                        Thread.currentThread().getContextClassLoader());
         return new ChampollionJsonb(config, provider, sb);
     }
 }

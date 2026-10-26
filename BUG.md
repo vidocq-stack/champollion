@@ -45,3 +45,37 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     `JsonbNestedPojoRegressionTest` (root + collection + greedy-deserializer
     escape hatch). Validated: full reactor green, JSON-B TCK 289/295
     (reference score).
+
+---
+
+## BUG-20261026-01 — JSON-B: the `@JsonbStatic` bindings of a Vidocq application are never used
+
+- **Date** : 2026-10-26
+- **Statut** : FIXED (branch `fix/jsonb-static-bindings-app-layer`, Vidocq/vidocq#382)
+- **Module touché** : `champollion-jsonb` — `ChampollionJsonbBuilder.buildChampollion`, `StaticBindings.fromServiceLoader`
+- **Symptôme** : in a Vidocq application whose records are annotated `@JsonbStatic` (with
+  `champollion-codegen-apt` on the annotation processor path), the build generates `Todo$$Binding` and lists it in
+  `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding`, but at runtime every response still goes through
+  `ChampollionJsonb.toJson` → `RuntimeBindingRegistry.resolveRecord` / `collectionWriter` / `dynamicWriter` (about
+  20 % of the CPU samples at 40 000 req/s, measured on 0.4.0-RC1 by the benchmark session, BENCH-20261026-01).
+  No generated binding frame appears.
+- **Reproduction minimale** : `StaticBindingsClassLoaderTest` — a loader that is a child of Champollion's and
+  carries the services file; the thread's context class loader is that child. Before the fix the binding view is
+  empty.
+- **Cause** : the services files were read through `ChampollionJsonbBuilder.class.getClassLoader()` only. In a
+  Vidocq application Champollion sits in the parent layer (the application class loader) and the application's
+  classes and `META-INF/services` in the application layer, a child loader that the parent cannot see. A
+  `provides ... JsonbBinding` clause in the application's `module-info.java` changes nothing, because the lookup
+  never reaches that layer.
+- **Investigations** :
+  - 2026-10-26 : on a request thread of a Vidocq application (`vidocq dev`, 0.4.0-RC1) the context class loader is
+    the application layer's `VaubanClassLoader`, the very loader of the application's records, while Champollion's
+    loader is the JDK application class loader. So the context class loader reaches the bindings.
+  - 2026-10-26 : fix = `StaticBindings.fromServiceLoader` takes several loaders, in order, a loader given twice or
+    `null` counting once, and the builder passes its own loader then the thread's context class loader. Red then
+    green on `StaticBindingsClassLoaderTest`; the 514 tests of the reactor pass.
+  - Open follow-up, not part of this fix: Cassini keeps its default `Jsonb` in a static holder
+    (`CassiniJsonbReaderWriter.DefaultJsonb`) created on the first request. After an in-JVM dev reload the holder
+    still carries the bindings of the first application layer: the reloaded records are other `Class` objects, so
+    the lookup misses and falls back to the runtime registry (correct, slower), and the first layer stays reachable.
+    To be tracked on the Cassini side.
