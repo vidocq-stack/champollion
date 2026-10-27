@@ -25,7 +25,6 @@ import jakarta.json.JsonValue;
 import jakarta.json.stream.JsonGenerationException;
 import jakarta.json.stream.JsonGenerator;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.Writer;
 import java.math.BigDecimal;
@@ -55,21 +54,25 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         ARRAY_AFTER     // in an array, after an element, expects ',' or ']'
     }
 
+    /**
+     * The generator's own buffer: every value, key, comma and escape is appended to it, and the
+     * target {@link Writer} receives one write per full buffer and one at the end. Until now the
+     * target was wrapped in a {@code BufferedWriter} of 256 characters, whose every call takes a
+     * lock: about a dozen locked calls per small object, and a write to the target every 256
+     * characters, which was the hottest frame of the Todo benchmark's profile.
+     */
+    private static final int BUFFER_SIZE = 1024;
+
     private final Writer out;
     private final boolean pretty;
     private final Deque<Ctx> stack = new ArrayDeque<>();
+    private final char[] buf = new char[BUFFER_SIZE];
+    private int pos;
     private int depth = 0;
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
         if (out == null) throw new IllegalArgumentException("writer is null");
-        // P2 — 1 KB default buffer on the target Writer. Avoids dozens of small
-        // writes per value on OutputStreamWriter/StringWriter and amortizes the
-        // cost of writing string escapes char by char.
-        // If the caller already provided a buffered Writer, avoid double buffering.
-        this.out = (out instanceof BufferedWriter || out instanceof java.io.StringWriter
-                || out instanceof java.io.CharArrayWriter)
-                ? out
-                : new BufferedWriter(out, 256);
+        this.out = out;
         this.pretty = pretty;
         this.stack.push(Ctx.ROOT_BEFORE);
     }
@@ -359,6 +362,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         }
         // Spec §3.5: close() closes the underlying Writer/OutputStream and
         // propagates any IOException as JsonException.
+        flushBuffer();
         try {
             out.flush();
             out.close();
@@ -368,6 +372,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     @Override public void flush() {
+        flushBuffer();
         try {
             out.flush();
         } catch (IOException e) {
@@ -437,17 +442,40 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     // ===== low-level write =====
 
     private void writeRaw(String s) {
-        try { out.write(s); } catch (IOException e) { throw new JsonException("I/O error", e); }
+        append(s, 0, s.length());
     }
 
     private void write(char c) {
-        try { out.write(c); } catch (IOException e) { throw new JsonException("I/O error", e); }
+        if (pos == buf.length) flushBuffer();
+        buf[pos++] = c;
+    }
+
+    /** Appends {@code s[off, off + len)} to the buffer, handing the target full buffers on the way. */
+    private void append(String s, int off, int len) {
+        int end = off + len;
+        while (off < end) {
+            if (pos == buf.length) flushBuffer();
+            int n = Math.min(end - off, buf.length - pos);
+            s.getChars(off, off + n, buf, pos);
+            pos += n;
+            off += n;
+        }
+    }
+
+    /** Hands the target what the buffer holds, in one write. */
+    private void flushBuffer() {
+        if (pos == 0) return;
+        try {
+            out.write(buf, 0, pos);
+        } catch (IOException e) {
+            throw new JsonException("I/O error", e);
+        }
+        pos = 0;
     }
 
     private void writeString(String s) {
         // Pure ASCII no-escape fast path — covers the overwhelming majority of
-        // record keys and ordinary strings. Avoids N char-by-char calls to
-        // out.write(c) in favor of a single out.write(s, off, len).
+        // record keys and ordinary strings: the whole string is copied at once.
         int n = s.length();
         int i = 0;
         while (i < n) {
@@ -455,45 +483,37 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
             if (c < 0x20 || c == '"' || c == '\\') break;
             i++;
         }
-        try {
-            out.write('"');
-            if (i == n) {
-                out.write(s);
-                out.write('"');
-                return;
-            }
-            // Clean prefix, then slow path from i onward.
-            if (i > 0) out.write(s, 0, i);
-            for (; i < n; i++) {
-                char c = s.charAt(i);
-                switch (c) {
-                    case '"' -> out.write("\\\"");
-                    case '\\' -> out.write("\\\\");
-                    case '\b' -> out.write("\\b");
-                    case '\f' -> out.write("\\f");
-                    case '\n' -> out.write("\\n");
-                    case '\r' -> out.write("\\r");
-                    case '\t' -> out.write("\\t");
-                    default -> {
-                        if (c < 0x20) {
-                            out.write(String.format("\\u%04x", (int) c));
-                        } else {
-                            out.write(c);
-                        }
+        write('"');
+        if (i == n) {
+            append(s, 0, n);
+            write('"');
+            return;
+        }
+        // Clean prefix, then slow path from i onward.
+        if (i > 0) append(s, 0, i);
+        for (; i < n; i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> writeRaw("\\\"");
+                case '\\' -> writeRaw("\\\\");
+                case '\b' -> writeRaw("\\b");
+                case '\f' -> writeRaw("\\f");
+                case '\n' -> writeRaw("\\n");
+                case '\r' -> writeRaw("\\r");
+                case '\t' -> writeRaw("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        writeRaw(String.format("\\u%04x", (int) c));
+                    } else {
+                        write(c);
                     }
                 }
             }
-            out.write('"');
-        } catch (IOException e) {
-            throw new JsonException("I/O error", e);
         }
+        write('"');
     }
 
     private void indent() {
-        try {
-            for (int i = 0; i < depth; i++) out.write("    ");
-        } catch (IOException e) {
-            throw new JsonException("I/O error", e);
-        }
+        for (int i = 0; i < depth; i++) writeRaw("    ");
     }
 }

@@ -63,7 +63,7 @@ Key components (package `io.vidocq.champollion.jsonp.internal`):
 * Charset detection in `ChampollionJsonProvider` for `InputStream` input: BOM sniffing (UTF-8 / UTF-16 BE/LE / UTF-32 BE/LE), then the RFC 8259 §8.1 null-byte-pattern heuristic when no BOM is present.
 * No buffer pool inside `champollion-jsonp`: each parse allocates its tokenizer and `char[512]` (this per-parse fixed cost is why SMALL payloads sit at 0.66× Parsson while MEDIUM/LARGE win — see BENCH.md). The pooling that does exist lives one layer up, in `champollion-jsonb` (see below).
 
-The symmetric `JsonGenerator` pushes through an automatically buffered `Writer` (`BufferedWriter` interposed on any non-already-buffered `Writer`). Precompiled RFC 8259 §7 escape table for control characters.
+The symmetric `JsonGenerator` buffers its own output [.tag-new]#NEW#: every value, key, comma and escape goes into a `char[1024]` of the generator, and the target `Writer` receives one write per full buffer and one at the end, whatever the `Writer` (`OutputStreamWriter`, `StringWriter`, a user `Writer`). Until 0.4.0-RC1 the target was wrapped in a `BufferedWriter` of 256 characters, whose every call takes a lock: about a dozen locked calls per small object. RFC 8259 §7 escapes are written from a switch per special character.
 
 == JSON-B pipeline — runtime introspection (default mode)
 

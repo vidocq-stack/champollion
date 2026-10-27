@@ -45,6 +45,70 @@ class ChampollionJsonGeneratorTest {
     }
 
     @Nested
+    @DisplayName("Buffering — the target Writer receives few, large writes")
+    class Buffering {
+
+        /** Counts the calls that reach the target, whatever their form. */
+        static final class CountingWriter extends java.io.Writer {
+            final StringBuilder content = new StringBuilder();
+            int calls;
+
+            @Override public void write(char[] cbuf, int off, int len) { calls++; content.append(cbuf, off, len); }
+            @Override public void write(int c) { calls++; content.append((char) c); }
+            @Override public void write(String str, int off, int len) { calls++; content.append(str, off, off + len); }
+            @Override public void flush() { }
+            @Override public void close() { }
+        }
+
+        /**
+         * Every value used to reach the target through a {@code BufferedWriter} of 256 characters,
+         * whose every call takes a lock: about a dozen locked calls per small object, and a
+         * write to the target every 256 characters. The generator now buffers its own output and
+         * hands the target at most one write per kilobyte.
+         */
+        @Test
+        void a_document_reaches_the_target_in_large_chunks() {
+            var target = new CountingWriter();
+            try (var g = new ChampollionJsonGenerator(target, false)) {
+                g.writeStartArray();
+                for (int i = 0; i < 100; i++) {
+                    g.writeStartObject();
+                    g.write("id", i);
+                    g.write("title", "Todo " + i);
+                    g.write("done", false);
+                    g.writeEnd();
+                }
+                g.writeEnd();
+            }
+            String json = target.content.toString();
+            assertEquals("[{\"id\":0,\"title\":\"Todo 0\",\"done\":false},{\"id\":1", json.substring(0, 47));
+            assertEquals(']', json.charAt(json.length() - 1));
+            org.junit.jupiter.api.Assertions.assertTrue(target.calls <= json.length() / 1024 + 1,
+                    "the target writer was called " + target.calls + " times for " + json.length() + " characters");
+        }
+
+        @Test
+        void a_string_with_escapes_is_written_whole() {
+            var target = new CountingWriter();
+            try (var g = new ChampollionJsonGenerator(target, false)) {
+                g.write("a\"b\\c\n\u0001d");
+            }
+            assertEquals("\"a\\\"b\\\\c\\n\\u0001d\"", target.content.toString());
+            assertEquals(1, target.calls);
+        }
+
+        @Test
+        void a_value_longer_than_the_buffer_is_written_whole() {
+            var target = new CountingWriter();
+            String big = "x".repeat(5000);
+            try (var g = new ChampollionJsonGenerator(target, false)) {
+                g.write(big);
+            }
+            assertEquals("\"" + big + "\"", target.content.toString());
+        }
+    }
+
+    @Nested
     @DisplayName("Spec §6.1 — primitives at root")
     class RootPrimitives {
 
