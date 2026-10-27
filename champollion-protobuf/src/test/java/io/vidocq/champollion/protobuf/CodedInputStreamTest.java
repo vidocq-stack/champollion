@@ -321,6 +321,14 @@ class CodedInputStreamTest {
         }
 
         @Test
+        void skip_rejects_an_end_group_without_its_start_group() throws IOException {
+            // Tag (field 1, END_GROUP) with no matching START_GROUP: malformed wire.
+            CodedInputStream in = from(0x0C);
+            int tag = in.readTag();
+            assertThrows(MalformedProtobufException.class, () -> in.skipField(tag));
+        }
+
+        @Test
         void recursion_limit_default_is_100() {
             CodedInputStream in = from();
             assertEquals(CodedInputStream.DEFAULT_RECURSION_LIMIT, 100);

@@ -22,6 +22,7 @@ package io.vidocq.champollion.protobuf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -112,6 +113,26 @@ class AnyTest {
             Any any = new Any("type.googleapis.com/unknown.NeverRegistered",
                     new byte[]{0x01, 0x02});
             assertNull(any.unpack());
+        }
+    }
+
+    @Nested
+    @DisplayName("equals — type_url and value content")
+    class Equality {
+
+        @Test
+        void equal_when_type_url_and_bytes_match() {
+            Any a = new Any("type.googleapis.com/test.Item", new byte[]{1, 2});
+            assertEquals(a, new Any("type.googleapis.com/test.Item", new byte[]{1, 2}));
+            assertEquals(a.hashCode(), new Any("type.googleapis.com/test.Item", new byte[]{1, 2}).hashCode());
+        }
+
+        @Test
+        void different_when_type_url_or_bytes_differ() {
+            Any a = new Any("type.googleapis.com/test.Item", new byte[]{1, 2});
+            assertNotEquals(a, new Any("type.googleapis.com/test.Other", new byte[]{1, 2}));
+            assertNotEquals(a, new Any("type.googleapis.com/test.Item", new byte[]{1, 3}));
+            assertNotEquals(a, (Object) "type.googleapis.com/test.Item");
         }
     }
 

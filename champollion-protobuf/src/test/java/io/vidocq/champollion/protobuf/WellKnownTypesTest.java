@@ -210,5 +210,121 @@ class WellKnownTypesTest {
             assertEquals(o.count(), back.count());
             assertEquals(o.alias(), back.alias());
         }
+
+        @Test
+        void every_wrapper_is_a_naked_value_at_top_level() {
+            assertEquals("1.5", ProtobufJson.toJson(new Wrappers.DoubleValue(1.5)));
+            assertEquals("2.5", ProtobufJson.toJson(new Wrappers.FloatValue(2.5f)));
+            assertEquals("\"4\"", ProtobufJson.toJson(new Wrappers.UInt64Value(4)));
+            assertEquals("6", ProtobufJson.toJson(new Wrappers.UInt32Value(6)));
+        }
+
+        @Test
+        void non_finite_wrappers_at_top_level_are_strings() {
+            // Proto3 JSON: Infinity and -Infinity are written as JSON strings.
+            assertEquals("\"Infinity\"", ProtobufJson.toJson(new Wrappers.DoubleValue(Double.POSITIVE_INFINITY)));
+            assertEquals("\"-Infinity\"", ProtobufJson.toJson(new Wrappers.DoubleValue(Double.NEGATIVE_INFINITY)));
+            assertEquals("\"Infinity\"", ProtobufJson.toJson(new Wrappers.FloatValue(Float.POSITIVE_INFINITY)));
+            assertEquals("\"-Infinity\"", ProtobufJson.toJson(new Wrappers.FloatValue(Float.NEGATIVE_INFINITY)));
+        }
+
+        @Test
+        void wrapper_fields_are_naked_values() {
+            AllWrappers all = new AllWrappers(
+                    new Wrappers.DoubleValue(1.5), new Wrappers.FloatValue(2.5f),
+                    new Wrappers.Int64Value(3), new Wrappers.UInt64Value(4),
+                    new Wrappers.Int32Value(5), new Wrappers.UInt32Value(6),
+                    new Wrappers.BoolValue(true), new Wrappers.StringValue("x"),
+                    new Wrappers.BytesValue(new byte[]{1, 2, 3}));
+            assertEquals("{\"d\":1.5,\"f\":2.5,\"i64\":\"3\",\"u64\":\"4\",\"i32\":5,\"u32\":6,"
+                    + "\"b\":true,\"s\":\"x\",\"bs\":\"AQID\"}", ProtobufJson.toJson(all));
+        }
+
+        @Test
+        void non_finite_wrapper_fields_are_strings() {
+            AllWrappers positive = new AllWrappers(
+                    new Wrappers.DoubleValue(Double.POSITIVE_INFINITY),
+                    new Wrappers.FloatValue(Float.POSITIVE_INFINITY),
+                    null, null, null, null, null, null, null);
+            assertEquals("{\"d\":\"Infinity\",\"f\":\"Infinity\"}", ProtobufJson.toJson(positive));
+            AllWrappers negative = new AllWrappers(
+                    new Wrappers.DoubleValue(Double.NEGATIVE_INFINITY),
+                    new Wrappers.FloatValue(Float.NEGATIVE_INFINITY),
+                    null, null, null, null, null, null, null);
+            assertEquals("{\"d\":\"-Infinity\",\"f\":\"-Infinity\"}", ProtobufJson.toJson(negative));
+        }
+
+        @Test
+        void repeated_wrappers_are_naked_array_elements() {
+            RepeatedWrappers all = new RepeatedWrappers(
+                    List.of(new Wrappers.DoubleValue(1.5), new Wrappers.DoubleValue(Double.POSITIVE_INFINITY),
+                            new Wrappers.DoubleValue(Double.NEGATIVE_INFINITY)),
+                    List.of(new Wrappers.FloatValue(2.5f), new Wrappers.FloatValue(Float.POSITIVE_INFINITY),
+                            new Wrappers.FloatValue(Float.NEGATIVE_INFINITY)),
+                    List.of(new Wrappers.Int64Value(3)),
+                    List.of(new Wrappers.UInt64Value(4)),
+                    List.of(new Wrappers.Int32Value(5)),
+                    List.of(new Wrappers.UInt32Value(6)),
+                    List.of(new Wrappers.BoolValue(true)),
+                    List.of(new Wrappers.StringValue("x")),
+                    List.of(new Wrappers.BytesValue(new byte[]{1, 2, 3})));
+            assertEquals("{\"d\":[1.5,\"Infinity\",\"-Infinity\"],\"f\":[2.5,\"Infinity\",\"-Infinity\"],"
+                    + "\"i64\":[\"3\"],\"u64\":[\"4\"],\"i32\":[5],\"u32\":[6],\"b\":[true],"
+                    + "\"s\":[\"x\"],\"bs\":[\"AQID\"]}", ProtobufJson.toJson(all));
+        }
+    }
+
+    @ProtobufMessage
+    public record AllWrappers(
+            @ProtobufField(number = 1, type = FieldType.MESSAGE) Wrappers.DoubleValue d,
+            @ProtobufField(number = 2, type = FieldType.MESSAGE) Wrappers.FloatValue f,
+            @ProtobufField(number = 3, type = FieldType.MESSAGE) Wrappers.Int64Value i64,
+            @ProtobufField(number = 4, type = FieldType.MESSAGE) Wrappers.UInt64Value u64,
+            @ProtobufField(number = 5, type = FieldType.MESSAGE) Wrappers.Int32Value i32,
+            @ProtobufField(number = 6, type = FieldType.MESSAGE) Wrappers.UInt32Value u32,
+            @ProtobufField(number = 7, type = FieldType.MESSAGE) Wrappers.BoolValue b,
+            @ProtobufField(number = 8, type = FieldType.MESSAGE) Wrappers.StringValue s,
+            @ProtobufField(number = 9, type = FieldType.MESSAGE) Wrappers.BytesValue bs
+    ) implements Message {}
+
+    @ProtobufMessage
+    public record RepeatedWrappers(
+            @ProtobufField(number = 1, type = FieldType.MESSAGE) List<Wrappers.DoubleValue> d,
+            @ProtobufField(number = 2, type = FieldType.MESSAGE) List<Wrappers.FloatValue> f,
+            @ProtobufField(number = 3, type = FieldType.MESSAGE) List<Wrappers.Int64Value> i64,
+            @ProtobufField(number = 4, type = FieldType.MESSAGE) List<Wrappers.UInt64Value> u64,
+            @ProtobufField(number = 5, type = FieldType.MESSAGE) List<Wrappers.Int32Value> i32,
+            @ProtobufField(number = 6, type = FieldType.MESSAGE) List<Wrappers.UInt32Value> u32,
+            @ProtobufField(number = 7, type = FieldType.MESSAGE) List<Wrappers.BoolValue> b,
+            @ProtobufField(number = 8, type = FieldType.MESSAGE) List<Wrappers.StringValue> s,
+            @ProtobufField(number = 9, type = FieldType.MESSAGE) List<Wrappers.BytesValue> bs
+    ) implements Message {}
+
+    @ProtobufMessage
+    public record WithEmpty(
+            @ProtobufField(number = 1, type = FieldType.MESSAGE) Empty e
+    ) implements Message {}
+
+    @Nested
+    @DisplayName("Duration and Empty — edge cases")
+    class EdgeCases {
+
+        @Test
+        void duration_with_microsecond_precision_uses_6_digits() {
+            assertEquals("\"1.000500s\"", ProtobufJson.toJson(new Duration(1, 500_000)));
+        }
+
+        @Test
+        void duration_fraction_is_padded_or_truncated_to_nanoseconds() {
+            assertEquals(new Duration(1, 500_000_000), ProtobufJson.fromJson(Duration.class, "\"1.5s\""));
+            assertEquals(new Duration(1, 1), ProtobufJson.fromJson(Duration.class, "\"1.000000001s\""));
+            assertEquals(new Duration(1, 1), ProtobufJson.fromJson(Duration.class, "\"1.0000000019s\""));
+        }
+
+        @Test
+        void empty_field_accepts_an_object_and_ignores_its_members() {
+            assertEquals(Empty.INSTANCE, ProtobufJson.fromJson(WithEmpty.class, "{\"e\":{}}").e());
+            assertEquals(Empty.INSTANCE, ProtobufJson.fromJson(WithEmpty.class, "{\"e\":{\"ignored\":1}}").e());
+        }
     }
 }

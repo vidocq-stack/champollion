@@ -20,6 +20,7 @@
 package io.vidocq.champollion.protobuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.vidocq.champollion.protobuf.wkt.Any;
@@ -152,6 +153,13 @@ class AnyJsonTest {
             assertEquals("type.googleapis.com/test.Item", any.type_url());
             // Decode value bytes to verify the fields
             assertEquals(new Item("x", 7), Protobuf.parser(Item.class).parseFrom(any.value()));
+        }
+
+        @Test
+        void non_empty_object_without_atType_is_rejected() {
+            // Proto3 §any: a non-empty Any object must name its type.
+            assertThrows(java.io.UncheckedIOException.class,
+                    () -> ProtobufJson.fromJson(Any.class, "{\"value\":\"AQID\"}"));
         }
     }
 }

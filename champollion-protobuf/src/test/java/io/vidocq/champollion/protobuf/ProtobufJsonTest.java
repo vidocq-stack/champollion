@@ -21,6 +21,7 @@ package io.vidocq.champollion.protobuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -218,6 +219,113 @@ class ProtobufJsonTest {
             Account a = ProtobufJson.fromJson(Account.class, json);
             assertEquals("x", a.login());
             assertSame(Role.USER, a.role());
+        }
+    }
+
+    @ProtobufMessage
+    public record Floats(
+            @ProtobufField(number = 1, type = FieldType.FLOAT) float f,
+            @ProtobufField(number = 2, type = FieldType.DOUBLE) double d,
+            @ProtobufField(number = 3, type = FieldType.FLOAT) List<Float> fs,
+            @ProtobufField(number = 4, type = FieldType.DOUBLE) List<Double> ds
+    ) implements Message {}
+
+    @ProtobufMessage
+    public record Counters(
+            @ProtobufField(number = 1, type = FieldType.MAP,
+                           mapKey = FieldType.STRING, mapValue = FieldType.INT32)
+            java.util.Map<String, Integer> counts
+    ) implements Message {}
+
+    @ProtobufMessage
+    public record Integers(
+            @ProtobufField(number = 1, type = FieldType.INT32) int i32,
+            @ProtobufField(number = 2, type = FieldType.UINT32) int u32,
+            @ProtobufField(number = 3, type = FieldType.INT64) long i64,
+            @ProtobufField(number = 4, type = FieldType.UINT64) long u64
+    ) implements Message {}
+
+    @Nested
+    @DisplayName("Floating-point specials — \"Infinity\" and \"-Infinity\" strings")
+    class FloatingSpecials {
+
+        @Test
+        void infinities_are_written_as_strings_in_fields_and_arrays() {
+            Floats a = new Floats(Float.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+                    List.of(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY),
+                    List.of(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY));
+            assertEquals("{\"f\":\"Infinity\",\"d\":\"-Infinity\",\"fs\":[\"-Infinity\",\"Infinity\"],"
+                    + "\"ds\":[\"Infinity\",\"-Infinity\"]}", ProtobufJson.toJson(a));
+            Floats b = new Floats(Float.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, List.of(), List.of());
+            assertEquals("{\"f\":\"-Infinity\",\"d\":\"Infinity\"}", ProtobufJson.toJson(b));
+        }
+
+        @Test
+        void infinities_round_trip() {
+            Floats original = new Floats(Float.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY,
+                    List.of(Float.POSITIVE_INFINITY), List.of(Double.NEGATIVE_INFINITY));
+            assertEquals(original, ProtobufJson.fromJson(Floats.class, ProtobufJson.toJson(original)));
+        }
+    }
+
+    @Nested
+    @DisplayName("Maps — JSON object keyed by the map key")
+    class Maps {
+
+        @Test
+        void map_field_is_written_as_an_object() {
+            var counts = new java.util.LinkedHashMap<String, Integer>();
+            counts.put("a", 1);
+            counts.put("b", 2);
+            assertEquals("{\"counts\":{\"a\":1,\"b\":2}}", ProtobufJson.toJson(new Counters(counts)));
+        }
+    }
+
+    @Nested
+    @DisplayName("Integer fields — non-integral input rejected")
+    class IntegerRanges {
+
+        @Test
+        void fractional_numbers_are_rejected_for_every_integer_type() {
+            // Proto3 JSON: integer fields accept integral values only (1.0 is fine, 1.5 is not).
+            for (String field : List.of("i32", "u32", "i64", "u64")) {
+                String json = "{\"" + field + "\":1.5}";
+                assertThrows(java.io.UncheckedIOException.class,
+                        () -> ProtobufJson.fromJson(Integers.class, json), field);
+            }
+        }
+
+        @Test
+        void integral_numbers_with_a_fraction_part_are_accepted() {
+            Integers i = ProtobufJson.fromJson(Integers.class,
+                    "{\"i32\":1.0,\"u32\":2.0,\"i64\":3.0,\"u64\":4.0}");
+            assertEquals(new Integers(1, 2, 3L, 4L), i);
+        }
+
+        @Test
+        void a_string_that_is_not_a_number_is_rejected() {
+            assertThrows(java.io.UncheckedIOException.class,
+                    () -> ProtobufJson.fromJson(Integers.class, "{\"i32\":\"abc\"}"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Sinks — Writer and OutputStream")
+    class Sinks {
+
+        @Test
+        void writes_to_a_writer() {
+            var out = new java.io.StringWriter();
+            ProtobufJson.toJson(new Snake("Ada", 36), out);
+            assertEquals("{\"firstName\":\"Ada\",\"ageInYears\":36}", out.toString());
+        }
+
+        @Test
+        void writes_utf8_to_an_output_stream() {
+            var out = new java.io.ByteArrayOutputStream();
+            ProtobufJson.toJson(new Snake("Zoé", 1), out);
+            assertEquals("{\"firstName\":\"Zoé\",\"ageInYears\":1}",
+                    out.toString(java.nio.charset.StandardCharsets.UTF_8));
         }
     }
 }

@@ -232,5 +232,77 @@ class ProtobufRuntimeTest {
             AccountRecord back = Protobuf.parser(AccountRecord.class).parseFrom(bytes);
             assertSame(Role.USER, back.role());
         }
+
+        @Test
+        void negative_enum_value_takes_ten_bytes_on_the_wire() throws IOException {
+            // Encoding §enum: enums are int32, so a negative value is sign-extended to 10 bytes.
+            byte[] bytes = Protobuf.toByteArray(new SignalRecord(Signal.NEGATIVE, java.util.Map.of()));
+            assertEquals(1 + 10, bytes.length);
+            assertArrayEquals(expected(o -> o.writeEnum(1, -1)), bytes);
+            assertEquals(Signal.NEGATIVE, Protobuf.parser(SignalRecord.class).parseFrom(bytes).signal());
+        }
+
+        @Test
+        void enum_map_values_are_encoded_with_their_proto_value() throws IOException {
+            var byName = new java.util.LinkedHashMap<String, Signal>();
+            byName.put("low", Signal.NEGATIVE);
+            byName.put("high", Signal.POSITIVE);
+            SignalRecord original = new SignalRecord(Signal.POSITIVE, byName);
+            byte[] expected = expected(o -> {
+                o.writeEnum(1, 2);
+                // map entry {key "low", value -1}: 2 + 3 + 1 + 10 bytes
+                o.writeTag(2, WireFormat.WIRETYPE_LENGTH_DELIMITED);
+                o.writeRawVarint32(16);
+                o.writeString(1, "low");
+                o.writeEnum(2, -1);
+                // map entry {key "high", value 2}: 2 + 4 + 1 + 1 bytes
+                o.writeTag(2, WireFormat.WIRETYPE_LENGTH_DELIMITED);
+                o.writeRawVarint32(8);
+                o.writeString(1, "high");
+                o.writeEnum(2, 2);
+            });
+            assertArrayEquals(expected, Protobuf.toByteArray(original));
+            assertEquals(expected.length, Protobuf.getSerializedSize(original));
+        }
+    }
+
+    public enum Signal {
+        @ProtoEnumValue(0) NONE,
+        @ProtoEnumValue(-1) NEGATIVE,
+        @ProtoEnumValue(2) POSITIVE
+    }
+
+    @ProtobufMessage
+    public record SignalRecord(
+            @ProtobufField(number = 1, type = FieldType.ENUM) Signal signal,
+            @ProtobufField(number = 2, type = FieldType.MAP,
+                           mapKey = FieldType.STRING, mapValue = FieldType.ENUM)
+            java.util.Map<String, Signal> byName
+    ) implements Message {}
+
+    @Nested
+    @DisplayName("Entry points — streams and Message helpers")
+    class EntryPoints {
+
+        @Test
+        void writeTo_an_output_stream_matches_toByteArray() throws IOException {
+            Person p = new Person("alice", 30, List.of("dev"));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            Protobuf.writeTo(p, out);
+            assertArrayEquals(Protobuf.toByteArray(p), out.toByteArray());
+        }
+
+        @Test
+        void writeTo_a_coded_output_stream_matches_toByteArray() throws IOException {
+            Person p = new Person("bob", 7, List.of());
+            byte[] bytes = expected(o -> Protobuf.writeTo(p, o));
+            assertArrayEquals(Protobuf.toByteArray(p), bytes);
+        }
+
+        @Test
+        void message_parseFrom_reads_back_the_bytes() {
+            Person p = new Person("carol", 41, List.of("ops"));
+            assertEquals(p, Message.parseFrom(Person.class, p.toByteArray()));
+        }
     }
 }
