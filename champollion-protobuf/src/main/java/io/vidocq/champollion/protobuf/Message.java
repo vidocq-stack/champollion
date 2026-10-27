@@ -19,7 +19,6 @@
  */
 package io.vidocq.champollion.protobuf;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;

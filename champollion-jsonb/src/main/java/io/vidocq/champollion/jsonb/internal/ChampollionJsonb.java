@@ -48,7 +48,6 @@ import java.lang.reflect.Type;
  */
 public final class ChampollionJsonb implements Jsonb {
 
-    private final JsonbConfig config;
     private final JsonProvider jsonProvider;
     private final RuntimeBindingRegistry writeRegistry;
     private final RuntimeReadRegistry readRegistry;
@@ -67,7 +66,6 @@ public final class ChampollionJsonb implements Jsonb {
             ThreadLocal.withInitial(() -> null);
 
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
-        this.config = config;
         this.jsonProvider = jsonProvider;
         this.prettyPrinting = booleanProp(config, JsonbConfig.FORMATTING);
         this.writeNullValues = booleanProp(config, JsonbConfig.NULL_VALUES);

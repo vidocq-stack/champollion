@@ -20,7 +20,6 @@
 package io.vidocq.champollion.protobuf.codegen;
 
 import io.vidocq.champollion.protobuf.Descriptors;
-import io.vidocq.champollion.protobuf.FieldType;
 
 import java.util.LinkedHashMap;
 import java.util.List;

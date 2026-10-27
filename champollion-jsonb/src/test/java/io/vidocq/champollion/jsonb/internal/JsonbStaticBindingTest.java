@@ -28,12 +28,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.io.StringReader;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 
 @DisplayName("M5.1 — JsonbBinding SPI + static-first lookup")
 class JsonbStaticBindingTest {
@@ -66,7 +64,7 @@ class JsonbStaticBindingTest {
             JsonParser.Event e = p.next();
             if (e != JsonParser.Event.START_OBJECT) throw new IllegalStateException("Expected START_OBJECT");
             int x = 0, y = 0;
-            while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
+            while (p.next() != JsonParser.Event.END_OBJECT) {
                 String key = p.getString();
                 p.next();
                 int v = p.getInt();

@@ -31,7 +31,6 @@ import java.io.Reader;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * JSON-P 2.1 object model reader based on {@link ChampollionJsonParser}.

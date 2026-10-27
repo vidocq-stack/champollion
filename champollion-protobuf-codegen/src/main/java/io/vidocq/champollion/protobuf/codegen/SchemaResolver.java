@@ -25,7 +25,6 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumValueDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Edition;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldDecl;
-import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldKind;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MessageDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MethodDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.NamedType;
@@ -352,8 +351,8 @@ public final class SchemaResolver {
 
     private static Descriptors.Syntax toSyntax(ProtoAst.Syntax syntax) {
         return switch (syntax) {
-            case Proto2 ignored -> Descriptors.Syntax.PROTO2;
-            case Proto3 ignored -> Descriptors.Syntax.PROTO3;
+            case Proto2 _ -> Descriptors.Syntax.PROTO2;
+            case Proto3 _ -> Descriptors.Syntax.PROTO3;
             case Edition e -> "2023".equals(e.name())
                     ? Descriptors.Syntax.EDITION_2023
                     : Descriptors.Syntax.EDITION_2023; // all future editions mapped here

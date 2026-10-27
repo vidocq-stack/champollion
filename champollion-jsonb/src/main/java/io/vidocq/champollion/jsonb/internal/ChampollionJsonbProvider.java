@@ -19,8 +19,6 @@
  */
 package io.vidocq.champollion.jsonb.internal;
 
-import jakarta.json.bind.JsonbConfig;
-import jakarta.json.bind.JsonbException;
 import jakarta.json.bind.spi.JsonbProvider;
 
 /**

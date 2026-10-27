@@ -85,10 +85,6 @@ public final class ChampollionJsonProvider extends JsonProvider {
         return Map.copyOf(out);
     }
 
-    private static Reader utf8Reader(InputStream in) {
-        return new InputStreamReader(in, StandardCharsets.UTF_8);
-    }
-
     /**
      * Auto-detects the encoding according to RFC 8259 §8.1. Reads the first 4 bytes
      * (BOM or heuristic) then creates the {@link Reader} with the correct Charset.

@@ -263,7 +263,7 @@ public final class ProtoParser {
                     case "reserved" -> skipUntilSemi();
                     case "extensions" -> skipUntilSemi();
                     case "option" -> options.add(parseOption());
-                    case "oneof" -> skipBlock("oneof"); // M2.1 : ignore oneof
+                    case "oneof" -> skipBlock(); // M2.1 : ignore oneof
                     case "map" -> skipUntilSemi();      // M2.1 : ignore map
                     default -> fields.add(parseField());
                 }
@@ -370,7 +370,7 @@ public final class ProtoParser {
         if (peek().kind() == TokenKind.SEMI) consume();
     }
 
-    private void skipBlock(String label) {
+    private void skipBlock() {
         consume(); // keyword
         // Optionally consume name
         if (peek().kind() == TokenKind.IDENT) consume();

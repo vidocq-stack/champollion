@@ -127,7 +127,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         // over saving one javac round trip.
         try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, record).openWriter();
              PrintWriter pw = new PrintWriter(w)) {
-            emit(pw, pkgName, simpleName, bindingSimple, targetFqn, comps);
+            emit(pw, pkgName, bindingSimple, targetFqn, comps);
         } catch (IOException ex) {
             error(record, "Failed to generate binding: " + ex.getMessage());
             return;
@@ -290,7 +290,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         }
     }
 
-    private void emit(PrintWriter pw, String pkg, String recordName, String bindingName,
+    private void emit(PrintWriter pw, String pkg, String bindingName,
                       String targetFqn, List<? extends RecordComponentElement> comps) {
         if (!pkg.isEmpty()) {
             pw.println("package " + pkg + ";");

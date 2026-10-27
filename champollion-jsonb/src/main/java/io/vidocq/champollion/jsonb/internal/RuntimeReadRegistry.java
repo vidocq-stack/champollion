@@ -37,10 +37,8 @@ import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1145,58 +1143,6 @@ final class RuntimeReadRegistry {
         return inst;
     }
 
-    private Object readObjectAndConstruct(JsonParser p, Constructor<?> ctor,
-                                          Class<?>[] paramTypes, BindingReader[] readers,
-                                          Map<String, Integer> indexByName) {
-        JsonParser.Event e = p.next();
-        if (e == JsonParser.Event.VALUE_NULL) return null;
-        if (e != JsonParser.Event.START_OBJECT) {
-            throw new JsonbException("Expected object, got " + e);
-        }
-        Object[] args = new Object[paramTypes.length];
-        for (int i = 0; i < paramTypes.length; i++) {
-            args[i] = defaultFor(paramTypes[i]);
-        }
-        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
-            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
-            String key = p.getString();
-            Integer idx = indexByName.get(key);
-            if (idx == null) {
-                skipValue(p);
-            } else {
-                args[idx] = readers[idx].read(p);
-            }
-        }
-        try {
-            return ctor.newInstance(args);
-        } catch (ReflectiveOperationException ex) {
-            throw new JsonbException("Failed to instantiate record: " + ex.getMessage(), ex);
-        }
-    }
-
-    private Object readObjectAndAssign(JsonParser p, Constructor<?> ctor, Map<String, Field> fields) {
-        JsonParser.Event e = p.next();
-        if (e == JsonParser.Event.VALUE_NULL) return null;
-        if (e != JsonParser.Event.START_OBJECT) throw new JsonbException("Expected object, got " + e);
-        Object inst;
-        try {
-            inst = ctor.newInstance();
-        } catch (ReflectiveOperationException ex) {
-            throw new JsonbException("Failed to instantiate POJO: " + ex.getMessage(), ex);
-        }
-        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
-            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
-            String key = p.getString();
-            Field f = fields.get(key);
-            if (f == null) { skipValue(p); continue; }
-            BindingReader r = readerFor(f.getGenericType());
-            Object value = r.read(p);
-            try { f.set(inst, value); }
-            catch (IllegalAccessException ex) { throw new JsonbException("Cannot set field " + f, ex); }
-        }
-        return inst;
-    }
-
     private static Object defaultFor(Class<?> type) {
         if (type == java.util.Optional.class) return java.util.Optional.empty();
         if (type == java.util.OptionalInt.class) return java.util.OptionalInt.empty();
@@ -1240,10 +1186,6 @@ final class RuntimeReadRegistry {
             return optionalReader(inner);
         }
         return classCache.get(raw);
-    }
-
-    private BindingReader mapReader(BindingReader valueReader) {
-        return mapReader(valueReader, Map.class);
     }
 
     private BindingReader mapReader(BindingReader valueReader, Class<?> raw) {
@@ -1529,9 +1471,7 @@ final class RuntimeReadRegistry {
             if (e == JsonParser.Event.END_OBJECT) return out;
             if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME");
             String key = p.getString();
-            // recursion on dynamic
-            JsonParser primed;
-            // We need to read a value, but dynamicValue advances next() itself : no extra primed needed
+            // Recursion on dynamic: dynamicValue advances next() itself, so no primed parser is needed.
             out.put(key, dynamicValue(p));
         }
     }
@@ -1549,8 +1489,7 @@ final class RuntimeReadRegistry {
     /**
      * Polymorphic reader: reads the discriminator key (first in the JSON,
      * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
-     * restants directement dans le record/POJO concret via une variante de
-     * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
+     * directly into the concrete record/POJO, START_OBJECT having already been consumed.
      *
      * <p>Note: Champollion always writes the discriminator key first.
      * To interoperate with other implementations that place the key elsewhere, it

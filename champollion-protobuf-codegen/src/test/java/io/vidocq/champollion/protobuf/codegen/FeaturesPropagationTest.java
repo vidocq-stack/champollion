@@ -21,7 +21,6 @@ package io.vidocq.champollion.protobuf.codegen;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.vidocq.champollion.protobuf.Descriptors;
 import io.vidocq.champollion.protobuf.codegen.internal.ProtoParser;

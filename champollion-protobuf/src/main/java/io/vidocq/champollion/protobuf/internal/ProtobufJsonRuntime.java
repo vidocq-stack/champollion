@@ -31,8 +31,6 @@ import io.vidocq.champollion.protobuf.wkt.Timestamp;
 import io.vidocq.champollion.protobuf.wkt.TypeRegistry;
 import io.vidocq.champollion.protobuf.wkt.Wrappers;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
@@ -48,7 +46,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -127,7 +124,7 @@ public final class ProtobufJsonRuntime {
                 gen.writeStartObject(fb.jsonName);
                 for (Map.Entry<?, ?> e : map.entrySet()) {
                     String k = mapKeyAsString(fb.mapKeyType, e.getKey());
-                    writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
+                    writeMapValue(fb.mapValueType, e.getValue(), gen, k);
                 }
                 gen.writeEnd();
                 continue;
@@ -206,8 +203,7 @@ public final class ProtobufJsonRuntime {
     }
 
     /** Writes a map value according to its FieldType. Reuses the runtime writeScalar. */
-    private static void writeMapValue(FieldType type, Class<?> messageClass, Object value,
-                                      JsonGenerator gen, String key) {
+    private static void writeMapValue(FieldType type, Object value, JsonGenerator gen, String key) {
         if (value == null) {
             gen.writeNull(key);
             return;

@@ -31,7 +31,6 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("Champollion JSON-B 3.0 — containers (M4.3 write)")
 class ChampollionJsonbContainersTest {
