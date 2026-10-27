@@ -46,8 +46,8 @@ public final class ChampollionJsonWriter implements JsonWriter {
         this.generator = new ChampollionJsonGenerator(writer, pretty);
     }
 
-    @Override public void writeArray(JsonArray array) { write((JsonStructure) array); }
-    @Override public void writeObject(JsonObject object) { write((JsonStructure) object); }
+    @Override public void writeArray(JsonArray array) { write(array); }
+    @Override public void writeObject(JsonObject object) { write(object); }
 
     @Override public void write(JsonStructure value) {
         write((JsonValue) value);

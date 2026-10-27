@@ -50,8 +50,11 @@ final class CdiResolver {
     private static final String INJECT = "jakarta.inject.Inject";
 
     static {
-        MethodHandle current = null, select = null, get = null,
-                isUnsatisfied = null, isAmbiguous = null;
+        MethodHandle current = null;
+        MethodHandle select = null;
+        MethodHandle get = null;
+        MethodHandle isUnsatisfied = null;
+        MethodHandle isAmbiguous = null;
         boolean available = false;
         try {
             Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI");

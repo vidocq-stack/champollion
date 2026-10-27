@@ -130,26 +130,26 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return true;
     }
 
-    private void processRecord(TypeElement record) {
-        String simpleName = record.getSimpleName().toString();
-        PackageElement pkg = (PackageElement) record.getEnclosingElement();
+    private void processRecord(TypeElement recordType) {
+        String simpleName = recordType.getSimpleName().toString();
+        PackageElement pkg = (PackageElement) recordType.getEnclosingElement();
         // Nested types: we must reconstruct the binary name with '$' but the source
         // file has a name derived from the simple name. For M5.2, only top-level types are accepted.
         if (!(pkg instanceof PackageElement)) {
-            error(record, "@JsonbStatic only supported on top-level records in M5.2");
+            error(recordType, "@JsonbStatic only supported on top-level records in M5.2");
             return;
         }
         String pkgName = pkg.getQualifiedName().toString();
         String bindingSimple = simpleName + "$$Binding";
         String bindingFqn = pkgName.isEmpty() ? bindingSimple : pkgName + "." + bindingSimple;
-        String targetFqn = record.getQualifiedName().toString();
+        String targetFqn = recordType.getQualifiedName().toString();
 
-        List<? extends RecordComponentElement> comps = record.getRecordComponents();
+        List<? extends RecordComponentElement> comps = recordType.getRecordComponents();
 
         // Validation: components supported in M5.2.
         for (var c : comps) {
             if (!isSupportedComponentType(c.asType())) {
-                error(record,
+                error(recordType,
                         "@JsonbStatic component type not supported in M5.2: " + c.asType()
                                 + " (only primitives + String supported — containers in M5.3)");
                 return;
@@ -160,11 +160,11 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         // rule, codegen audit CG-03). The former Class-File fast path for
         // primitives+String records was removed — readable, debuggable output wins
         // over saving one javac round trip.
-        try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, record).openWriter();
+        try (Writer w = processingEnv.getFiler().createSourceFile(bindingFqn, recordType).openWriter();
              PrintWriter pw = new PrintWriter(w)) {
             emit(pw, pkgName, bindingSimple, targetFqn, comps);
         } catch (IOException ex) {
-            error(record, "Failed to generate binding: " + ex.getMessage());
+            error(recordType, "Failed to generate binding: " + ex.getMessage());
             return;
         }
         generatedBindings.add(bindingFqn);

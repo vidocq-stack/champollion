@@ -357,11 +357,9 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                     skipField(nextTag, unknownFields);
                 }
             }
-            case WireFormat.WIRETYPE_END_GROUP -> {
-                // Standalone END_GROUP (without a matching START_GROUP) = malformed wire.
-                throw new MalformedProtobufException(
-                        "Protocol message contained an unexpected END_GROUP tag.");
-            }
+            // Standalone END_GROUP (without a matching START_GROUP) = malformed wire.
+            case WireFormat.WIRETYPE_END_GROUP -> throw new MalformedProtobufException(
+                    "Protocol message contained an unexpected END_GROUP tag.");
             default -> throw MalformedProtobufException.invalidWireType(wireType);
         }
     }

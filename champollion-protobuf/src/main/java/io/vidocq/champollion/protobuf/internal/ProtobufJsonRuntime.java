@@ -587,51 +587,51 @@ public final class ProtobufJsonRuntime {
 
     private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
         return switch (v) {
-            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, null); yield true; }
-            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, null); yield true; }
-            case Wrappers.Int64Value w -> { gen.write(Long.toString(w.value())); yield true; }
-            case Wrappers.UInt64Value w -> { gen.write(Long.toString(w.value())); yield true; }
-            case Wrappers.Int32Value w -> { gen.write(w.value()); yield true; }
-            case Wrappers.UInt32Value w -> { gen.write(w.value()); yield true; }
-            case Wrappers.BoolValue w -> { gen.write(w.value()); yield true; }
-            case Wrappers.StringValue w -> { gen.write(w.value()); yield true; }
-            case Wrappers.BytesValue w -> { gen.write(java.util.Base64.getEncoder().encodeToString(w.value())); yield true; }
+            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, null); yield true; }
+            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, null); yield true; }
+            case Wrappers.Int64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
+            case Wrappers.UInt64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
+            case Wrappers.Int32Value(var value) -> { gen.write(value); yield true; }
+            case Wrappers.UInt32Value(var value) -> { gen.write(value); yield true; }
+            case Wrappers.BoolValue(var value) -> { gen.write(value); yield true; }
+            case Wrappers.StringValue(var value) -> { gen.write(value); yield true; }
+            case Wrappers.BytesValue(var value) -> { gen.write(java.util.Base64.getEncoder().encodeToString(value)); yield true; }
             default -> false;
         };
     }
 
     private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
         return switch (v) {
-            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, key); yield true; }
-            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, key); yield true; }
-            case Wrappers.Int64Value w -> {
-                String s = Long.toString(w.value());
+            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, key); yield true; }
+            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, key); yield true; }
+            case Wrappers.Int64Value(var value) -> {
+                String s = Long.toString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.UInt64Value w -> {
-                String s = Long.toString(w.value());
+            case Wrappers.UInt64Value(var value) -> {
+                String s = Long.toString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.Int32Value w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.Int32Value(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.UInt32Value w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.UInt32Value(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.BoolValue w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.BoolValue(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.StringValue w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.StringValue(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.BytesValue w -> {
-                String s = java.util.Base64.getEncoder().encodeToString(w.value());
+            case Wrappers.BytesValue(var value) -> {
+                String s = java.util.Base64.getEncoder().encodeToString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
@@ -719,7 +719,14 @@ public final class ProtobufJsonRuntime {
             int trim = s.length();
             while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
             // Rounded to a multiple of 3 (3, 6, or 9 canonical digits).
-            int width = trim <= 3 ? 3 : (trim <= 6 ? 6 : 9);
+            int width;
+            if (trim <= 3) {
+                width = 3;
+            } else if (trim <= 6) {
+                width = 6;
+            } else {
+                width = 9;
+            }
             sb.append(s, 0, width);
         }
         sb.append('s');
@@ -784,7 +791,7 @@ public final class ProtobufJsonRuntime {
             String frac = body.substring(dot + 1);
             // Pad to 9 digits or truncate if longer (the first 9).
             if (frac.length() > 9) frac = frac.substring(0, 9);
-            else while (frac.length() < 9) frac += "0";
+            else if (frac.length() < 9) frac = frac + "0".repeat(9 - frac.length());
             nanos = Integer.parseInt(frac);
         }
         if (negative) { sec = -sec; nanos = -nanos; }
@@ -1131,9 +1138,9 @@ public final class ProtobufJsonRuntime {
                     JsonParser.Event next = parser.next();
                     if (next == JsonParser.Event.END_ARRAY) break;
                     Object scalar = readScalar(fb, parser, next);
-                    if (scalar instanceof UnknownEnumInt uei) {
+                    if (scalar instanceof UnknownEnumInt(int unknownValue)) {
                         if (unknownFieldsBuilder != null) {
-                            unknownFieldsBuilder.recordVarint(fb.number, uei.value());
+                            unknownFieldsBuilder.recordVarint(fb.number, unknownValue);
                         }
                         // No addition to the list — a Java enum cannot carry an
                         // unknown value. The wire/JSON side re-emits via UnknownFieldSet.
@@ -1143,9 +1150,9 @@ public final class ProtobufJsonRuntime {
                 }
             } else {
                 Object scalar = readScalar(fb, parser, v);
-                if (scalar instanceof UnknownEnumInt uei) {
+                if (scalar instanceof UnknownEnumInt(int unknownValue)) {
                     if (unknownFieldsBuilder != null) {
-                        unknownFieldsBuilder.recordVarint(fb.number, uei.value());
+                        unknownFieldsBuilder.recordVarint(fb.number, unknownValue);
                     }
                     // slots[idx] stays null — will be defaulted below.
                 } else {

@@ -420,10 +420,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int enumValue = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield enumValue < 0 ? CodedOutputStream.computeRawVarint64Size(enumValue)
+                                    : CodedOutputStream.computeRawVarint32Size(enumValue);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
@@ -530,10 +530,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int enumValue = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield enumValue < 0 ? CodedOutputStream.computeRawVarint64Size(enumValue)
+                                    : CodedOutputStream.computeRawVarint32Size(enumValue);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;

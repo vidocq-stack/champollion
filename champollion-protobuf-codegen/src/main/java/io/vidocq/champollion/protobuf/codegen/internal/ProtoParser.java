@@ -208,7 +208,8 @@ public final class ProtoParser {
 
     private ImportDecl parseImport() {
         consume(); // 'import'
-        boolean pub = false, weak = false;
+        boolean pub = false;
+        boolean weak = false;
         if (peek().kind() == TokenKind.IDENT && peek().text().equals("public")) {
             consume(); pub = true;
         } else if (peek().kind() == TokenKind.IDENT && peek().text().equals("weak")) {

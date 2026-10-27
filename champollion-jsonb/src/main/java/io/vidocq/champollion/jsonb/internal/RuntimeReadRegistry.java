@@ -138,9 +138,7 @@ final class RuntimeReadRegistry {
 
     BindingReader readerFor(Type t) {
         // Global adapter or deserializer registered for this type?
-        Class<?> rawAd = t instanceof Class<?> cc ? cc
-                : t instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
-                : null;
+        Class<?> rawAd = rawClassOf(t, null);
         var adapterReader = adapterReaderFor(rawAd);
         if (adapterReader != null) return adapterReader;
         var deserializerReader = deserializerReaderFor(rawAd, t);
@@ -154,9 +152,7 @@ final class RuntimeReadRegistry {
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             Type comp = ga.getGenericComponentType();
-            Class<?> rawComp = comp instanceof Class<?> cc ? cc
-                    : comp instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
-                    : Object.class;
+            Class<?> rawComp = rawClassOf(comp, Object.class);
             return arrayReader(rawComp);
         }
         if (t instanceof java.lang.reflect.TypeVariable<?> || t instanceof java.lang.reflect.WildcardType) {
@@ -181,8 +177,7 @@ final class RuntimeReadRegistry {
         }
         if (direct == null) return null;
         final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
-        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(
-                (Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
+        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(adapter.getClass());
         BindingReader inner = readerForGeneric(adaptedGeneric);
         return parser -> {
             Object adaptedValue = inner.read(parser);
@@ -279,13 +274,20 @@ final class RuntimeReadRegistry {
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             Type comp = ga.getGenericComponentType();
-            Class<?> rawComp = comp instanceof Class<?> cc ? cc
-                    : comp instanceof java.lang.reflect.ParameterizedType pt ? (Class<?>) pt.getRawType()
-                    : Object.class;
+            Class<?> rawComp = rawClassOf(comp, Object.class);
             return arrayReader(rawComp);
         }
         if (t instanceof Class<?> c) return readerForRaw(c);
         return this::dynamicValue;
+    }
+
+    /** Raw class of a {@link Class} or a {@link java.lang.reflect.ParameterizedType}, otherwise {@code fallback}. */
+    private static Class<?> rawClassOf(Type t, Class<?> fallback) {
+        return switch (t) {
+            case Class<?> c -> c;
+            case java.lang.reflect.ParameterizedType pt -> (Class<?>) pt.getRawType();
+            case null, default -> fallback;
+        };
     }
 
     // ===== Resolution by raw class =====
@@ -553,8 +555,11 @@ final class RuntimeReadRegistry {
             for (var entry : writersByName.entrySet()) {
                 BeanWriter bw = entry.getValue();
                 boolean visible;
-                Method method = bw instanceof MethodSetter ms ? ms.m
-                        : bw instanceof MhSetter mhs ? mhs.m : null;
+                Method method = switch (bw) {
+                    case MethodSetter(Method setter, var _) -> setter;
+                    case MhSetter(var _, Method setter, var _) -> setter;
+                    case null, default -> null;
+                };
                 if (method != null) {
                     boolean methodVisible = visibility.isVisible(method);
                     String prop = RuntimeBindingRegistry.beanSetterOf(method);
@@ -1124,9 +1129,8 @@ final class RuntimeReadRegistry {
         if (required != null) {
             for (int i = 0; i < paramTypes.length; i++) {
                 if (required[i] && !seen[i]) {
-                    String paramName = creator instanceof Constructor<?> cc
-                            ? cc.getParameters()[i].getName()
-                            : ((java.lang.reflect.Method) creator).getParameters()[i].getName();
+                    // Executable.getParameters() serves both constructors and factory methods.
+                    String paramName = creator.getParameters()[i].getName();
                     throw new JsonbException("Missing required @JsonbCreator parameter '" + paramName
                             + "' for " + creator.getDeclaringClass().getName());
                 }

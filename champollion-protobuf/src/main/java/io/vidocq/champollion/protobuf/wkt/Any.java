@@ -107,9 +107,9 @@ public record Any(
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof Any a
-                && Objects.equals(type_url, a.type_url)
-                && java.util.Arrays.equals(value, a.value);
+        return o instanceof Any(String otherTypeUrl, byte[] otherValue)
+                && Objects.equals(type_url, otherTypeUrl)
+                && java.util.Arrays.equals(value, otherValue);
     }
 
     @Override

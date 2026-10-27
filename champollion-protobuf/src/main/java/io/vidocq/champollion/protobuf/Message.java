@@ -53,10 +53,9 @@ public interface Message {
         Protobuf.writeTo(this, out);
     }
 
-    @SuppressWarnings("unchecked")
     static <T> T parseFrom(Class<T> type, byte[] data) {
         try {
-            return (T) Protobuf.parser(type).parseFrom(data);
+            return Protobuf.parser(type).parseFrom(data);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
