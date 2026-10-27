@@ -478,7 +478,7 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                         y = buffer[p++];
                         x ^= (y << 28);
                         x ^= (~0 << 7) ^ (~0 << 14) ^ (~0 << 21) ^ (~0 << 28);
-                        if (y < 0) p = skipSignExtension(p);
+                        p = skipSignExtension(p, y);
                     }
                 }
             }
@@ -487,10 +487,11 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
         }
 
         /**
-         * Skips the sign-extension bytes of a negative int32 encoded on 10 bytes: the 5 bytes
-         * after the 5th carry no value, and the varint must end within them.
+         * Skips the sign-extension bytes of a negative int32 encoded on 10 bytes: when the 5th
+         * byte continues the varint, the 5 bytes after it carry no value and must end it.
          */
-        private int skipSignExtension(int p) throws IOException {
+        private int skipSignExtension(int p, int fifthByte) throws IOException {
+            if (fifthByte >= 0) return p;
             for (int i = 0; i < 5; i++) {
                 if (buffer[p++] >= 0) return p;
             }
