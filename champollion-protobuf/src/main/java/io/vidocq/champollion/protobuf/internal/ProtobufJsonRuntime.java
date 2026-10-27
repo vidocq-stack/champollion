@@ -67,6 +67,13 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ProtobufJsonRuntime {
 
+    // Proto3 JSON spellings of the non-finite floating-point values.
+    private static final String JSON_INFINITY = "Infinity";
+    private static final String JSON_NEGATIVE_INFINITY = "-Infinity";
+    // Members of the JSON form of google.protobuf.Any.
+    private static final String ANY_TYPE = "@type";
+    private static final String ANY_VALUE = "value";
+
     private static final ConcurrentHashMap<Class<?>, JsonBindingPlan> PLANS = new ConcurrentHashMap<>();
 
     private ProtobufJsonRuntime() {}
@@ -262,9 +269,9 @@ public final class ProtobufJsonRuntime {
                 if (Float.isNaN(v)) {
                     if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
                 } else if (v == Float.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
+                    if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY);
                 } else if (v == Float.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
+                    if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY);
                 } else {
                     if (key != null) gen.write(key, v); else gen.write(v);
                 }
@@ -274,9 +281,9 @@ public final class ProtobufJsonRuntime {
                 if (Double.isNaN(v)) {
                     if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
                 } else if (v == Double.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
+                    if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY);
                 } else if (v == Double.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
+                    if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY);
                 } else {
                     if (key != null) gen.write(key, v); else gen.write(v);
                 }
@@ -462,11 +469,11 @@ public final class ProtobufJsonRuntime {
 
         if (key != null) gen.writeStartObject(key);
         else gen.writeStartObject();
-        gen.write("@type", typeUrl);
+        gen.write(ANY_TYPE, typeUrl);
 
         if (type == null) {
             // Fallback: unknown type — emits the base64 value.
-            gen.write("value", java.util.Base64.getEncoder().encodeToString(any.value()));
+            gen.write(ANY_VALUE, java.util.Base64.getEncoder().encodeToString(any.value()));
             gen.writeEnd();
             return;
         }
@@ -481,7 +488,7 @@ public final class ProtobufJsonRuntime {
 
         if (isWktClass(type) && type != Empty.class) {
             // WKT: a single "value" field with the WKT canonical format.
-            writeWktAsValue(wrapped, gen, "value");
+            writeWktAsValue(wrapped, gen, ANY_VALUE);
         } else if (type == Empty.class) {
             // Proto3 §any spec: Any wrapping Empty does NOT emit a "value" — only @type.
         } else {
@@ -505,10 +512,10 @@ public final class ProtobufJsonRuntime {
     private static Any readAnyFromObject(JsonObject obj) throws java.io.IOException {
         // Spec: empty Any {} = default Any (type_url="", value=byte[0]).
         if (obj.isEmpty()) return new Any("", new byte[0]);
-        if (!obj.containsKey("@type")) {
+        if (!obj.containsKey(ANY_TYPE)) {
             throw new java.io.IOException("Any object must contain @type");
         }
-        String typeUrl = obj.getString("@type");
+        String typeUrl = obj.getString(ANY_TYPE);
         // Proto3 §any spec: @type must be of the form '<base>/<full.name>'
         // (typically type.googleapis.com/<full.name>). No slash = invalid.
         // Also: empty @type with other fields present = invalid (a partial Any
@@ -526,7 +533,7 @@ public final class ProtobufJsonRuntime {
         byte[] valueBytes;
         if (type == null) {
             // Fallback : value comme base64
-            JsonValue v = obj.get("value");
+            JsonValue v = obj.get(ANY_VALUE);
             if (v == null) valueBytes = new byte[0];
             else if (v instanceof JsonString js) {
                 valueBytes = java.util.Base64.getDecoder().decode(js.getString());
@@ -538,7 +545,7 @@ public final class ProtobufJsonRuntime {
 
         if (isWktClass(type)) {
             // WKT: a single "value" field to parse through the WKT machinery
-            JsonValue v = obj.get("value");
+            JsonValue v = obj.get(ANY_VALUE);
             if (v == null) {
                 if (type == Empty.class) {
                     valueBytes = new byte[0];
@@ -561,7 +568,7 @@ public final class ProtobufJsonRuntime {
         // Message ordinaire : reconstruire un JSON object sans @type, parser via runtime
         var builder = Json.createObjectBuilder();
         for (var entry : obj.entrySet()) {
-            if (!entry.getKey().equals("@type")) builder.add(entry.getKey(), entry.getValue());
+            if (!entry.getKey().equals(ANY_TYPE)) builder.add(entry.getKey(), entry.getValue());
         }
         JsonObject withoutType = builder.build();
         String inner = jsonValueToString(withoutType);
@@ -634,15 +641,15 @@ public final class ProtobufJsonRuntime {
 
     private static void writeWrapperDouble(double v, JsonGenerator gen, String key) {
         if (Double.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
-        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
+        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY); }
+        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY); }
         else { if (key != null) gen.write(key, v); else gen.write(v); }
     }
 
     private static void writeWrapperFloat(float v, JsonGenerator gen, String key) {
         if (Float.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
-        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
+        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY); }
+        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY); }
         else { if (key != null) gen.write(key, v); else gen.write(v); }
     }
 
@@ -1356,8 +1363,8 @@ public final class ProtobufJsonRuntime {
             String s = parser.getString();
             return switch (s) {
                 case "NaN" -> Double.NaN;
-                case "Infinity" -> Double.POSITIVE_INFINITY;
-                case "-Infinity" -> Double.NEGATIVE_INFINITY;
+                case JSON_INFINITY -> Double.POSITIVE_INFINITY;
+                case JSON_NEGATIVE_INFINITY -> Double.NEGATIVE_INFINITY;
                 default -> Double.parseDouble(s);
             };
         }

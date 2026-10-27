@@ -47,6 +47,9 @@ import java.util.ServiceLoader;
  */
 public final class Protobuf {
 
+    /** Name reported when a null message is passed in. */
+    private static final String MESSAGE_ARG = "message";
+
     private Protobuf() {}
 
     public static <T> Parser<T> parser(Class<T> type) {
@@ -72,7 +75,7 @@ public final class Protobuf {
     }
 
     public static byte[] toByteArray(Object message) {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         try {
             int size = getSerializedSize(message);
             byte[] buffer = new byte[size];
@@ -86,7 +89,7 @@ public final class Protobuf {
     }
 
     public static void writeTo(Object message, OutputStream out) throws IOException {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         Objects.requireNonNull(out, "out");
         CodedOutputStream cos = CodedOutputStream.newInstance(out);
         RuntimeBinding.writeTo(message, cos);
@@ -94,13 +97,13 @@ public final class Protobuf {
     }
 
     public static void writeTo(Object message, CodedOutputStream out) throws IOException {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         Objects.requireNonNull(out, "out");
         RuntimeBinding.writeTo(message, out);
     }
 
     public static int getSerializedSize(Object message) {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         return RuntimeBinding.getSerializedSize(message);
     }
 }

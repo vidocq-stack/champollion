@@ -49,6 +49,8 @@ import java.util.Map;
  */
 public final class ProtoParser {
 
+    private static final String OPTION = "option";
+
     private static final Map<String, Scalar> SCALARS = Map.ofEntries(
             Map.entry("double", Scalar.DOUBLE), Map.entry("float", Scalar.FLOAT),
             Map.entry("int32", Scalar.INT32), Map.entry("int64", Scalar.INT64),
@@ -87,7 +89,7 @@ public final class ProtoParser {
                 switch (t.text()) {
                     case "package" -> packageName = parsePackage();
                     case "import" -> imports.add(parseImport());
-                    case "option" -> options.add(parseOption());
+                    case OPTION -> options.add(parseOption());
                     case "message" -> messages.add(parseMessage());
                     case "enum" -> enums.add(parseEnum());
                     case "service" -> services.add(parseService());
@@ -113,7 +115,7 @@ public final class ProtoParser {
             if (t.kind() == TokenKind.IDENT) {
                 if (t.text().equals("rpc")) {
                     methods.add(parseRpcMethod());
-                } else if (t.text().equals("option")) {
+                } else if (t.text().equals(OPTION)) {
                     parseOption();
                 } else {
                     throw err("Unexpected token inside service body", t);
@@ -262,7 +264,7 @@ public final class ProtoParser {
                     case "enum" -> nestedEnums.add(parseEnum());
                     case "reserved" -> skipUntilSemi();
                     case "extensions" -> skipUntilSemi();
-                    case "option" -> options.add(parseOption());
+                    case OPTION -> options.add(parseOption());
                     case "oneof" -> skipBlock(); // M2.1 : ignore oneof
                     case "map" -> skipUntilSemi();      // M2.1 : ignore map
                     default -> fields.add(parseField());
@@ -325,7 +327,7 @@ public final class ProtoParser {
             Token t = peek();
             if (t.kind() == TokenKind.SEMI) { consume(); continue; }
             if (t.kind() == TokenKind.IDENT) {
-                if (t.text().equals("option")) { parseOption(); continue; }
+                if (t.text().equals(OPTION)) { parseOption(); continue; }
                 if (t.text().equals("reserved")) { skipUntilSemi(); continue; }
                 Token vname = consume();
                 expect(TokenKind.EQ);

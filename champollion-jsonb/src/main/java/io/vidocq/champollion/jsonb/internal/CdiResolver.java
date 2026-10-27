@@ -46,6 +46,8 @@ final class CdiResolver {
     private static final MethodHandle INSTANCE_IS_AMBIGUOUS;
     private static final boolean CDI_AVAILABLE;
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
+    /** Matched by name: jakarta.inject is not a dependency of this module. */
+    private static final String INJECT = "jakarta.inject.Inject";
 
     static {
         MethodHandle current = null, select = null, get = null,
@@ -117,17 +119,17 @@ final class CdiResolver {
         }
         for (var f : cls.getDeclaredFields()) {
             for (var ann : f.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+                if (INJECT.equals(ann.annotationType().getName())) return true;
             }
         }
         for (var ctor : cls.getDeclaredConstructors()) {
             for (var ann : ctor.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+                if (INJECT.equals(ann.annotationType().getName())) return true;
             }
         }
         for (var m : cls.getDeclaredMethods()) {
             for (var ann : m.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+                if (INJECT.equals(ann.annotationType().getName())) return true;
             }
         }
         return false;

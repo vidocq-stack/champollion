@@ -84,6 +84,9 @@ import java.util.Set;
 public final class ProtobufStaticProcessor extends AbstractProcessor {
 
     private static final String SERVICE_FILE = "META-INF/services/io.vidocq.champollion.protobuf.ParserProvider";
+    // Fragments of the generated source.
+    private static final String END_METHOD = "    }";
+    private static final String LIST_ADD = ".add(";
     private final Set<String> providers = new LinkedHashSet<>();
 
     @Override
@@ -185,7 +188,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                 pw.print(rc.getSimpleName());
             }
             pw.println(");");
-            pw.println("    }");
+            pw.println(END_METHOD);
             pw.println();
             // Helper for nested messages: limit + recursion guard.
             pw.println("    private static <X> X readNested(Class<X> cls, CodedInputStream in) throws IOException {");
@@ -196,13 +199,13 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("        in.decrementRecursionDepth();");
             pw.println("        in.popLimit(ol);");
             pw.println("        return result;");
-            pw.println("    }");
+            pw.println(END_METHOD);
             pw.println();
             // Lenient enum helper (proto3 forward-compat: unknown values → null).
             pw.println("    private static <E> E lookupEnumOrNull(E[] values, int ordinal) {");
             pw.println("        if (ordinal < 0 || ordinal >= values.length) return null;");
             pw.println("        return values[ordinal];");
-            pw.println("    }");
+            pw.println(END_METHOD);
             pw.println("}");
         }
     }
@@ -228,7 +231,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("    public <T> Parser<T> parserFor(Class<T> type) {");
             pw.println("        return type == " + simple + ".class ? (Parser<T>) new "
                     + simple + "$$Parser() : null;");
-            pw.println("    }");
+            pw.println(END_METHOD);
             pw.println("}");
         }
         return providerFqn;
@@ -319,15 +322,15 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                 pw.println("                        int sz = in.readRawVarint32();");
                 pw.println("                        int ol = in.pushLimit(sz);");
                 pw.println("                        while (!in.isAtEnd()) {");
-                pw.println("                            " + name + ".add(" + scalarRead(pf.type(), elem) + ");");
+                pw.println("                            " + name + LIST_ADD + scalarRead(pf.type(), elem) + ");");
                 pw.println("                        }");
                 pw.println("                        in.popLimit(ol);");
                 pw.println("                    } else {");
-                pw.println("                        " + name + ".add(" + scalarRead(pf.type(), elem) + ");");
+                pw.println("                        " + name + LIST_ADD + scalarRead(pf.type(), elem) + ");");
                 pw.println("                    }");
             } else {
                 // STRING/BYTES/MESSAGE non packable : un tag par valeur.
-                pw.println("                    " + name + ".add(" + scalarRead(pf.type(), elem) + ");");
+                pw.println("                    " + name + LIST_ADD + scalarRead(pf.type(), elem) + ");");
             }
             return;
         }

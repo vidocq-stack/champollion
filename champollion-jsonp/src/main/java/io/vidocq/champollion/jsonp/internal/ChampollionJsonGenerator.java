@@ -64,6 +64,9 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      */
     private static final int BUFFER_SIZE = 1024;
 
+    private static final String JSON_TRUE = "true";
+    private static final String JSON_FALSE = "false";
+
     private final Writer out;
     private final boolean pretty;
     private final Deque<Ctx> stack = new ArrayDeque<>();
@@ -186,7 +189,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     @Override public JsonGenerator write(String name, boolean value) {
         beforeKey(name);
-        writeRaw(value ? "true" : "false");
+        writeRaw(value ? JSON_TRUE : JSON_FALSE);
         afterValue();
         return this;
     }
@@ -235,8 +238,8 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
             }
             case STRING -> writeString(((jakarta.json.JsonString) value).getString());
             case NUMBER -> writeRaw(((jakarta.json.JsonNumber) value).bigDecimalValue().toString());
-            case TRUE -> writeRaw("true");
-            case FALSE -> writeRaw("false");
+            case TRUE -> writeRaw(JSON_TRUE);
+            case FALSE -> writeRaw(JSON_FALSE);
             case NULL -> writeRaw("null");
         }
     }
@@ -285,7 +288,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     @Override public JsonGenerator write(boolean value) {
         beforeValue();
-        writeRaw(value ? "true" : "false");
+        writeRaw(value ? JSON_TRUE : JSON_FALSE);
         afterValue();
         return this;
     }

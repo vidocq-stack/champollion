@@ -52,21 +52,24 @@ import java.util.Objects;
  */
 public final class ProtobufJson {
 
+    /** Name reported when a null message is passed in. */
+    private static final String MESSAGE_ARG = "message";
+
     private ProtobufJson() {}
 
     public static String toJson(Object message) {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         return ProtobufJsonRuntime.toJsonString(message);
     }
 
     public static void toJson(Object message, Writer writer) {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         Objects.requireNonNull(writer, "writer");
         ProtobufJsonRuntime.toJson(message, writer);
     }
 
     public static void toJson(Object message, OutputStream out) {
-        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(message, MESSAGE_ARG);
         Objects.requireNonNull(out, "out");
         ProtobufJsonRuntime.toJson(message, out);
     }

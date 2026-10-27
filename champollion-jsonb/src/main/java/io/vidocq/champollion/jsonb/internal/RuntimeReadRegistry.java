@@ -52,6 +52,9 @@ import java.util.UUID;
  */
 final class RuntimeReadRegistry {
 
+    /** JSON-B marker for "use the default" in {@code @JsonbDateFormat} / {@code @JsonbNumberFormat}. */
+    private static final String JSONB_DEFAULT = "##default";
+
     private final String defaultDateFormat;
     private final String binaryDataStrategy;
     private final String propertyNamingStrategy;
@@ -734,9 +737,9 @@ final class RuntimeReadRegistry {
         }
         if (ann == null) return null;
         String pattern = ann.value();
-        java.util.Locale locale = "##default".equals(ann.locale()) ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
+        java.util.Locale locale = JSONB_DEFAULT.equals(ann.locale()) ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
         java.text.NumberFormat fmt;
-        if ("##default".equals(pattern) || pattern.isEmpty()) {
+        if (JSONB_DEFAULT.equals(pattern) || pattern.isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(locale);
             normalizeFrenchGroupSeparator(sym);
             fmt = new java.text.DecimalFormat(((java.text.DecimalFormat) java.text.NumberFormat.getInstance(locale)).toPattern(), sym);
@@ -940,7 +943,7 @@ final class RuntimeReadRegistry {
         var ann = p.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
         if (ann == null) return java.util.Optional.empty();
         var spec = new RuntimeBindingRegistry.DateFormatSpec(ann.value(),
-                ann.locale().equals("##default") ? java.util.Locale.getDefault()
+                ann.locale().equals(JSONB_DEFAULT) ? java.util.Locale.getDefault()
                         : java.util.Locale.forLanguageTag(ann.locale()));
         return java.util.Optional.of(makeDateReader(paramType, spec));
     }

@@ -44,6 +44,11 @@ import java.util.Objects;
  */
 public final class JavaEmitter {
 
+    // Java primitive names shared by the type mapping and the boxing table.
+    private static final String JAVA_FLOAT = "float";
+    private static final String JAVA_DOUBLE = "double";
+    private static final String JAVA_BOOLEAN = "boolean";
+
     private final String javaPackage;
     private final boolean staticParser;
 
@@ -89,7 +94,7 @@ public final class JavaEmitter {
 
     private String emitServiceFile(Descriptors.ServiceDescriptor s) {
         StringBuilder sb = new StringBuilder(1024);
-        sb.append("package ").append(javaPackage).append(";\n\n");
+        appendPackage(sb);
         sb.append("import io.vidocq.champollion.protobuf.ProtobufRpc;\n");
         sb.append("import io.vidocq.champollion.protobuf.ProtobufService;\n\n");
         sb.append("@ProtobufService(\"").append(s.fullName()).append("\")\n");
@@ -131,7 +136,7 @@ public final class JavaEmitter {
 
     private String emitMessageFile(Descriptors.Descriptor d) {
         StringBuilder sb = new StringBuilder(2048);
-        sb.append("package ").append(javaPackage).append(";\n\n");
+        appendPackage(sb);
         sb.append("import io.vidocq.champollion.protobuf.FieldType;\n");
         sb.append("import io.vidocq.champollion.protobuf.Message;\n");
         sb.append("import io.vidocq.champollion.protobuf.ProtobufField;\n");
@@ -184,9 +189,14 @@ public final class JavaEmitter {
 
     private String emitEnumFile(Descriptors.EnumDescriptor e) {
         StringBuilder sb = new StringBuilder(512);
-        sb.append("package ").append(javaPackage).append(";\n\n");
+        appendPackage(sb);
         emitEnumType(sb, e, "");
         return sb.toString();
+    }
+
+    /** Package declaration that opens every emitted source file. */
+    private void appendPackage(StringBuilder sb) {
+        sb.append("package ").append(javaPackage).append(";\n\n");
     }
 
     private void emitEnumType(StringBuilder sb, Descriptors.EnumDescriptor e, String indent) {
@@ -212,9 +222,9 @@ public final class JavaEmitter {
         return switch (f.type()) {
             case INT32, UINT32, SINT32, FIXED32, SFIXED32 -> "int";
             case INT64, UINT64, SINT64, FIXED64, SFIXED64 -> "long";
-            case FLOAT -> "float";
-            case DOUBLE -> "double";
-            case BOOL -> "boolean";
+            case FLOAT -> JAVA_FLOAT;
+            case DOUBLE -> JAVA_DOUBLE;
+            case BOOL -> JAVA_BOOLEAN;
             case STRING -> "String";
             case BYTES -> "byte[]";
             case ENUM -> f.enumTypeName() == null ? "Enum<?>" : simpleNameForReference(f.enumTypeName());
@@ -227,9 +237,9 @@ public final class JavaEmitter {
         return switch (t) {
             case "int" -> "Integer";
             case "long" -> "Long";
-            case "float" -> "Float";
-            case "double" -> "Double";
-            case "boolean" -> "Boolean";
+            case JAVA_FLOAT -> "Float";
+            case JAVA_DOUBLE -> "Double";
+            case JAVA_BOOLEAN -> "Boolean";
             default -> t;
         };
     }

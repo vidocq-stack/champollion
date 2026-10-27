@@ -49,6 +49,11 @@ import java.util.UUID;
  */
 final class RuntimeBindingRegistry {
 
+    /** JSON-B marker for "use the default" in {@code @JsonbDateFormat} / {@code @JsonbNumberFormat}. */
+    private static final String JSONB_DEFAULT = "##default";
+    /** Suffix of the class that carries the package-level annotations. */
+    private static final String PACKAGE_INFO = ".package-info";
+
     private final String defaultDateFormat;
     private final boolean writeNullValues;
     private final String binaryDataStrategy;
@@ -570,7 +575,7 @@ final class RuntimeBindingRegistry {
         var spec = findNumberFormatSpec(member, declaringType);
         if (spec == null) return java.util.Optional.empty();
         java.text.NumberFormat fmt;
-        if ("##default".equals(spec.pattern()) || spec.pattern().isEmpty()) {
+        if (JSONB_DEFAULT.equals(spec.pattern()) || spec.pattern().isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(spec.locale());
             normalizeFrenchGroupSeparator(sym);
             fmt = new java.text.DecimalFormat(((java.text.DecimalFormat) java.text.NumberFormat.getInstance(spec.locale())).toPattern(), sym);
@@ -622,7 +627,7 @@ final class RuntimeBindingRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
+                try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
                 if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
@@ -645,7 +650,7 @@ final class RuntimeBindingRegistry {
     }
 
     record DateFormatSpec(String pattern, java.util.Locale locale) {
-        boolean isDefault() { return "##default".equals(pattern); }
+        boolean isDefault() { return JSONB_DEFAULT.equals(pattern); }
     }
 
     static DateFormatSpec findDateFormatSpec(java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
@@ -664,7 +669,7 @@ final class RuntimeBindingRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + ".package-info", false, cl); }
+                try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); }
                 catch (Throwable _) { /* no package-info: no package-level annotation */ }
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
                 if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
@@ -676,7 +681,7 @@ final class RuntimeBindingRegistry {
     private static java.util.Locale parseLocale(String tag) {
         // §4.7.3: "##default" on @JsonbNumberFormat / @JsonbDateFormat means the
         // canonical JSON-B format (group separator ',' decimal '.'), equivalent to Locale.ROOT.
-        if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.ROOT;
+        if (tag == null || tag.isEmpty() || JSONB_DEFAULT.equals(tag)) return java.util.Locale.ROOT;
         return java.util.Locale.forLanguageTag(tag);
     }
 
@@ -960,7 +965,7 @@ final class RuntimeBindingRegistry {
         if (cl == null) cl = ClassLoader.getSystemClassLoader();
         // 1) Explicitly load package-info and read the annotation directly.
         try {
-            Class<?> pkgInfo = Class.forName(pkg.getName() + ".package-info", false, cl);
+            Class<?> pkgInfo = Class.forName(pkg.getName() + PACKAGE_INFO, false, cl);
             var pann = pkgInfo.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (pann != null) {
                 return pann.value().getDeclaredConstructor().newInstance();
@@ -1190,7 +1195,7 @@ final class RuntimeBindingRegistry {
             if (pkg == null) continue;
             ClassLoader cl = c.getClassLoader();
             if (cl == null) cl = ClassLoader.getSystemClassLoader();
-            try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
+            try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
             var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
             if (ann != null) return ann.value();
         }

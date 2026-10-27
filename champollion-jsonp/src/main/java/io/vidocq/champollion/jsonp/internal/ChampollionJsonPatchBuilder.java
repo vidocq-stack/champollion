@@ -29,6 +29,9 @@ import jakarta.json.JsonValue;
  */
 public final class ChampollionJsonPatchBuilder implements JsonPatchBuilder {
 
+    /** RFC 6902 operation member carrying the value of add, replace and test. */
+    private static final String VALUE_MEMBER = "value";
+
     private final ChampollionJsonArrayBuilder ops = new ChampollionJsonArrayBuilder();
 
     public ChampollionJsonPatchBuilder() {}
@@ -39,7 +42,7 @@ public final class ChampollionJsonPatchBuilder implements JsonPatchBuilder {
         }
     }
 
-    @Override public JsonPatchBuilder add(String path, JsonValue value) { return op("add", path, "value", value); }
+    @Override public JsonPatchBuilder add(String path, JsonValue value) { return op("add", path, VALUE_MEMBER, value); }
     @Override public JsonPatchBuilder add(String path, String value) { return add(path, new ChampollionJsonString(value)); }
     @Override public JsonPatchBuilder add(String path, int value) { return add(path, ChampollionJsonNumber.of(value)); }
     @Override public JsonPatchBuilder add(String path, boolean value) { return add(path, value ? JsonValue.TRUE : JsonValue.FALSE); }
@@ -52,7 +55,7 @@ public final class ChampollionJsonPatchBuilder implements JsonPatchBuilder {
         return this;
     }
 
-    @Override public JsonPatchBuilder replace(String path, JsonValue value) { return op("replace", path, "value", value); }
+    @Override public JsonPatchBuilder replace(String path, JsonValue value) { return op("replace", path, VALUE_MEMBER, value); }
     @Override public JsonPatchBuilder replace(String path, String value) { return replace(path, new ChampollionJsonString(value)); }
     @Override public JsonPatchBuilder replace(String path, int value) { return replace(path, ChampollionJsonNumber.of(value)); }
     @Override public JsonPatchBuilder replace(String path, boolean value) { return replace(path, value ? JsonValue.TRUE : JsonValue.FALSE); }
@@ -75,7 +78,7 @@ public final class ChampollionJsonPatchBuilder implements JsonPatchBuilder {
         return this;
     }
 
-    @Override public JsonPatchBuilder test(String path, JsonValue value) { return op("test", path, "value", value); }
+    @Override public JsonPatchBuilder test(String path, JsonValue value) { return op("test", path, VALUE_MEMBER, value); }
     @Override public JsonPatchBuilder test(String path, String value) { return test(path, new ChampollionJsonString(value)); }
     @Override public JsonPatchBuilder test(String path, int value) { return test(path, ChampollionJsonNumber.of(value)); }
     @Override public JsonPatchBuilder test(String path, boolean value) { return test(path, value ? JsonValue.TRUE : JsonValue.FALSE); }

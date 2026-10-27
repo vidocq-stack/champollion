@@ -38,6 +38,9 @@ import java.util.Objects;
  */
 public final class ChampollionJsonPatch implements JsonPatch {
 
+    /** RFC 6902 operation member carrying the value of add, replace and test. */
+    private static final String VALUE_MEMBER = "value";
+
     private final JsonArray operations;
 
     public ChampollionJsonPatch(JsonArray operations) {
@@ -75,7 +78,7 @@ public final class ChampollionJsonPatch implements JsonPatch {
 
     private JsonStructure applyAdd(JsonStructure target, JsonObject op) {
         var pointer = pointerOf(op, "path");
-        JsonValue value = requireMember(op, "value");
+        JsonValue value = requireMember(op, VALUE_MEMBER);
         return pointer.add(target, value);
     }
 
@@ -86,7 +89,7 @@ public final class ChampollionJsonPatch implements JsonPatch {
 
     private JsonStructure applyReplace(JsonStructure target, JsonObject op) {
         var pointer = pointerOf(op, "path");
-        JsonValue value = requireMember(op, "value");
+        JsonValue value = requireMember(op, VALUE_MEMBER);
         return pointer.replace(target, value);
     }
 
@@ -107,7 +110,7 @@ public final class ChampollionJsonPatch implements JsonPatch {
 
     private JsonStructure applyTest(JsonStructure target, JsonObject op) {
         var path = pointerOf(op, "path");
-        JsonValue expected = requireMember(op, "value");
+        JsonValue expected = requireMember(op, VALUE_MEMBER);
         JsonValue actual = path.getValue(target);
         if (!equalsByValue(actual, expected)) {
             throw new JsonException("Test op failed at " + path + ": expected " + expected + ", got " + actual);
