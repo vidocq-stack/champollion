@@ -49,11 +49,6 @@ import java.util.UUID;
  */
 final class RuntimeBindingRegistry {
 
-    /** JSON-B marker for "use the default" in {@code @JsonbDateFormat} / {@code @JsonbNumberFormat}. */
-    private static final String JSONB_DEFAULT = "##default";
-    /** Suffix of the class that carries the package-level annotations. */
-    private static final String PACKAGE_INFO = ".package-info";
-
     private final String defaultDateFormat;
     private final boolean writeNullValues;
     private final String binaryDataStrategy;
@@ -175,7 +170,7 @@ final class RuntimeBindingRegistry {
         }
         if (direct == null) return null;
         final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
-        java.lang.reflect.Type adaptedGeneric = findAdaptedGenericType(adapter.getClass());
+        java.lang.reflect.Type adaptedGeneric = findAdaptedGenericType((Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
         BindingWriter inner = writerForGeneric(adaptedGeneric);
         return (g, value) -> {
             if (value == null) { g.writeNull(); return; }
@@ -297,12 +292,12 @@ final class RuntimeBindingRegistry {
         };
         if (componentType == float.class) return (g, v) -> {
             g.writeStartArray();
-            for (float x : (float[]) v) g.write(x);
+            for (float x : (float[]) v) g.write((double) x);
             g.writeEnd();
         };
         if (componentType == short.class) return (g, v) -> {
             g.writeStartArray();
-            for (short x : (short[]) v) g.write(x);
+            for (short x : (short[]) v) g.write((int) x);
             g.writeEnd();
         };
         if (componentType == char.class) return (g, v) -> {
@@ -345,7 +340,7 @@ final class RuntimeBindingRegistry {
         // BYTE by default
         return (g, v) -> {
             g.writeStartArray();
-            for (byte b : (byte[]) v) g.write(b);
+            for (byte b : (byte[]) v) g.write((int) b);
             g.writeEnd();
         };
     }
@@ -454,7 +449,7 @@ final class RuntimeBindingRegistry {
             // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
-                try { accessor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible accessor fails later, on invoke */ }
+                try { accessor.setAccessible(true); } catch (Exception ignore) {}
                 acc = new MethodAccessor(accessor);
             }
             props.add(new Property(name, acc, w, nillable));
@@ -575,7 +570,7 @@ final class RuntimeBindingRegistry {
         var spec = findNumberFormatSpec(member, declaringType);
         if (spec == null) return java.util.Optional.empty();
         java.text.NumberFormat fmt;
-        if (JSONB_DEFAULT.equals(spec.pattern()) || spec.pattern().isEmpty()) {
+        if ("##default".equals(spec.pattern()) || spec.pattern().isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(spec.locale());
             normalizeFrenchGroupSeparator(sym);
             fmt = new java.text.DecimalFormat(((java.text.DecimalFormat) java.text.NumberFormat.getInstance(spec.locale())).toPattern(), sym);
@@ -627,7 +622,7 @@ final class RuntimeBindingRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
                 if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
@@ -650,7 +645,7 @@ final class RuntimeBindingRegistry {
     }
 
     record DateFormatSpec(String pattern, java.util.Locale locale) {
-        boolean isDefault() { return JSONB_DEFAULT.equals(pattern); }
+        boolean isDefault() { return "##default".equals(pattern); }
     }
 
     static DateFormatSpec findDateFormatSpec(java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
@@ -669,8 +664,8 @@ final class RuntimeBindingRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); }
-                catch (Throwable _) { /* no package-info: no package-level annotation */ }
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); }
+                catch (Throwable ignored) {}
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
                 if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
@@ -681,7 +676,7 @@ final class RuntimeBindingRegistry {
     private static java.util.Locale parseLocale(String tag) {
         // §4.7.3: "##default" on @JsonbNumberFormat / @JsonbDateFormat means the
         // canonical JSON-B format (group separator ',' decimal '.'), equivalent to Locale.ROOT.
-        if (tag == null || tag.isEmpty() || JSONB_DEFAULT.equals(tag)) return java.util.Locale.ROOT;
+        if (tag == null || tag.isEmpty() || "##default".equals(tag)) return java.util.Locale.ROOT;
         return java.util.Locale.forLanguageTag(tag);
     }
 
@@ -856,16 +851,16 @@ final class RuntimeBindingRegistry {
         for (var e : getterByProp.entrySet()) {
             String propName = e.getKey();
             Method m = e.getValue();
-            try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible getter fails later, on invoke */ }
+            try { m.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbNameFromMethod(m, propName);
             Field underlying0 = findFieldByName(type, propName);
             boolean nillable = computeNillable(m, underlying0, type);
             // Date / Number format: @JsonbDateFormat / @JsonbNumberFormat on method, underlying field, type, package, or global config.
             Field underlying = findFieldByName(type, propName);
-            java.lang.reflect.AnnotatedElement memberForDate =
-                    annotatedMember(m, underlying, jakarta.json.bind.annotation.JsonbDateFormat.class);
-            java.lang.reflect.AnnotatedElement memberForNumber =
-                    annotatedMember(m, underlying, jakarta.json.bind.annotation.JsonbNumberFormat.class);
+            java.lang.reflect.AnnotatedElement memberForDate = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)
+                    ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? underlying : null);
+            java.lang.reflect.AnnotatedElement memberForNumber = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class)
+                    ? m : (underlying != null && underlying.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNumberFormat.class) ? underlying : null);
             // §4.7 — @JsonbTypeAdapter / @JsonbTypeSerializer on the getter or its underlying field.
             final Field underlying2 = underlying;
             BindingWriter w = customAdapterWriter(m, underlying2)
@@ -892,7 +887,7 @@ final class RuntimeBindingRegistry {
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
             if (hiddenProps.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on read */ }
+            try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
             boolean nillable = computeNillable(null, f, type);
             BindingWriter w = customAdapterWriter(f, null)
@@ -936,14 +931,6 @@ final class RuntimeBindingRegistry {
         return (g, value) -> writeObject(g, value, props);
     }
 
-    /** The getter when it carries {@code annotation}, else its underlying field when that does, else null. */
-    private static java.lang.reflect.AnnotatedElement annotatedMember(
-            Method getter, Field underlying, Class<? extends java.lang.annotation.Annotation> annotation) {
-        if (getter.isAnnotationPresent(annotation)) return getter;
-        if (underlying != null && underlying.isAnnotationPresent(annotation)) return underlying;
-        return null;
-    }
-
     private jakarta.json.bind.config.PropertyVisibilityStrategy effectiveVisibility(Class<?> type) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
@@ -973,13 +960,12 @@ final class RuntimeBindingRegistry {
         if (cl == null) cl = ClassLoader.getSystemClassLoader();
         // 1) Explicitly load package-info and read the annotation directly.
         try {
-            Class<?> pkgInfo = Class.forName(pkg.getName() + PACKAGE_INFO, false, cl);
+            Class<?> pkgInfo = Class.forName(pkg.getName() + ".package-info", false, cl);
             var pann = pkgInfo.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (pann != null) {
                 return pann.value().getDeclaredConstructor().newInstance();
             }
-        } catch (ClassNotFoundException _) {
-            // No package-info class: fall through to strategy 2.
+        } catch (ClassNotFoundException ignored) {
         } catch (Exception e) {
             throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
         }
@@ -995,13 +981,13 @@ final class RuntimeBindingRegistry {
     private static boolean isVisibleByStrategy(jakarta.json.bind.config.PropertyVisibilityStrategy s, Class<?> type, Property pr) {
         // Spec §4.5: consult BOTH the underlying field (if present) AND the method.
         // A property is visible if either returns true (OR logic).
-        if (pr.accessor instanceof FieldAccessor(Field field)) {
-            return s.isVisible(field);
+        if (pr.accessor instanceof FieldAccessor fa) {
+            return s.isVisible(fa.f);
         }
-        if (pr.accessor instanceof MethodAccessor(Method getter)) {
-            boolean methodVisible = s.isVisible(getter);
+        if (pr.accessor instanceof MethodAccessor ma) {
+            boolean methodVisible = s.isVisible(ma.m);
             // Look up the underlying field by bean property name
-            String propName = beanPropertyOf(getter);
+            String propName = beanPropertyOf(ma.m);
             if (propName != null) {
                 Field f = findFieldByName(type, propName);
                 if (f != null) return methodVisible || s.isVisible(f);
@@ -1062,9 +1048,8 @@ final class RuntimeBindingRegistry {
             switch (strat) {
                 case "LEXICOGRAPHICAL" -> group.sort(java.util.Comparator.comparing(p -> p.name));
                 case "REVERSE" -> group.sort(java.util.Comparator.<Property, String>comparing(p -> p.name).reversed());
-                default -> {
-                    // ANY, and any unknown strategy, keep the declaration order.
-                }
+                case "ANY" -> { }
+                default -> { }
             }
             sortedRest.addAll(group);
         }
@@ -1074,8 +1059,8 @@ final class RuntimeBindingRegistry {
     }
 
     private static Class<?> declaringClassOf(Property pr, Class<?> fallback) {
-        if (pr.accessor instanceof FieldAccessor(Field field)) return field.getDeclaringClass();
-        if (pr.accessor instanceof MethodAccessor(Method getter)) return getter.getDeclaringClass();
+        if (pr.accessor instanceof FieldAccessor fa) return fa.f.getDeclaringClass();
+        if (pr.accessor instanceof MethodAccessor ma) return ma.m.getDeclaringClass();
         return fallback;
     }
 
@@ -1203,7 +1188,7 @@ final class RuntimeBindingRegistry {
             if (pkg == null) continue;
             ClassLoader cl = c.getClassLoader();
             if (cl == null) cl = ClassLoader.getSystemClassLoader();
-            try { Class.forName(pkg.getName() + PACKAGE_INFO, false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
+            try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
             var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
             if (ann != null) return ann.value();
         }
@@ -1223,7 +1208,7 @@ final class RuntimeBindingRegistry {
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
-            catch (NoSuchFieldException _) { /* not declared here: try the superclass */ }
+            catch (NoSuchFieldException ignored) {}
         }
         return null;
     }
@@ -1426,9 +1411,9 @@ final class RuntimeBindingRegistry {
                             .findVirtual(type, accessor.getName(),
                                     java.lang.invoke.MethodType.methodType(c.getType()));
                     acc = new MhAccessor(mh);
-                } catch (NoSuchMethodException | IllegalAccessException _) {
+                } catch (NoSuchMethodException | IllegalAccessException ex) {
                     // Reflection fallback if publicLookup fails (non-exported record).
-                    try { accessor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible accessor fails later, on invoke */ }
+                    try { accessor.setAccessible(true); } catch (Exception ignore) {}
                     acc = new MethodAccessor(accessor);
                 }
             }
@@ -1454,7 +1439,7 @@ final class RuntimeBindingRegistry {
             String propName = beanPropertyOf(m);
             if (propName == null) continue;
             if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible getter fails later, on invoke */ }
+            try { m.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbNameFromMethod(m, propName);
             boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
@@ -1471,7 +1456,7 @@ final class RuntimeBindingRegistry {
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on read */ }
+            try { f.setAccessible(true); } catch (Exception ignore) {}
             String name = jsonbName(f, f.getName());
             boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
@@ -1581,20 +1566,20 @@ final class RuntimeBindingRegistry {
             // P6.2 — primitive fast path (no boxing).
             // Primitives cannot be null → emit directly.
             // The instanceof order follows the frequency of the types.
-            if (p.accessor instanceof LongAccessor(var fn)) {
-                g.write(p.name, fn.applyAsLong(value));
+            if (p.accessor instanceof LongAccessor la) {
+                g.write(p.name, la.fn.applyAsLong(value));
                 continue;
             }
-            if (p.accessor instanceof IntAccessor(var fn)) {
-                g.write(p.name, fn.applyAsInt(value));
+            if (p.accessor instanceof IntAccessor ia) {
+                g.write(p.name, ia.fn.applyAsInt(value));
                 continue;
             }
-            if (p.accessor instanceof DoubleAccessor(var fn)) {
-                g.write(p.name, fn.applyAsDouble(value));
+            if (p.accessor instanceof DoubleAccessor da) {
+                g.write(p.name, da.fn.applyAsDouble(value));
                 continue;
             }
-            if (p.accessor instanceof BooleanAccessor(var fn)) {
-                g.write(p.name, fn.test(value));
+            if (p.accessor instanceof BooleanAccessor ba) {
+                g.write(p.name, ba.fn.test(value));
                 continue;
             }
             Object v;
@@ -1756,7 +1741,7 @@ final class RuntimeBindingRegistry {
                     instMethodType);
             var fn = (java.util.function.Function<Object, Object>) callsite.getTarget().invokeExact();
             return new LambdaAccessor(fn);
-        } catch (Throwable _) {
+        } catch (Throwable t) {
             return null;
         }
     }
@@ -1793,7 +1778,7 @@ final class RuntimeBindingRegistry {
         static final BindingWriter BIG_INTEGER = (g, v) -> g.write((BigInteger) v);
 
         static final BindingWriter BOOLEAN = (g, v) -> g.write((Boolean) v);
-        static final BindingWriter CHAR = (g, v) -> g.write(String.valueOf(v));
+        static final BindingWriter CHAR = (g, v) -> g.write(String.valueOf((Character) v));
 
         static final BindingWriter UUID_W = (g, v) -> g.write(((UUID) v).toString());
         static final BindingWriter URI_W = (g, v) -> g.write(v.toString());

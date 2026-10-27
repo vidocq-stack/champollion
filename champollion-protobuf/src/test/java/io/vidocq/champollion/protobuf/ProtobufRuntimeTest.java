@@ -250,12 +250,12 @@ class ProtobufRuntimeTest {
             SignalRecord original = new SignalRecord(Signal.POSITIVE, byName);
             byte[] expected = expected(o -> {
                 o.writeEnum(1, 2);
-                // map entry {key "low", value -1}: 2 + 3 + 1 + 10 bytes
+                // The map entry of key low and value -1, sixteen bytes: two tags, the key, the varint.
                 o.writeTag(2, WireFormat.WIRETYPE_LENGTH_DELIMITED);
                 o.writeRawVarint32(16);
                 o.writeString(1, "low");
                 o.writeEnum(2, -1);
-                // map entry {key "high", value 2}: 2 + 4 + 1 + 1 bytes
+                // The map entry of key high and value 2, eight bytes: two tags, the key, the varint.
                 o.writeTag(2, WireFormat.WIRETYPE_LENGTH_DELIMITED);
                 o.writeRawVarint32(8);
                 o.writeString(1, "high");

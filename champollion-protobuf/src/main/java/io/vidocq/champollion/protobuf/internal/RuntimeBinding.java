@@ -37,6 +37,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -102,7 +103,7 @@ public final class RuntimeBinding {
         MethodHandles.Lookup lookup;
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException _) {
+        } catch (IllegalAccessException e) {
             // Fallback: a public record in an openless module (for
             // example loaded dynamically in the unnamed module) remains
             // usable via publicLookup — its canonical ctor and accessors are
@@ -420,10 +421,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int enumValue = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield enumValue < 0 ? CodedOutputStream.computeRawVarint64Size(enumValue)
-                                    : CodedOutputStream.computeRawVarint32Size(enumValue);
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
@@ -530,10 +531,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int enumValue = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield enumValue < 0 ? CodedOutputStream.computeRawVarint64Size(enumValue)
-                                    : CodedOutputStream.computeRawVarint32Size(enumValue);
+                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
+                             : CodedOutputStream.computeRawVarint32Size(_v);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;

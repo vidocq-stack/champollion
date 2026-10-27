@@ -49,8 +49,6 @@ import java.util.Map;
  */
 public final class ProtoParser {
 
-    private static final String OPTION = "option";
-
     private static final Map<String, Scalar> SCALARS = Map.ofEntries(
             Map.entry("double", Scalar.DOUBLE), Map.entry("float", Scalar.FLOAT),
             Map.entry("int32", Scalar.INT32), Map.entry("int64", Scalar.INT64),
@@ -89,7 +87,7 @@ public final class ProtoParser {
                 switch (t.text()) {
                     case "package" -> packageName = parsePackage();
                     case "import" -> imports.add(parseImport());
-                    case OPTION -> options.add(parseOption());
+                    case "option" -> options.add(parseOption());
                     case "message" -> messages.add(parseMessage());
                     case "enum" -> enums.add(parseEnum());
                     case "service" -> services.add(parseService());
@@ -115,7 +113,7 @@ public final class ProtoParser {
             if (t.kind() == TokenKind.IDENT) {
                 if (t.text().equals("rpc")) {
                     methods.add(parseRpcMethod());
-                } else if (t.text().equals(OPTION)) {
+                } else if (t.text().equals("option")) {
                     parseOption();
                 } else {
                     throw err("Unexpected token inside service body", t);
@@ -208,8 +206,7 @@ public final class ProtoParser {
 
     private ImportDecl parseImport() {
         consume(); // 'import'
-        boolean pub = false;
-        boolean weak = false;
+        boolean pub = false, weak = false;
         if (peek().kind() == TokenKind.IDENT && peek().text().equals("public")) {
             consume(); pub = true;
         } else if (peek().kind() == TokenKind.IDENT && peek().text().equals("weak")) {
@@ -222,7 +219,7 @@ public final class ProtoParser {
 
     private OptionEntry parseOption() {
         consume(); // 'option'
-        // Optional parentheses around the option name, as in: option (foo.bar) = baz
+        // Skip eventual paren around option name : option (foo.bar) = baz;
         StringBuilder name = new StringBuilder();
         if (peek().kind() == TokenKind.LPAREN) {
             consume();
@@ -265,8 +262,8 @@ public final class ProtoParser {
                     case "enum" -> nestedEnums.add(parseEnum());
                     case "reserved" -> skipUntilSemi();
                     case "extensions" -> skipUntilSemi();
-                    case OPTION -> options.add(parseOption());
-                    case "oneof" -> skipBlock(); // M2.1 : ignore oneof
+                    case "option" -> options.add(parseOption());
+                    case "oneof" -> skipBlock("oneof"); // M2.1 : ignore oneof
                     case "map" -> skipUntilSemi();      // M2.1 : ignore map
                     default -> fields.add(parseField());
                 }
@@ -328,7 +325,7 @@ public final class ProtoParser {
             Token t = peek();
             if (t.kind() == TokenKind.SEMI) { consume(); continue; }
             if (t.kind() == TokenKind.IDENT) {
-                if (t.text().equals(OPTION)) { parseOption(); continue; }
+                if (t.text().equals("option")) { parseOption(); continue; }
                 if (t.text().equals("reserved")) { skipUntilSemi(); continue; }
                 Token vname = consume();
                 expect(TokenKind.EQ);
@@ -373,7 +370,7 @@ public final class ProtoParser {
         if (peek().kind() == TokenKind.SEMI) consume();
     }
 
-    private void skipBlock() {
+    private void skipBlock(String label) {
         consume(); // keyword
         // Optionally consume name
         if (peek().kind() == TokenKind.IDENT) consume();

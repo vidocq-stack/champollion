@@ -31,6 +31,8 @@ import io.vidocq.champollion.protobuf.wkt.Timestamp;
 import io.vidocq.champollion.protobuf.wkt.TypeRegistry;
 import io.vidocq.champollion.protobuf.wkt.Wrappers;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
@@ -46,6 +48,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -66,13 +69,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code Json.createParser}.
  */
 public final class ProtobufJsonRuntime {
-
-    // Proto3 JSON spellings of the non-finite floating-point values.
-    private static final String JSON_INFINITY = "Infinity";
-    private static final String JSON_NEGATIVE_INFINITY = "-Infinity";
-    // Members of the JSON form of google.protobuf.Any.
-    private static final String ANY_TYPE = "@type";
-    private static final String ANY_VALUE = "value";
 
     private static final ConcurrentHashMap<Class<?>, JsonBindingPlan> PLANS = new ConcurrentHashMap<>();
 
@@ -131,7 +127,7 @@ public final class ProtobufJsonRuntime {
                 gen.writeStartObject(fb.jsonName);
                 for (Map.Entry<?, ?> e : map.entrySet()) {
                     String k = mapKeyAsString(fb.mapKeyType, e.getKey());
-                    writeMapValue(fb.mapValueType, e.getValue(), gen, k);
+                    writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
                 }
                 gen.writeEnd();
                 continue;
@@ -210,7 +206,8 @@ public final class ProtobufJsonRuntime {
     }
 
     /** Writes a map value according to its FieldType. Reuses the runtime writeScalar. */
-    private static void writeMapValue(FieldType type, Object value, JsonGenerator gen, String key) {
+    private static void writeMapValue(FieldType type, Class<?> messageClass, Object value,
+                                      JsonGenerator gen, String key) {
         if (value == null) {
             gen.writeNull(key);
             return;
@@ -269,9 +266,9 @@ public final class ProtobufJsonRuntime {
                 if (Float.isNaN(v)) {
                     if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
                 } else if (v == Float.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY);
+                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
                 } else if (v == Float.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY);
+                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
                 } else {
                     if (key != null) gen.write(key, v); else gen.write(v);
                 }
@@ -281,9 +278,9 @@ public final class ProtobufJsonRuntime {
                 if (Double.isNaN(v)) {
                     if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
                 } else if (v == Double.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY);
+                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
                 } else if (v == Double.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY);
+                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
                 } else {
                     if (key != null) gen.write(key, v); else gen.write(v);
                 }
@@ -469,11 +466,11 @@ public final class ProtobufJsonRuntime {
 
         if (key != null) gen.writeStartObject(key);
         else gen.writeStartObject();
-        gen.write(ANY_TYPE, typeUrl);
+        gen.write("@type", typeUrl);
 
         if (type == null) {
             // Fallback: unknown type — emits the base64 value.
-            gen.write(ANY_VALUE, java.util.Base64.getEncoder().encodeToString(any.value()));
+            gen.write("value", java.util.Base64.getEncoder().encodeToString(any.value()));
             gen.writeEnd();
             return;
         }
@@ -488,7 +485,7 @@ public final class ProtobufJsonRuntime {
 
         if (isWktClass(type) && type != Empty.class) {
             // WKT: a single "value" field with the WKT canonical format.
-            writeWktAsValue(wrapped, gen, ANY_VALUE);
+            writeWktAsValue(wrapped, gen, "value");
         } else if (type == Empty.class) {
             // Proto3 §any spec: Any wrapping Empty does NOT emit a "value" — only @type.
         } else {
@@ -512,10 +509,10 @@ public final class ProtobufJsonRuntime {
     private static Any readAnyFromObject(JsonObject obj) throws java.io.IOException {
         // Spec: empty Any {} = default Any (type_url="", value=byte[0]).
         if (obj.isEmpty()) return new Any("", new byte[0]);
-        if (!obj.containsKey(ANY_TYPE)) {
+        if (!obj.containsKey("@type")) {
             throw new java.io.IOException("Any object must contain @type");
         }
-        String typeUrl = obj.getString(ANY_TYPE);
+        String typeUrl = obj.getString("@type");
         // Proto3 §any spec: @type must be of the form '<base>/<full.name>'
         // (typically type.googleapis.com/<full.name>). No slash = invalid.
         // Also: empty @type with other fields present = invalid (a partial Any
@@ -533,7 +530,7 @@ public final class ProtobufJsonRuntime {
         byte[] valueBytes;
         if (type == null) {
             // Fallback : value comme base64
-            JsonValue v = obj.get(ANY_VALUE);
+            JsonValue v = obj.get("value");
             if (v == null) valueBytes = new byte[0];
             else if (v instanceof JsonString js) {
                 valueBytes = java.util.Base64.getDecoder().decode(js.getString());
@@ -545,7 +542,7 @@ public final class ProtobufJsonRuntime {
 
         if (isWktClass(type)) {
             // WKT: a single "value" field to parse through the WKT machinery
-            JsonValue v = obj.get(ANY_VALUE);
+            JsonValue v = obj.get("value");
             if (v == null) {
                 if (type == Empty.class) {
                     valueBytes = new byte[0];
@@ -568,7 +565,7 @@ public final class ProtobufJsonRuntime {
         // Message ordinaire : reconstruire un JSON object sans @type, parser via runtime
         var builder = Json.createObjectBuilder();
         for (var entry : obj.entrySet()) {
-            if (!entry.getKey().equals(ANY_TYPE)) builder.add(entry.getKey(), entry.getValue());
+            if (!entry.getKey().equals("@type")) builder.add(entry.getKey(), entry.getValue());
         }
         JsonObject withoutType = builder.build();
         String inner = jsonValueToString(withoutType);
@@ -587,51 +584,51 @@ public final class ProtobufJsonRuntime {
 
     private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
         return switch (v) {
-            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, null); yield true; }
-            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, null); yield true; }
-            case Wrappers.Int64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
-            case Wrappers.UInt64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
-            case Wrappers.Int32Value(var value) -> { gen.write(value); yield true; }
-            case Wrappers.UInt32Value(var value) -> { gen.write(value); yield true; }
-            case Wrappers.BoolValue(var value) -> { gen.write(value); yield true; }
-            case Wrappers.StringValue(var value) -> { gen.write(value); yield true; }
-            case Wrappers.BytesValue(var value) -> { gen.write(java.util.Base64.getEncoder().encodeToString(value)); yield true; }
+            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, null); yield true; }
+            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, null); yield true; }
+            case Wrappers.Int64Value w -> { gen.write(Long.toString(w.value())); yield true; }
+            case Wrappers.UInt64Value w -> { gen.write(Long.toString(w.value())); yield true; }
+            case Wrappers.Int32Value w -> { gen.write(w.value()); yield true; }
+            case Wrappers.UInt32Value w -> { gen.write(w.value()); yield true; }
+            case Wrappers.BoolValue w -> { gen.write(w.value()); yield true; }
+            case Wrappers.StringValue w -> { gen.write(w.value()); yield true; }
+            case Wrappers.BytesValue w -> { gen.write(java.util.Base64.getEncoder().encodeToString(w.value())); yield true; }
             default -> false;
         };
     }
 
     private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
         return switch (v) {
-            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, key); yield true; }
-            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, key); yield true; }
-            case Wrappers.Int64Value(var value) -> {
-                String s = Long.toString(value);
+            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, key); yield true; }
+            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, key); yield true; }
+            case Wrappers.Int64Value w -> {
+                String s = Long.toString(w.value());
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.UInt64Value(var value) -> {
-                String s = Long.toString(value);
+            case Wrappers.UInt64Value w -> {
+                String s = Long.toString(w.value());
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.Int32Value(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
+            case Wrappers.Int32Value w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
                 yield true;
             }
-            case Wrappers.UInt32Value(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
+            case Wrappers.UInt32Value w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
                 yield true;
             }
-            case Wrappers.BoolValue(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
+            case Wrappers.BoolValue w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
                 yield true;
             }
-            case Wrappers.StringValue(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
+            case Wrappers.StringValue w -> {
+                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
                 yield true;
             }
-            case Wrappers.BytesValue(var value) -> {
-                String s = java.util.Base64.getEncoder().encodeToString(value);
+            case Wrappers.BytesValue w -> {
+                String s = java.util.Base64.getEncoder().encodeToString(w.value());
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
@@ -641,15 +638,15 @@ public final class ProtobufJsonRuntime {
 
     private static void writeWrapperDouble(double v, JsonGenerator gen, String key) {
         if (Double.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY); }
-        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY); }
+        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
+        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
         else { if (key != null) gen.write(key, v); else gen.write(v); }
     }
 
     private static void writeWrapperFloat(float v, JsonGenerator gen, String key) {
         if (Float.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, JSON_INFINITY); else gen.write(JSON_INFINITY); }
-        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, JSON_NEGATIVE_INFINITY); else gen.write(JSON_NEGATIVE_INFINITY); }
+        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
+        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
         else { if (key != null) gen.write(key, v); else gen.write(v); }
     }
 
@@ -719,14 +716,7 @@ public final class ProtobufJsonRuntime {
             int trim = s.length();
             while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
             // Rounded to a multiple of 3 (3, 6, or 9 canonical digits).
-            int width;
-            if (trim <= 3) {
-                width = 3;
-            } else if (trim <= 6) {
-                width = 6;
-            } else {
-                width = 9;
-            }
+            int width = trim <= 3 ? 3 : (trim <= 6 ? 6 : 9);
             sb.append(s, 0, width);
         }
         sb.append('s');
@@ -791,7 +781,7 @@ public final class ProtobufJsonRuntime {
             String frac = body.substring(dot + 1);
             // Pad to 9 digits or truncate if longer (the first 9).
             if (frac.length() > 9) frac = frac.substring(0, 9);
-            else if (frac.length() < 9) frac = frac + "0".repeat(9 - frac.length());
+            else while (frac.length() < 9) frac += "0";
             nanos = Integer.parseInt(frac);
         }
         if (negative) { sec = -sec; nanos = -nanos; }
@@ -1138,9 +1128,9 @@ public final class ProtobufJsonRuntime {
                     JsonParser.Event next = parser.next();
                     if (next == JsonParser.Event.END_ARRAY) break;
                     Object scalar = readScalar(fb, parser, next);
-                    if (scalar instanceof UnknownEnumInt(int unknownValue)) {
+                    if (scalar instanceof UnknownEnumInt uei) {
                         if (unknownFieldsBuilder != null) {
-                            unknownFieldsBuilder.recordVarint(fb.number, unknownValue);
+                            unknownFieldsBuilder.recordVarint(fb.number, uei.value());
                         }
                         // No addition to the list — a Java enum cannot carry an
                         // unknown value. The wire/JSON side re-emits via UnknownFieldSet.
@@ -1150,9 +1140,9 @@ public final class ProtobufJsonRuntime {
                 }
             } else {
                 Object scalar = readScalar(fb, parser, v);
-                if (scalar instanceof UnknownEnumInt(int unknownValue)) {
+                if (scalar instanceof UnknownEnumInt uei) {
                     if (unknownFieldsBuilder != null) {
-                        unknownFieldsBuilder.recordVarint(fb.number, unknownValue);
+                        unknownFieldsBuilder.recordVarint(fb.number, uei.value());
                     }
                     // slots[idx] stays null — will be defaulted below.
                 } else {
@@ -1212,7 +1202,7 @@ public final class ProtobufJsonRuntime {
                         throw new IOException("uint64 out of range: " + bd);
                     }
                     yield bi.longValue(); // bit-preserving
-                } catch (ArithmeticException _) {
+                } catch (ArithmeticException e) {
                     throw new IOException("uint64 expects integer-valued JSON, got " + bd);
                 }
             }
@@ -1284,9 +1274,7 @@ public final class ProtobufJsonRuntime {
                     throw new IOException("Expected message object, got " + v);
                 }
                 if (fb.elementType == Empty.class) {
-                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {
-                        // Empty has no field to bind: skip up to the closing brace.
-                    }
+                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {}
                     yield Empty.INSTANCE;
                 }
                 yield readMessage(planFor(fb.elementType), parser);
@@ -1306,7 +1294,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int32 out of range: " + bd);
             }
             return bi.intValue();
-        } catch (ArithmeticException _) {
+        } catch (ArithmeticException e) {
             throw new IOException("int32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1320,7 +1308,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("uint32 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException _) {
+        } catch (ArithmeticException e) {
             throw new IOException("uint32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1334,7 +1322,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int64 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException _) {
+        } catch (ArithmeticException e) {
             throw new IOException("int64 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1347,7 +1335,7 @@ public final class ProtobufJsonRuntime {
         } else if (v == JsonParser.Event.VALUE_STRING) {
             try {
                 bd = new java.math.BigDecimal(parser.getString());
-            } catch (NumberFormatException _) {
+            } catch (NumberFormatException e) {
                 throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
             }
         } else {
@@ -1370,8 +1358,8 @@ public final class ProtobufJsonRuntime {
             String s = parser.getString();
             return switch (s) {
                 case "NaN" -> Double.NaN;
-                case JSON_INFINITY -> Double.POSITIVE_INFINITY;
-                case JSON_NEGATIVE_INFINITY -> Double.NEGATIVE_INFINITY;
+                case "Infinity" -> Double.POSITIVE_INFINITY;
+                case "-Infinity" -> Double.NEGATIVE_INFINITY;
                 default -> Double.parseDouble(s);
             };
         }
@@ -1445,7 +1433,7 @@ public final class ProtobufJsonRuntime {
         MethodHandles.Lookup lookup;
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException _) {
+        } catch (IllegalAccessException e) {
             lookup = MethodHandles.publicLookup();
         }
         List<FieldBinding> fields = new ArrayList<>();

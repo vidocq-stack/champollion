@@ -46,15 +46,10 @@ final class CdiResolver {
     private static final MethodHandle INSTANCE_IS_AMBIGUOUS;
     private static final boolean CDI_AVAILABLE;
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
-    /** Matched by name: jakarta.inject is not a dependency of this module. */
-    private static final String INJECT = "jakarta.inject.Inject";
 
     static {
-        MethodHandle current = null;
-        MethodHandle select = null;
-        MethodHandle get = null;
-        MethodHandle isUnsatisfied = null;
-        MethodHandle isAmbiguous = null;
+        MethodHandle current = null, select = null, get = null,
+                isUnsatisfied = null, isAmbiguous = null;
         boolean available = false;
         try {
             Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI");
@@ -67,7 +62,7 @@ final class CdiResolver {
             isUnsatisfied = lookup.findVirtual(instCls, "isUnsatisfied", MethodType.methodType(boolean.class));
             isAmbiguous = lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class));
             available = true;
-        } catch (Throwable _) {
+        } catch (Throwable ignore) {
             // CDI absent from the classpath — fallback newInstance will always be used.
         }
         CDI_CURRENT = current;
@@ -101,7 +96,7 @@ final class CdiResolver {
                     Object bean = INSTANCE_GET.invoke(inst);
                     if (bean != null) return (T) bean;
                 }
-            } catch (Throwable _) {
+            } catch (Throwable t) {
                 // Container not started → fallback newInstance.
             }
         }
@@ -122,17 +117,17 @@ final class CdiResolver {
         }
         for (var f : cls.getDeclaredFields()) {
             for (var ann : f.getAnnotations()) {
-                if (INJECT.equals(ann.annotationType().getName())) return true;
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
             }
         }
         for (var ctor : cls.getDeclaredConstructors()) {
             for (var ann : ctor.getAnnotations()) {
-                if (INJECT.equals(ann.annotationType().getName())) return true;
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
             }
         }
         for (var m : cls.getDeclaredMethods()) {
             for (var ann : m.getAnnotations()) {
-                if (INJECT.equals(ann.annotationType().getName())) return true;
+                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
             }
         }
         return false;
@@ -140,7 +135,7 @@ final class CdiResolver {
 
     private static <T> T newInstanceFallback(Class<T> beanClass) throws ReflectiveOperationException {
         var ctor = beanClass.getDeclaredConstructor();
-        try { ctor.setAccessible(true); } catch (Exception _) { /* best effort: newInstance reports an inaccessible constructor */ }
+        try { ctor.setAccessible(true); } catch (Exception ignore) {}
         return ctor.newInstance();
     }
 }

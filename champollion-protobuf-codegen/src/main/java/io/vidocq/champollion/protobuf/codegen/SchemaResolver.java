@@ -25,6 +25,7 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumValueDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Edition;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldDecl;
+import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldKind;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MessageDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MethodDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.NamedType;
@@ -179,7 +180,7 @@ public final class SchemaResolver {
                     "Unresolved " + role + " type '" + ref + "' in rpc "
                             + serviceFull + "." + methodName);
         }
-        if (!(sym instanceof MessageSymbol(MessageDecl decl))) {
+        if (!(sym instanceof MessageSymbol ms)) {
             throw new SchemaResolutionException(
                     "RPC " + role + " must be a message, got " + ref + " in " + serviceFull + "." + methodName);
         }
@@ -193,7 +194,7 @@ public final class SchemaResolver {
             int dot = s.lastIndexOf('.');
             s = (dot < 0) ? "" : s.substring(0, dot);
         }
-        return decl.name();
+        return ms.decl().name();
     }
 
     // ============================================================ Symbol table
@@ -267,22 +268,22 @@ public final class SchemaResolver {
         String enumTypeName = null;
 
         switch (f.type()) {
-            case ScalarType(Scalar scalar) -> type = scalarToFieldType(scalar);
-            case NamedType(String fullName) -> {
-                Symbol sym = lookup(fullName, scope, table);
+            case ScalarType s -> type = scalarToFieldType(s.scalar());
+            case NamedType n -> {
+                Symbol sym = lookup(n.fullName(), scope, table);
                 if (sym == null) {
                     throw new SchemaResolutionException(
-                            "Unresolved type '" + fullName + "' in field "
+                            "Unresolved type '" + n.fullName() + "' in field "
                                     + scope + "." + f.name());
                 }
                 switch (sym) {
-                    case MessageSymbol(MessageDecl decl) -> {
+                    case MessageSymbol ms -> {
                         type = FieldType.MESSAGE;
-                        messageTypeName = canonicalFullName(scope, decl.name(), fullName, table);
+                        messageTypeName = canonicalFullName(scope, ms.decl().name(), n.fullName(), table);
                     }
-                    case EnumSymbol(EnumDecl decl) -> {
+                    case EnumSymbol es -> {
                         type = FieldType.ENUM;
-                        enumTypeName = canonicalFullName(scope, decl.name(), fullName, table);
+                        enumTypeName = canonicalFullName(scope, es.decl().name(), n.fullName(), table);
                     }
                 }
             }
@@ -351,9 +352,9 @@ public final class SchemaResolver {
 
     private static Descriptors.Syntax toSyntax(ProtoAst.Syntax syntax) {
         return switch (syntax) {
-            case Proto2 _ -> Descriptors.Syntax.PROTO2;
-            case Proto3 _ -> Descriptors.Syntax.PROTO3;
-            case Edition(String name) -> "2023".equals(name)
+            case Proto2 ignored -> Descriptors.Syntax.PROTO2;
+            case Proto3 ignored -> Descriptors.Syntax.PROTO3;
+            case Edition e -> "2023".equals(e.name())
                     ? Descriptors.Syntax.EDITION_2023
                     : Descriptors.Syntax.EDITION_2023; // all future editions mapped here
         };

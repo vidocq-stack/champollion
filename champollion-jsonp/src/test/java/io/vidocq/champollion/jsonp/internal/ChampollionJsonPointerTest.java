@@ -27,6 +27,8 @@ import jakarta.json.JsonValue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.StringReader;
 
@@ -113,24 +115,12 @@ class ChampollionJsonPointerTest {
             assertEquals(8, ((jakarta.json.JsonNumber) new ChampollionJsonPointer("/m~0n").getValue(doc)).intValue());
         }
 
-        @Test
-        void array_index_out_of_bounds_throws() {
-            var pointer = new ChampollionJsonPointer("/foo/2");
-            var doc = doc();
-            assertThrows(JsonException.class, () -> pointer.getValue(doc));
-        }
-
-        @Test
-        void unknown_member_name_throws() {
-            var pointer = new ChampollionJsonPointer("/missing");
-            var doc = doc();
-            assertThrows(JsonException.class, () -> pointer.getValue(doc));
-        }
-
-        @Test
-        void array_index_with_leading_zero_is_invalid() {
-            // RFC 6901 §4: array indexes cannot have leading zeros (except "0")
-            var pointer = new ChampollionJsonPointer("/foo/01");
+        /** An index out of bounds, an unknown member, and an index with a leading zero, which
+         *  RFC 6901 §4 forbids (except "0"), all fail. */
+        @ParameterizedTest
+        @ValueSource(strings = {"/foo/2", "/missing", "/foo/01"})
+        void a_pointer_to_nothing_throws(String path) {
+            var pointer = new ChampollionJsonPointer(path);
             var doc = doc();
             assertThrows(JsonException.class, () -> pointer.getValue(doc));
         }
