@@ -123,7 +123,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
             if (read >= 3 && (head[0] & 0xff) == 0xEF && (head[1] & 0xff) == 0xBB
                     && (head[2] & 0xff) == 0xBF) {
                 pb.unread(head, 3, read - 3);
-                return new InputStreamReader(pb, StandardCharsets.UTF_8);
+                return utf8Reader(pb);
             }
             // No BOM: RFC 8259 §8.1 heuristic on the first 4 bytes.
             // The first significant JSON character is ASCII (whitespace or structural).
@@ -151,9 +151,64 @@ public final class ChampollionJsonProvider extends JsonProvider {
             if (read >= 1 && head[0] == 0) {
                 throw new jakarta.json.JsonException("Cannot determine JSON encoding");
             }
-            return new InputStreamReader(pb, StandardCharsets.UTF_8);
+            return utf8Reader(pb);
         } catch (IOException e) {
             throw new jakarta.json.JsonException("I/O error during encoding detection", e);
+        }
+    }
+
+    /** The byte buffer an InputStreamReader allocates, whatever the size of the input. */
+    private static final int DEFAULT_DECODER_BUFFER = 8192;
+    /** The smallest decoder buffer, for a stream that holds fewer bytes. */
+    private static final int MIN_DECODER_BUFFER = 1024;
+
+    /**
+     * A UTF-8 reader over {@code in}, decoding as an {@link InputStreamReader} does (malformed and
+     * unmappable input replaced). When the stream says it holds fewer bytes than the 8 KB an
+     * InputStreamReader would buffer, as a request entity already read into memory does, the
+     * decoder buffer takes that size instead.
+     */
+    private static Reader utf8Reader(InputStream in) throws IOException {
+        int available = in.available();
+        if (available <= 0 || available >= DEFAULT_DECODER_BUFFER) {
+            return new InputStreamReader(in, StandardCharsets.UTF_8);
+        }
+        java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE);
+        return java.nio.channels.Channels.newReader(new StreamChannel(in), decoder,
+                Math.max(available, MIN_DECODER_BUFFER));
+    }
+
+    /**
+     * An InputStream as the channel a decoder reads from, straight into the decoder's heap buffer:
+     * {@code Channels.newChannel} would add a lock and a copy through a buffer of its own.
+     */
+    private static final class StreamChannel implements java.nio.channels.ReadableByteChannel {
+        private final InputStream in;
+        private boolean open = true;
+
+        StreamChannel(InputStream in) {
+            this.in = in;
+        }
+
+        /** The decoder reads into the heap buffer it allocated, which has an array. */
+        @Override
+        public int read(java.nio.ByteBuffer dst) throws IOException {
+            int n = in.read(dst.array(), dst.arrayOffset() + dst.position(), dst.remaining());
+            if (n > 0) dst.position(dst.position() + n);
+            return n;
+        }
+
+        @Override
+        public boolean isOpen() {
+            return open;
+        }
+
+        @Override
+        public void close() throws IOException {
+            open = false;
+            in.close();
         }
     }
 
