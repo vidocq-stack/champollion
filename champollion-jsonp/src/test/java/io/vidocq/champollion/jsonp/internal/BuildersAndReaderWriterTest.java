@@ -157,6 +157,16 @@ class BuildersAndReaderWriterTest {
         }
 
         @Test
+        void indexed_booleans_map_to_both_literals() {
+            var a = new ChampollionJsonArrayBuilder()
+                    .add("x")
+                    .add(0, true)
+                    .set(1, false)
+                    .build();
+            assertEquals("[true,false]", a.toString());
+        }
+
+        @Test
         void indexed_double_rejects_nan_and_infinity() {
             var builder = new ChampollionJsonArrayBuilder().add(1);
             assertThrows(NumberFormatException.class, () -> builder.add(0, Double.NaN));
