@@ -31,6 +31,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -256,7 +257,7 @@ class JsonTokenizerTest {
         void materialized_string_is_cached() {
             var t = new JsonReaderTokenizer(new StringReader("\"abc\""));
             assertEquals(JsonToken.STRING, t.next());
-            assertTrue(t.currentString() == t.currentString(), "same instance expected");
+            assertSame(t.currentString(), t.currentString(), "same instance expected");
         }
 
         @Test

@@ -127,8 +127,8 @@ class ChampollionJsonPatchTest {
                         {"op":"test","path":"/foo/1","value":2}
                     ]
                     """);
-            // no exception = success
-            new ChampollionJsonPatch(p).apply(doc);
+            // a passing test operation leaves the document unchanged
+            assertEquals(doc, new ChampollionJsonPatch(p).apply(doc));
         }
 
         @Test

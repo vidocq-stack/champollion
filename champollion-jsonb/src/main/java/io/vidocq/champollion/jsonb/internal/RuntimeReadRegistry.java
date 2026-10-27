@@ -37,10 +37,8 @@ import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -336,7 +334,7 @@ final class RuntimeReadRegistry {
         RecordComponent[] comps = type.getRecordComponents();
         Class<?>[] paramTypes = new Class<?>[comps.length];
         BindingReader[] readers = new BindingReader[comps.length];
-        Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
+        Map<String, Integer> indexByName = HashMap.newHashMap(comps.length);
         for (int i = 0; i < comps.length; i++) {
             final RecordComponent comp = comps[i];
             paramTypes[i] = comp.getType();
@@ -356,8 +354,8 @@ final class RuntimeReadRegistry {
         try {
             ctorMh = java.lang.invoke.MethodHandles.publicLookup().findConstructor(type,
                     java.lang.invoke.MethodType.methodType(void.class, paramTypes));
-        } catch (NoSuchMethodException | IllegalAccessException ignored) {
-            ctorMh = null;
+        } catch (NoSuchMethodException | IllegalAccessException _) {
+            ctorMh = null; // not public: the reflective constructor below takes over
         }
         Constructor<?> reflCtor = null;
         if (ctorMh == null) {
@@ -764,8 +762,8 @@ final class RuntimeReadRegistry {
 
     private static void normalizeFrenchGroupSeparator(java.text.DecimalFormatSymbols sym) {
         char sep = sym.getGroupingSeparator();
-        if (sep == ' ' || sep == ' ') {
-            sym.setGroupingSeparator(' ');
+        if (sep == '\u202F' || sep == ' ') {
+            sym.setGroupingSeparator('\u00A0');
         }
     }
 
@@ -795,7 +793,7 @@ final class RuntimeReadRegistry {
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
-            catch (NoSuchFieldException ignored) {}
+            catch (NoSuchFieldException _) { /* not declared here: look in the superclass */ }
         }
         return null;
     }
@@ -999,7 +997,7 @@ final class RuntimeReadRegistry {
         Class<?>[] paramTypes = creator.getParameterTypes();
         boolean[] required = new boolean[params.length];
         BindingReader[] readers = new BindingReader[params.length];
-        Map<String, Integer> indexByName = new HashMap<>(params.length * 2);
+        Map<String, Integer> indexByName = HashMap.newHashMap(params.length);
         for (int i = 0; i < params.length; i++) {
             final int idx = i;
             final Type genericParamType = creator instanceof Constructor<?> c
@@ -1147,58 +1145,6 @@ final class RuntimeReadRegistry {
         return inst;
     }
 
-    private Object readObjectAndConstruct(JsonParser p, Constructor<?> ctor,
-                                          Class<?>[] paramTypes, BindingReader[] readers,
-                                          Map<String, Integer> indexByName) {
-        JsonParser.Event e = p.next();
-        if (e == JsonParser.Event.VALUE_NULL) return null;
-        if (e != JsonParser.Event.START_OBJECT) {
-            throw new JsonbException("Expected object, got " + e);
-        }
-        Object[] args = new Object[paramTypes.length];
-        for (int i = 0; i < paramTypes.length; i++) {
-            args[i] = defaultFor(paramTypes[i]);
-        }
-        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
-            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
-            String key = p.getString();
-            Integer idx = indexByName.get(key);
-            if (idx == null) {
-                skipValue(p);
-            } else {
-                args[idx] = readers[idx].read(p);
-            }
-        }
-        try {
-            return ctor.newInstance(args);
-        } catch (ReflectiveOperationException ex) {
-            throw new JsonbException("Failed to instantiate record: " + ex.getMessage(), ex);
-        }
-    }
-
-    private Object readObjectAndAssign(JsonParser p, Constructor<?> ctor, Map<String, Field> fields) {
-        JsonParser.Event e = p.next();
-        if (e == JsonParser.Event.VALUE_NULL) return null;
-        if (e != JsonParser.Event.START_OBJECT) throw new JsonbException("Expected object, got " + e);
-        Object inst;
-        try {
-            inst = ctor.newInstance();
-        } catch (ReflectiveOperationException ex) {
-            throw new JsonbException("Failed to instantiate POJO: " + ex.getMessage(), ex);
-        }
-        while ((e = p.next()) != JsonParser.Event.END_OBJECT) {
-            if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME, got " + e);
-            String key = p.getString();
-            Field f = fields.get(key);
-            if (f == null) { skipValue(p); continue; }
-            BindingReader r = readerFor(f.getGenericType());
-            Object value = r.read(p);
-            try { f.set(inst, value); }
-            catch (IllegalAccessException ex) { throw new JsonbException("Cannot set field " + f, ex); }
-        }
-        return inst;
-    }
-
     private static Object defaultFor(Class<?> type) {
         if (type == java.util.Optional.class) return java.util.Optional.empty();
         if (type == java.util.OptionalInt.class) return java.util.OptionalInt.empty();
@@ -1242,10 +1188,6 @@ final class RuntimeReadRegistry {
             return optionalReader(inner);
         }
         return classCache.get(raw);
-    }
-
-    private BindingReader mapReader(BindingReader valueReader) {
-        return mapReader(valueReader, Map.class);
     }
 
     private BindingReader mapReader(BindingReader valueReader, Class<?> raw) {
@@ -1531,9 +1473,7 @@ final class RuntimeReadRegistry {
             if (e == JsonParser.Event.END_OBJECT) return out;
             if (e != JsonParser.Event.KEY_NAME) throw new JsonbException("Expected KEY_NAME");
             String key = p.getString();
-            // recursion on dynamic
-            JsonParser primed;
-            // We need to read a value, but dynamicValue advances next() itself : no extra primed needed
+            // recursion on dynamic: dynamicValue advances next() itself
             out.put(key, dynamicValue(p));
         }
     }
@@ -1615,7 +1555,7 @@ final class RuntimeReadRegistry {
             RecordComponent[] comps = concrete.getRecordComponents();
             Class<?>[] paramTypes = new Class<?>[comps.length];
             BindingReader[] readers = new BindingReader[comps.length];
-            Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
+            Map<String, Integer> indexByName = HashMap.newHashMap(comps.length);
             for (int i = 0; i < comps.length; i++) {
                 final RecordComponent comp = comps[i];
                 paramTypes[i] = comp.getType();
@@ -1847,25 +1787,25 @@ final class RuntimeReadRegistry {
 
     /** Parse une string en {@link Instant} en essayant plusieurs formats ISO. */
     private static Instant parseAsInstant(String s) {
-        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME).toInstant(); } catch (Exception ignored) {}
-        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant(); } catch (Exception ignored) {}
-        try { return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception ignored) {}
-        try { return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception ignored) {}
+        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME).toInstant(); } catch (Exception _) { /* not this format: try the next one */ }
+        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant(); } catch (Exception _) { /* not this format: try the next one */ }
+        try { return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception _) { /* not this format: try the next one */ }
+        try { return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception _) { /* not this format: try the next one */ }
         return Instant.parse(s);
     }
 
     /** Parse une string en {@link ZonedDateTime} en essayant plusieurs formats ISO. */
     private static ZonedDateTime parseAsZonedDateTime(String s) {
-        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME); } catch (Exception ignored) {}
-        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime(); } catch (Exception ignored) {}
+        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME); } catch (Exception _) { /* not this format: try the next one */ }
+        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime(); } catch (Exception _) { /* not this format: try the next one */ }
         try {
             // Date avec offset uniquement : "1970-01-01+01:00"
             return java.time.OffsetDateTime.parse(s + "T00:00:00" + s.substring(s.length()-6, s.length()),
                     DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime();
-        } catch (Exception ignored) {}
+        } catch (Exception _) { /* not this format: try the next one */ }
         try {
             return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC"));
-        } catch (Exception ignored) {}
+        } catch (Exception _) { /* not this format: try the next one */ }
         return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC"));
     }
 

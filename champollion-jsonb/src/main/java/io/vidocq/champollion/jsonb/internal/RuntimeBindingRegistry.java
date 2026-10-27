@@ -340,7 +340,7 @@ final class RuntimeBindingRegistry {
         // BYTE by default
         return (g, v) -> {
             g.writeStartArray();
-            for (byte b : (byte[]) v) g.write((int) b);
+            for (byte b : (byte[]) v) g.write(b);
             g.writeEnd();
         };
     }
@@ -965,7 +965,8 @@ final class RuntimeBindingRegistry {
             if (pann != null) {
                 return pann.value().getDeclaredConstructor().newInstance();
             }
-        } catch (ClassNotFoundException ignored) {
+        } catch (ClassNotFoundException _) {
+            // no package-info class: the next lookups may still find the annotation
         } catch (Exception e) {
             throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
         }
@@ -981,13 +982,13 @@ final class RuntimeBindingRegistry {
     private static boolean isVisibleByStrategy(jakarta.json.bind.config.PropertyVisibilityStrategy s, Class<?> type, Property pr) {
         // Spec §4.5: consult BOTH the underlying field (if present) AND the method.
         // A property is visible if either returns true (OR logic).
-        if (pr.accessor instanceof FieldAccessor fa) {
-            return s.isVisible(fa.f);
+        if (pr.accessor instanceof FieldAccessor(Field field)) {
+            return s.isVisible(field);
         }
-        if (pr.accessor instanceof MethodAccessor ma) {
-            boolean methodVisible = s.isVisible(ma.m);
+        if (pr.accessor instanceof MethodAccessor(Method method)) {
+            boolean methodVisible = s.isVisible(method);
             // Look up the underlying field by bean property name
-            String propName = beanPropertyOf(ma.m);
+            String propName = beanPropertyOf(method);
             if (propName != null) {
                 Field f = findFieldByName(type, propName);
                 if (f != null) return methodVisible || s.isVisible(f);
@@ -1059,8 +1060,8 @@ final class RuntimeBindingRegistry {
     }
 
     private static Class<?> declaringClassOf(Property pr, Class<?> fallback) {
-        if (pr.accessor instanceof FieldAccessor fa) return fa.f.getDeclaringClass();
-        if (pr.accessor instanceof MethodAccessor ma) return ma.m.getDeclaringClass();
+        if (pr.accessor instanceof FieldAccessor(Field field)) return field.getDeclaringClass();
+        if (pr.accessor instanceof MethodAccessor(Method method)) return method.getDeclaringClass();
         return fallback;
     }
 
@@ -1208,7 +1209,7 @@ final class RuntimeBindingRegistry {
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
-            catch (NoSuchFieldException ignored) {}
+            catch (NoSuchFieldException _) { /* not declared here: look in the superclass */ }
         }
         return null;
     }
@@ -1411,7 +1412,7 @@ final class RuntimeBindingRegistry {
                             .findVirtual(type, accessor.getName(),
                                     java.lang.invoke.MethodType.methodType(c.getType()));
                     acc = new MhAccessor(mh);
-                } catch (NoSuchMethodException | IllegalAccessException ex) {
+                } catch (NoSuchMethodException | IllegalAccessException _) {
                     // Reflection fallback if publicLookup fails (non-exported record).
                     try { accessor.setAccessible(true); } catch (Exception ignore) {}
                     acc = new MethodAccessor(accessor);
@@ -1741,8 +1742,8 @@ final class RuntimeBindingRegistry {
                     instMethodType);
             var fn = (java.util.function.Function<Object, Object>) callsite.getTarget().invokeExact();
             return new LambdaAccessor(fn);
-        } catch (Throwable t) {
-            return null;
+        } catch (Throwable _) {
+            return null; // no lambda accessor: the caller falls back to a method handle
         }
     }
 

@@ -49,8 +49,11 @@ final class CdiResolver {
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
 
     static {
-        MethodHandle current = null, select = null, get = null,
-                isUnsatisfied = null, isAmbiguous = null;
+        MethodHandle current = null;
+        MethodHandle select = null;
+        MethodHandle get = null;
+        MethodHandle isUnsatisfied = null;
+        MethodHandle isAmbiguous = null;
         boolean available = false;
         try {
             Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI");
@@ -97,7 +100,7 @@ final class CdiResolver {
                     Object bean = INSTANCE_GET.invoke(inst);
                     if (bean != null) return (T) bean;
                 }
-            } catch (Throwable t) {
+            } catch (Throwable _) {
                 // Container not started → fallback newInstance.
             }
         }
