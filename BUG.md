@@ -94,3 +94,39 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     still carries the bindings of the first application layer: the reloaded records are other `Class` objects, so
     the lookup misses and falls back to the runtime registry (correct, slower), and the first layer stays reachable.
     To be tracked on the Cassini side.
+
+## BUG-20261027-01 — Protobuf: a map value of enum type is decoded by ordinal, encoded by `@ProtoEnumValue`
+
+- **Date** : 2026-10-27
+- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Module touché** : `champollion-protobuf` — `RuntimeBinding.readScalarTyped` (ENUM case)
+- **Symptôme** : a map whose values are an enum with explicit `@ProtoEnumValue` numbers round-trips wrong: the writer emits the declared number, the reader looks the number up as an ordinal. A value declared `-1` comes back as `null`.
+- **Reproduction minimale** : a message with `Map<String, Status>` where `Status` has `@ProtoEnumValue(-1) UNKNOWN`; encode `{"a": UNKNOWN}`, decode it.
+- **Hypothèse de cause** : the map value reader uses `values()[n]` instead of the `@ProtoEnumValue` lookup the field reader uses.
+
+## BUG-20261027-02 — JSON-B: the "date with offset only" fallback can never parse
+
+- **Date** : 2026-10-27
+- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.parseAsZonedDateTime`
+- **Symptôme** : `"2020-01-02+01:00"` read into a `ZonedDateTime` (or `OffsetDateTime`) is rejected.
+- **Reproduction minimale** : `jsonb.fromJson("\"2020-01-02+01:00\"", ZonedDateTime.class)`.
+- **Hypothèse de cause** : the fallback builds `s + "T00:00:00" + last 6 chars`, appending the offset after a string that already ends with it, so the result is never a valid date-time.
+
+## BUG-20261027-03 — APT: the generated static binding of a `List<Float>` does not compile
+
+- **Date** : 2026-10-27
+- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Module touché** : `champollion-codegen-apt` — `JsonbStaticProcessor` (list element reading, `readLeaf`)
+- **Symptôme** : a `@JsonbStatic` record with a `List<Float>` component makes the annotation processor emit code that fails to compile.
+- **Reproduction minimale** : `@JsonbStatic record Sample(List<Float> values) {}` compiled with the processor.
+- **Hypothèse de cause** : `readLeaf` returns a `double` for `Float` elements, which the generated code adds to a `List<Float>` without a narrowing conversion.
+
+## BUG-20261027-04 — Protobuf JSON: `UInt64Value` is written signed
+
+- **Date** : 2026-10-27
+- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Module touché** : `champollion-protobuf` — the JSON writer of `Wrappers.UInt64Value`, at top level and as a field
+- **Symptôme** : a value above `Long.MAX_VALUE` is written as a negative number.
+- **Reproduction minimale** : write a `UInt64Value` holding `-1L` (2^64 - 1 unsigned): the JSON says `"-1"`, the proto3 JSON mapping expects `"18446744073709551615"`.
+- **Hypothèse de cause** : the writer uses `Long.toString` instead of `Long.toUnsignedString`.
