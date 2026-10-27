@@ -38,7 +38,7 @@ class ByteArrayValueSemanticsTest {
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, new BytesValue(new byte[] {1, 2}));
-        assertNotEquals(a, null);
+        assertNotEquals(null, a);
         assertEquals(a, a);
     }
 
