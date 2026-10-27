@@ -89,7 +89,8 @@ class ChampollionJsonPointerTest {
             // first use (TCK compat testResolvePathWithUnencodedTilde
             // which requires tolerant construction).
             var p = new ChampollionJsonPointer("/~2");
-            assertThrows(JsonException.class, () -> p.getValue(Json.createObjectBuilder().build()));
+            var empty = Json.createObjectBuilder().build();
+            assertThrows(JsonException.class, () -> p.getValue(empty));
         }
     }
 
@@ -114,21 +115,24 @@ class ChampollionJsonPointerTest {
 
         @Test
         void array_index_out_of_bounds_throws() {
-            assertThrows(JsonException.class,
-                    () -> new ChampollionJsonPointer("/foo/2").getValue(doc()));
+            var pointer = new ChampollionJsonPointer("/foo/2");
+            var doc = doc();
+            assertThrows(JsonException.class, () -> pointer.getValue(doc));
         }
 
         @Test
         void unknown_member_name_throws() {
-            assertThrows(JsonException.class,
-                    () -> new ChampollionJsonPointer("/missing").getValue(doc()));
+            var pointer = new ChampollionJsonPointer("/missing");
+            var doc = doc();
+            assertThrows(JsonException.class, () -> pointer.getValue(doc));
         }
 
         @Test
         void array_index_with_leading_zero_is_invalid() {
-            // RFC 6901 §4 : les indices ne peuvent pas avoir de zéros initiaux (sauf "0")
-            assertThrows(JsonException.class,
-                    () -> new ChampollionJsonPointer("/foo/01").getValue(doc()));
+            // RFC 6901 §4: array indexes cannot have leading zeros (except "0")
+            var pointer = new ChampollionJsonPointer("/foo/01");
+            var doc = doc();
+            assertThrows(JsonException.class, () -> pointer.getValue(doc));
         }
     }
 
@@ -187,8 +191,9 @@ class ChampollionJsonPointerTest {
 
         @Test
         void replace_throws_if_target_missing() {
-            assertThrows(JsonException.class,
-                    () -> new ChampollionJsonPointer("/missing").replace(doc(), JsonValue.NULL));
+            var pointer = new ChampollionJsonPointer("/missing");
+            var doc = doc();
+            assertThrows(JsonException.class, () -> pointer.replace(doc, JsonValue.NULL));
         }
 
         @Test

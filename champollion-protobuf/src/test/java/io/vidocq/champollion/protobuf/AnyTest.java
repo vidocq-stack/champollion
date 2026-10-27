@@ -69,7 +69,8 @@ class AnyTest {
         @Test
         void non_message_class_throws() {
             record Plain(String x) {}
-            assertThrows(IllegalArgumentException.class, () -> Any.pack(new Plain("x")));
+            var plain = new Plain("x");
+            assertThrows(IllegalArgumentException.class, () -> Any.pack(plain));
         }
 
         @Test

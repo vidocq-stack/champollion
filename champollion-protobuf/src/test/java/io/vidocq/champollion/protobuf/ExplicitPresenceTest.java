@@ -52,13 +52,13 @@ class ExplicitPresenceTest {
     class Implicit {
 
         @Test
-        void empty_string_default_is_omitted() throws Exception {
+        void empty_string_default_is_omitted() {
             byte[] wire = Protobuf.toByteArray(new ImplicitMessage(""));
             assertEquals(0, wire.length, "champ proto3 = default ⇒ omis");
         }
 
         @Test
-        void non_default_value_is_written() throws Exception {
+        void non_default_value_is_written() {
             byte[] wire = Protobuf.toByteArray(new ImplicitMessage("hi"));
             assertTrue(wire.length > 0);
         }
@@ -69,20 +69,20 @@ class ExplicitPresenceTest {
     class Explicit {
 
         @Test
-        void empty_string_default_is_written_when_explicit() throws Exception {
+        void empty_string_default_is_written_when_explicit() {
             byte[] wire = Protobuf.toByteArray(new ExplicitMessage(""));
             // tag = (1 << 3) | 2 = 0x0A, len = 0
             assertArrayEquals(new byte[] { 0x0A, 0x00 }, wire);
         }
 
         @Test
-        void non_default_value_is_written_when_explicit() throws Exception {
+        void non_default_value_is_written_when_explicit() {
             byte[] wire = Protobuf.toByteArray(new ExplicitMessage("hi"));
             assertArrayEquals(new byte[] { 0x0A, 0x02, 'h', 'i' }, wire);
         }
 
         @Test
-        void null_field_is_still_omitted_even_when_explicit() throws Exception {
+        void null_field_is_still_omitted_even_when_explicit() {
             // null ≠ default — c'est l'absence Java, pas la présence d'une valeur défaut.
             byte[] wire = Protobuf.toByteArray(new ExplicitMessage(null));
             assertEquals(0, wire.length);

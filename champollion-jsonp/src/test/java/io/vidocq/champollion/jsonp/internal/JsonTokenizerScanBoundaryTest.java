@@ -107,11 +107,13 @@ class JsonTokenizerScanBoundaryTest {
         for (int pad = 0; pad <= 9; pad++) {
             for (char ctrl : new char[]{0x00, 0x01, 0x09, 0x0A, 0x1F}) {
                 String json = '"' + "c".repeat(pad) + ctrl + "tail\"";
+                var readerMode = new JsonReaderTokenizer(new StringReader(json));
                 assertThrows(JsonParsingException.class,
-                        () -> roundTripString(new JsonReaderTokenizer(new StringReader(json))),
+                        () -> roundTripString(readerMode),
                         "reader mode must reject U+%04X after pad %d".formatted((int) ctrl, pad));
+                var stringMode = new JsonStringTokenizer(json);
                 assertThrows(JsonParsingException.class,
-                        () -> roundTripString(new JsonStringTokenizer(json)),
+                        () -> roundTripString(stringMode),
                         "string mode must reject U+%04X after pad %d".formatted((int) ctrl, pad));
             }
         }
@@ -153,10 +155,10 @@ class JsonTokenizerScanBoundaryTest {
     void unterminatedString_failsAtEveryAlignment() {
         for (int pad = 0; pad <= 9; pad++) {
             String json = '"' + "q".repeat(pad);
-            assertThrows(JsonParsingException.class,
-                    () -> roundTripString(new JsonReaderTokenizer(new StringReader(json))));
-            assertThrows(JsonParsingException.class,
-                    () -> roundTripString(new JsonStringTokenizer(json)));
+            var readerMode = new JsonReaderTokenizer(new StringReader(json));
+            assertThrows(JsonParsingException.class, () -> roundTripString(readerMode));
+            var stringMode = new JsonStringTokenizer(json);
+            assertThrows(JsonParsingException.class, () -> roundTripString(stringMode));
         }
     }
 }

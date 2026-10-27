@@ -315,11 +315,10 @@ class JsonTokenizerTest {
 
         @Test
         void rejects_invalid_numbers_and_strings() {
-            assertThrows(JsonException.class, () -> new JsonStringTokenizer("01").next());
-            assertThrows(JsonException.class, () -> new JsonStringTokenizer("-").next());
-            assertThrows(JsonException.class, () -> new JsonStringTokenizer("1e").next());
-            assertThrows(JsonException.class, () -> new JsonStringTokenizer("\"abc").next());
-            assertThrows(JsonException.class, () -> new JsonStringTokenizer("\"a\nb\"").next());
+            for (String invalid : new String[]{"01", "-", "1e", "\"abc", "\"a\nb\""}) {
+                var t = new JsonStringTokenizer(invalid);
+                assertThrows(JsonException.class, t::next, invalid);
+            }
         }
 
         @Test

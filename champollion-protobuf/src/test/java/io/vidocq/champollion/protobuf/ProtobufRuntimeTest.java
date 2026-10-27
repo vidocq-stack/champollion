@@ -114,7 +114,7 @@ class ProtobufRuntimeTest {
         }
 
         @Test
-        void empty_person_serializes_to_empty_bytes() throws IOException {
+        void empty_person_serializes_to_empty_bytes() {
             Person p = new Person("", 0, List.of());
             assertArrayEquals(new byte[0], Protobuf.toByteArray(p));
         }
@@ -143,7 +143,7 @@ class ProtobufRuntimeTest {
         }
 
         @Test
-        void message_default_methods_delegate_to_helper() throws IOException {
+        void message_default_methods_delegate_to_helper() {
             Person p = new Person("alice", 30, List.of());
             byte[] viaMessage = p.toByteArray();
             byte[] viaHelper = Protobuf.toByteArray(p);

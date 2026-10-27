@@ -170,7 +170,7 @@ class JavaEmitterTest {
      * Compilateur Java in-memory : prend un Map FQN → source, retourne un
      * ClassLoader qui charge les classes compilées.
      */
-    private static ClassLoader compile(Map<String, String> sources) throws Exception {
+    private static ClassLoader compile(Map<String, String> sources) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             fail("No system JavaCompiler — run tests under a JDK, not a JRE.");

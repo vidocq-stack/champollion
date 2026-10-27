@@ -69,8 +69,8 @@ class BuildersAndReaderWriterTest {
 
         @Test
         void rejects_null_key() {
-            assertThrows(NullPointerException.class,
-                    () -> new ChampollionJsonObjectBuilder().add(null, 1));
+            var builder = new ChampollionJsonObjectBuilder();
+            assertThrows(NullPointerException.class, () -> builder.add(null, 1));
         }
     }
 

@@ -135,7 +135,8 @@ class ChampollionJsonPatchTest {
         void A9_test_op_fails_when_value_differs() {
             var doc = read("{\"baz\":\"qux\"}");
             var p = patch("[{\"op\":\"test\",\"path\":\"/baz\",\"value\":\"bar\"}]");
-            assertThrows(JsonException.class, () -> new ChampollionJsonPatch(p).apply(doc));
+            var jsonPatch = new ChampollionJsonPatch(p);
+            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
         }
 
         @Test
@@ -173,21 +174,24 @@ class ChampollionJsonPatchTest {
         void rejects_unknown_op() {
             var doc = read("{}");
             var p = patch("[{\"op\":\"frobulate\",\"path\":\"/x\"}]");
-            assertThrows(JsonException.class, () -> new ChampollionJsonPatch(p).apply(doc));
+            var jsonPatch = new ChampollionJsonPatch(p);
+            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
         }
 
         @Test
         void rejects_op_missing_required_member() {
             var doc = read("{}");
             var p = patch("[{\"op\":\"add\"}]"); // path manquant
-            assertThrows(JsonException.class, () -> new ChampollionJsonPatch(p).apply(doc));
+            var jsonPatch = new ChampollionJsonPatch(p);
+            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
         }
 
         @Test
         void rejects_replace_on_missing_path() {
             var doc = read("{}");
             var p = patch("[{\"op\":\"replace\",\"path\":\"/x\",\"value\":1}]");
-            assertThrows(JsonException.class, () -> new ChampollionJsonPatch(p).apply(doc));
+            var jsonPatch = new ChampollionJsonPatch(p);
+            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
         }
     }
 

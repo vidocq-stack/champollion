@@ -154,9 +154,11 @@ class ChampollionJsonGeneratorTest {
 
         @Test
         void root_double_rejects_nan_and_infinity() {
-            // RFC 8259 : NaN/Infinity ne sont PAS des nombres JSON valides.
-            assertThrows(NumberFormatException.class, () -> { try (var g = gen()) { g.write(Double.NaN); } });
-            assertThrows(NumberFormatException.class, () -> { try (var g = gen()) { g.write(Double.POSITIVE_INFINITY); } });
+            // RFC 8259: NaN and Infinity are NOT valid JSON numbers.
+            var nan = gen();
+            assertThrows(NumberFormatException.class, () -> nan.write(Double.NaN));
+            var infinity = gen();
+            assertThrows(NumberFormatException.class, () -> infinity.write(Double.POSITIVE_INFINITY));
         }
     }
 
@@ -301,36 +303,37 @@ class ChampollionJsonGeneratorTest {
 
         @Test
         void rejects_member_outside_object() {
-            assertThrows(JsonGenerationException.class,
-                    () -> { try (var g = gen()) { g.writeStartArray().write("k", 1); } });
+            var g = gen();
+            g.writeStartArray();
+            assertThrows(JsonGenerationException.class, () -> g.write("k", 1));
         }
 
         @Test
         void rejects_unnamed_value_inside_object() {
-            assertThrows(JsonGenerationException.class,
-                    () -> { try (var g = gen()) { g.writeStartObject().write(1); } });
+            var g = gen();
+            g.writeStartObject();
+            assertThrows(JsonGenerationException.class, () -> g.write(1));
         }
 
         @Test
         void rejects_writeEnd_at_root() {
-            assertThrows(JsonGenerationException.class,
-                    () -> { try (var g = gen()) { g.writeEnd(); } });
+            var g = gen();
+            assertThrows(JsonGenerationException.class, g::writeEnd);
         }
 
         @Test
         void rejects_two_root_values() {
-            assertThrows(JsonGenerationException.class,
-                    () -> { try (var g = gen()) { g.write(1); g.write(2); } });
+            var g = gen();
+            g.write(1);
+            assertThrows(JsonGenerationException.class, () -> g.write(2));
         }
 
         @Test
         void rejects_close_with_open_container() {
-            // close() ne doit pas masquer les containers ouverts
-            assertThrows(JsonGenerationException.class, () -> {
-                var g = gen();
-                g.writeStartObject();
-                g.close();
-            });
+            // close() must not hide the open containers
+            var g = gen();
+            g.writeStartObject();
+            assertThrows(JsonGenerationException.class, g::close);
         }
     }
 
