@@ -41,6 +41,7 @@ class BindingPlanIdentityTest {
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, new RuntimeBinding.BindingPlan(Other.class, List.of(), Map.of(), null, new Class<?>[0]));
+        assertNotEquals(a, (Object) "BindingPlan");
         assertEquals("BindingPlan[" + Sample.class.getName() + "]", a.toString());
     }
 
@@ -52,6 +53,7 @@ class BindingPlanIdentityTest {
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, jsonPlan(Other.class));
+        assertNotEquals(a, (Object) "JsonBindingPlan");
         assertEquals("JsonBindingPlan[" + Sample.class.getName() + "]", a.toString());
     }
 

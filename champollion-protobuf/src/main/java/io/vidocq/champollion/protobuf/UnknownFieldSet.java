@@ -238,10 +238,25 @@ public final class UnknownFieldSet {
         }
     }
 
-    /** A single wire occurrence of an unknown field, in arrival order. */
-    private record RawEntry(int fieldNumber, int wireType,
-                            long varintOrFixed64, int fixed32,
-                            byte[] lengthDelimited) {
+    /**
+     * A single wire occurrence of an unknown field, in arrival order. A plain class, not a
+     * record: it is never compared, and a record would compare its bytes by identity.
+     */
+    private static final class RawEntry {
+        private final int fieldNumber;
+        private final int wireType;
+        private final long varintOrFixed64;
+        private final int fixed32;
+        private final byte[] lengthDelimited;
+
+        private RawEntry(int fieldNumber, int wireType, long varintOrFixed64, int fixed32,
+                         byte[] lengthDelimited) {
+            this.fieldNumber = fieldNumber;
+            this.wireType = wireType;
+            this.varintOrFixed64 = varintOrFixed64;
+            this.fixed32 = fixed32;
+            this.lengthDelimited = lengthDelimited;
+        }
 
         static RawEntry varint(int fn, long v) {
             return new RawEntry(fn, WireFormat.WIRETYPE_VARINT, v, 0, null);
@@ -257,26 +272,6 @@ public final class UnknownFieldSet {
 
         static RawEntry lengthDelimited(int fn, byte[] v) {
             return new RawEntry(fn, WireFormat.WIRETYPE_LENGTH_DELIMITED, 0L, 0, v);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof RawEntry(int n, int w, long v, int f, byte[] bytes)
-                    && fieldNumber == n && wireType == w && varintOrFixed64 == v && fixed32 == f
-                    && java.util.Arrays.equals(lengthDelimited, bytes);
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * java.util.Objects.hash(fieldNumber, wireType, varintOrFixed64, fixed32)
-                    + java.util.Arrays.hashCode(lengthDelimited);
-        }
-
-        @Override
-        public String toString() {
-            return "RawEntry[fieldNumber=" + fieldNumber + ", wireType=" + wireType
-                    + ", varintOrFixed64=" + varintOrFixed64 + ", fixed32=" + fixed32
-                    + ", lengthDelimited=" + java.util.Arrays.toString(lengthDelimited) + "]";
         }
 
         void writeTo(CodedOutputStream out) throws IOException {
