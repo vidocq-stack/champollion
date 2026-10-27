@@ -38,8 +38,7 @@ import java.util.Objects;
  * et appelle {@link #skipField(int)} pour les champs inconnus (forward-compat
  * required by Edition 2023).</p>
  */
-public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDecoder,
-                                                      CodedInputStream.StreamDecoder {
+public abstract sealed class CodedInputStream {
 
     /** Default recursion limit for embedded messages — stack overflow protection. */
     public static final int DEFAULT_RECURSION_LIMIT = 100;

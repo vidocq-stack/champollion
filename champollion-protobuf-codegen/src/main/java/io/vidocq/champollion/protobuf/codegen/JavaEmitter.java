@@ -263,7 +263,7 @@ public final class JavaEmitter {
         }
         StringBuilder sb = new StringBuilder();
         for (int i = start; i < segs.length; i++) {
-            if (sb.length() > 0) sb.append('.');
+            if (!sb.isEmpty()) sb.append('.');
             sb.append(segs[i]);
         }
         return sb.toString();

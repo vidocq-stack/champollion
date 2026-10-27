@@ -31,8 +31,6 @@ import io.vidocq.champollion.protobuf.wkt.Timestamp;
 import io.vidocq.champollion.protobuf.wkt.TypeRegistry;
 import io.vidocq.champollion.protobuf.wkt.Wrappers;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
@@ -48,7 +46,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -591,51 +588,51 @@ public final class ProtobufJsonRuntime {
 
     private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
         return switch (v) {
-            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, null); yield true; }
-            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, null); yield true; }
-            case Wrappers.Int64Value w -> { gen.write(Long.toString(w.value())); yield true; }
-            case Wrappers.UInt64Value w -> { gen.write(Long.toString(w.value())); yield true; }
-            case Wrappers.Int32Value w -> { gen.write(w.value()); yield true; }
-            case Wrappers.UInt32Value w -> { gen.write(w.value()); yield true; }
-            case Wrappers.BoolValue w -> { gen.write(w.value()); yield true; }
-            case Wrappers.StringValue w -> { gen.write(w.value()); yield true; }
-            case Wrappers.BytesValue w -> { gen.write(java.util.Base64.getEncoder().encodeToString(w.value())); yield true; }
+            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, null); yield true; }
+            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, null); yield true; }
+            case Wrappers.Int64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
+            case Wrappers.UInt64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
+            case Wrappers.Int32Value(var value) -> { gen.write(value); yield true; }
+            case Wrappers.UInt32Value(var value) -> { gen.write(value); yield true; }
+            case Wrappers.BoolValue(var value) -> { gen.write(value); yield true; }
+            case Wrappers.StringValue(var value) -> { gen.write(value); yield true; }
+            case Wrappers.BytesValue(var value) -> { gen.write(java.util.Base64.getEncoder().encodeToString(value)); yield true; }
             default -> false;
         };
     }
 
     private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
         return switch (v) {
-            case Wrappers.DoubleValue w -> { writeWrapperDouble(w.value(), gen, key); yield true; }
-            case Wrappers.FloatValue w -> { writeWrapperFloat(w.value(), gen, key); yield true; }
-            case Wrappers.Int64Value w -> {
-                String s = Long.toString(w.value());
+            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, key); yield true; }
+            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, key); yield true; }
+            case Wrappers.Int64Value(var value) -> {
+                String s = Long.toString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.UInt64Value w -> {
-                String s = Long.toString(w.value());
+            case Wrappers.UInt64Value(var value) -> {
+                String s = Long.toString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
-            case Wrappers.Int32Value w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.Int32Value(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.UInt32Value w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.UInt32Value(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.BoolValue w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.BoolValue(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.StringValue w -> {
-                if (key != null) gen.write(key, w.value()); else gen.write(w.value());
+            case Wrappers.StringValue(var value) -> {
+                if (key != null) gen.write(key, value); else gen.write(value);
                 yield true;
             }
-            case Wrappers.BytesValue w -> {
-                String s = java.util.Base64.getEncoder().encodeToString(w.value());
+            case Wrappers.BytesValue(var value) -> {
+                String s = java.util.Base64.getEncoder().encodeToString(value);
                 if (key != null) gen.write(key, s); else gen.write(s);
                 yield true;
             }
@@ -1301,7 +1298,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int32 out of range: " + bd);
             }
             return bi.intValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("int32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1315,7 +1312,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("uint32 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("uint32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1329,7 +1326,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int64 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("int64 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1342,7 +1339,7 @@ public final class ProtobufJsonRuntime {
         } else if (v == JsonParser.Event.VALUE_STRING) {
             try {
                 bd = new java.math.BigDecimal(parser.getString());
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException _) {
                 throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
             }
         } else {

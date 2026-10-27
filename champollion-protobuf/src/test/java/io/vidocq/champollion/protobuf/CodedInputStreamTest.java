@@ -331,7 +331,7 @@ class CodedInputStreamTest {
         @Test
         void recursion_limit_default_is_100() {
             CodedInputStream in = from();
-            assertEquals(CodedInputStream.DEFAULT_RECURSION_LIMIT, 100);
+            assertEquals(100, CodedInputStream.DEFAULT_RECURSION_LIMIT);
             int old = in.setRecursionLimit(5);
             assertEquals(100, old);
         }

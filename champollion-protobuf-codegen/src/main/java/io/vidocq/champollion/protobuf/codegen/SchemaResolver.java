@@ -25,7 +25,6 @@ import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.EnumValueDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.Edition;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldDecl;
-import io.vidocq.champollion.protobuf.codegen.ProtoAst.FieldKind;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MessageDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.MethodDecl;
 import io.vidocq.champollion.protobuf.codegen.ProtoAst.NamedType;
@@ -180,7 +179,7 @@ public final class SchemaResolver {
                     "Unresolved " + role + " type '" + ref + "' in rpc "
                             + serviceFull + "." + methodName);
         }
-        if (!(sym instanceof MessageSymbol ms)) {
+        if (!(sym instanceof MessageSymbol(MessageDecl decl))) {
             throw new SchemaResolutionException(
                     "RPC " + role + " must be a message, got " + ref + " in " + serviceFull + "." + methodName);
         }
@@ -194,7 +193,7 @@ public final class SchemaResolver {
             int dot = s.lastIndexOf('.');
             s = (dot < 0) ? "" : s.substring(0, dot);
         }
-        return ms.decl().name();
+        return decl.name();
     }
 
     // ============================================================ Symbol table
@@ -268,22 +267,22 @@ public final class SchemaResolver {
         String enumTypeName = null;
 
         switch (f.type()) {
-            case ScalarType s -> type = scalarToFieldType(s.scalar());
-            case NamedType n -> {
-                Symbol sym = lookup(n.fullName(), scope, table);
+            case ScalarType(Scalar scalar) -> type = scalarToFieldType(scalar);
+            case NamedType(String fullName) -> {
+                Symbol sym = lookup(fullName, scope, table);
                 if (sym == null) {
                     throw new SchemaResolutionException(
-                            "Unresolved type '" + n.fullName() + "' in field "
+                            "Unresolved type '" + fullName + "' in field "
                                     + scope + "." + f.name());
                 }
                 switch (sym) {
-                    case MessageSymbol ms -> {
+                    case MessageSymbol(MessageDecl decl) -> {
                         type = FieldType.MESSAGE;
-                        messageTypeName = canonicalFullName(scope, ms.decl().name(), n.fullName(), table);
+                        messageTypeName = canonicalFullName(scope, decl.name(), fullName, table);
                     }
-                    case EnumSymbol es -> {
+                    case EnumSymbol(EnumDecl decl) -> {
                         type = FieldType.ENUM;
-                        enumTypeName = canonicalFullName(scope, es.decl().name(), n.fullName(), table);
+                        enumTypeName = canonicalFullName(scope, decl.name(), fullName, table);
                     }
                 }
             }

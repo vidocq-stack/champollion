@@ -108,7 +108,7 @@ class WireFormatTest {
 
         @Test
         void max_field_number_is_2pow29_minus_1() {
-            assertEquals((1 << 29) - 1, WireFormat.MAX_FIELD_NUMBER);
+            assertEquals(WireFormat.MAX_FIELD_NUMBER, (1 << 29) - 1);
         }
     }
 }

@@ -37,7 +37,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -431,10 +430,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int number = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield number < 0 ? CodedOutputStream.computeRawVarint64Size(number)
+                                 : CodedOutputStream.computeRawVarint32Size(number);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
@@ -541,10 +540,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int number = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield number < 0 ? CodedOutputStream.computeRawVarint64Size(number)
+                                 : CodedOutputStream.computeRawVarint32Size(number);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;

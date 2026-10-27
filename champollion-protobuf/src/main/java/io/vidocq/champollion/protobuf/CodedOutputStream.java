@@ -38,8 +38,7 @@ import java.util.Objects;
  * stream-backed (wraps {@link OutputStream}). Naming is mentally aligned
  * with {@code com.google.protobuf.CodedOutputStream}.</p>
  */
-public abstract sealed class CodedOutputStream permits CodedOutputStream.ArrayEncoder,
-                                                       CodedOutputStream.StreamEncoder {
+public abstract sealed class CodedOutputStream {
 
     public static CodedOutputStream newInstance(byte[] buffer) {
         Objects.requireNonNull(buffer, "buffer");

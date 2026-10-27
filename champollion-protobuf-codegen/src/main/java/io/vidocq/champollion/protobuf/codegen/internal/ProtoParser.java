@@ -206,7 +206,8 @@ public final class ProtoParser {
 
     private ImportDecl parseImport() {
         consume(); // 'import'
-        boolean pub = false, weak = false;
+        boolean pub = false;
+        boolean weak = false;
         if (peek().kind() == TokenKind.IDENT && peek().text().equals("public")) {
             consume(); pub = true;
         } else if (peek().kind() == TokenKind.IDENT && peek().text().equals("weak")) {
@@ -219,7 +220,7 @@ public final class ProtoParser {
 
     private OptionEntry parseOption() {
         consume(); // 'option'
-        // Skip eventual paren around option name : option (foo.bar) = baz;
+        // A custom option name is wrapped in parentheses: skip them
         StringBuilder name = new StringBuilder();
         if (peek().kind() == TokenKind.LPAREN) {
             consume();
