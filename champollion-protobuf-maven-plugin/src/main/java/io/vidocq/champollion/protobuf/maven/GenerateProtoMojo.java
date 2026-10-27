@@ -164,7 +164,7 @@ public final class GenerateProtoMojo extends AbstractMojo {
             walk.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".proto"))
                     .forEach(out::add);
-        } catch (IOException e) {
+        } catch (IOException _) {
             // Silent: a missing directory is handled above by execute().
         }
         return out;

@@ -102,7 +102,7 @@ public final class RuntimeBinding {
         MethodHandles.Lookup lookup;
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException e) {
+        } catch (IllegalAccessException _) {
             // Fallback: a public record in an openless module (for
             // example loaded dynamically in the unnamed module) remains
             // usable via publicLookup — its canonical ctor and accessors are

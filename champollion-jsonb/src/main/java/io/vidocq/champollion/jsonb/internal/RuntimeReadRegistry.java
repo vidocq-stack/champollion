@@ -354,14 +354,14 @@ final class RuntimeReadRegistry {
         try {
             ctorMh = java.lang.invoke.MethodHandles.publicLookup().findConstructor(type,
                     java.lang.invoke.MethodType.methodType(void.class, paramTypes));
-        } catch (NoSuchMethodException | IllegalAccessException ignored) {
+        } catch (NoSuchMethodException | IllegalAccessException _) {
             ctorMh = null;
         }
         Constructor<?> reflCtor = null;
         if (ctorMh == null) {
             try {
                 reflCtor = type.getDeclaredConstructor(paramTypes);
-                try { reflCtor.setAccessible(true); } catch (Exception ignore) {}
+                try { reflCtor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible constructor fails later, on invoke */ }
             } catch (NoSuchMethodException e) {
                 throw new JsonbException("Canonical record constructor not found for " + type, e);
             }
@@ -425,12 +425,12 @@ final class RuntimeReadRegistry {
             try {
                 ctorMh = java.lang.invoke.MethodHandles.publicLookup()
                         .findConstructor(type, java.lang.invoke.MethodType.methodType(void.class));
-            } catch (NoSuchMethodException | IllegalAccessException ignored) {
+            } catch (NoSuchMethodException | IllegalAccessException _) {
                 ctorMh = null;
             }
         }
         if (ctorMh == null) {
-            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+            try { ctor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible constructor fails later, on invoke */ }
         }
         final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
         // Discover JavaBean setters (§3.7) + public-field fallback.
@@ -484,7 +484,7 @@ final class RuntimeReadRegistry {
             Method m = e.getValue();
             Method getter = findGetter(type, prop);
             if (getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible setter fails later, on invoke */ }
             String name = methodJsonbName(m, getter, prop);
             Class<?> paramType = m.getParameterTypes()[0];
             Field underlyingF = findFieldByName(type, prop);
@@ -516,12 +516,12 @@ final class RuntimeReadRegistry {
                             .findVirtual(m.getDeclaringClass(), m.getName(),
                                     java.lang.invoke.MethodType.methodType(void.class, paramType));
                     setter = new MhSetter(mh, m, reader);
-                } catch (NoSuchMethodException | IllegalAccessException ignored) {
+                } catch (NoSuchMethodException | IllegalAccessException _) {
                     setter = null;
                 }
             }
             if (setter == null) {
-                try { m.setAccessible(true); } catch (Exception ignore) {}
+                try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible setter fails later, on invoke */ }
                 setter = new MethodSetter(m, reader);
             }
             writersByName.put(name, setter);
@@ -536,7 +536,7 @@ final class RuntimeReadRegistry {
             if (hiddenProps.contains(f.getName())) continue;
             String name = jsonbName(f);
             if (writersByName.containsKey(name)) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on write */ }
             BindingReader reader = customAdapterReader(f, null)
                     .or(() -> customDeserializerReader(f, null, f.getGenericType()))
                     .orElseGet(() -> readerFor(f.getGenericType()));
@@ -583,7 +583,7 @@ final class RuntimeReadRegistry {
         var pkg = type.getPackage();
         if (pkg != null) {
             try { Class.forName(pkg.getName() + ".package-info", false, type.getClassLoader()); }
-            catch (Throwable ignored) {}
+            catch (Throwable _) { /* no package-info: no package-level annotation */ }
             var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (pann != null) {
                 try { return pann.value().getDeclaredConstructor().newInstance(); }
@@ -728,7 +728,7 @@ final class RuntimeReadRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
                 ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
             }
         }
@@ -791,7 +791,7 @@ final class RuntimeReadRegistry {
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
-            catch (NoSuchFieldException ignored) {}
+            catch (NoSuchFieldException _) { /* not declared here: try the superclass */ }
         }
         return null;
     }
@@ -990,7 +990,7 @@ final class RuntimeReadRegistry {
      * the constructor or static factory to produce the instance.
      */
     private BindingReader resolveCreator(java.lang.reflect.Executable creator) {
-        try { creator.setAccessible(true); } catch (Exception ignore) {}
+        try { creator.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible creator fails later, on invoke */ }
         java.lang.reflect.Parameter[] params = creator.getParameters();
         Class<?>[] paramTypes = creator.getParameterTypes();
         boolean[] required = new boolean[params.length];
@@ -1055,7 +1055,7 @@ final class RuntimeReadRegistry {
                 String name = methodJsonbName(m, getter, prop);
                 if (creatorNames.contains(name)) continue;
                 if (out.containsKey(name)) continue;
-                try { m.setAccessible(true); } catch (Exception ignore) {}
+                try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible setter fails later, on invoke */ }
                 BindingReader reader = readerFor(m.getGenericParameterTypes()[0]);
                 out.put(name, new MethodSetter(m, reader));
             }
@@ -1068,7 +1068,7 @@ final class RuntimeReadRegistry {
             String name = jsonbName(f);
             if (creatorNames.contains(name)) continue;
             if (out.containsKey(name)) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on write */ }
             BindingReader reader = readerFor(f.getGenericType());
             out.put(name, new FieldSetter(f, reader));
         }
@@ -1568,7 +1568,7 @@ final class RuntimeReadRegistry {
             catch (NoSuchMethodException e) {
                 throw new JsonbException("Canonical record constructor not found for " + concrete, e);
             }
-            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+            try { ctor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible constructor fails later, on invoke */ }
             Object[] args = new Object[paramTypes.length];
             for (int i = 0; i < paramTypes.length; i++) args[i] = defaultFor(paramTypes[i]);
             JsonParser.Event e;
@@ -1606,7 +1606,7 @@ final class RuntimeReadRegistry {
         if (!Modifier.isPublic(cMods) && !Modifier.isProtected(cMods)) {
             throw new JsonbException("No accessible no-arg constructor for " + concrete);
         }
-        try { ctor.setAccessible(true); } catch (Exception ignore) {}
+        try { ctor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible constructor fails later, on invoke */ }
         Object inst;
         try { inst = ctor.newInstance(); }
         catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed for " + concrete, ex); }
@@ -1617,7 +1617,7 @@ final class RuntimeReadRegistry {
             if (sm.getParameterCount() != 1) continue;
             String prop = RuntimeBindingRegistry.beanSetterOf(sm);
             if (prop == null) continue;
-            try { sm.setAccessible(true); } catch (Exception ignore) {}
+            try { sm.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible setter fails later, on invoke */ }
             BindingReader reader = readerFor(sm.getGenericParameterTypes()[0]);
             writers.put(prop, new MethodSetter(sm, reader));
         }
@@ -1627,7 +1627,7 @@ final class RuntimeReadRegistry {
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods) || Modifier.isFinal(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (writers.containsKey(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on write */ }
             BindingReader reader = readerFor(f.getGenericType());
             writers.put(f.getName(), new FieldSetter(f, reader));
         }
@@ -1784,25 +1784,31 @@ final class RuntimeReadRegistry {
 
     /** Parse une string en {@link Instant} en essayant plusieurs formats ISO. */
     private static Instant parseAsInstant(String s) {
-        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME).toInstant(); } catch (Exception ignored) {}
-        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant(); } catch (Exception ignored) {}
-        try { return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception ignored) {}
-        try { return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception ignored) {}
+        // Each failed attempt falls through to the next ISO format; Instant.parse reports the error.
+        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME).toInstant(); } catch (Exception _) { /* next format */ }
+        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant(); } catch (Exception _) { /* next format */ }
+        try { return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception _) { /* next format */ }
+        try { return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC")).toInstant(); } catch (Exception _) { /* next format */ }
         return Instant.parse(s);
     }
 
     /** Parse une string en {@link ZonedDateTime} en essayant plusieurs formats ISO. */
     private static ZonedDateTime parseAsZonedDateTime(String s) {
-        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME); } catch (Exception ignored) {}
-        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime(); } catch (Exception ignored) {}
+        // Each failed attempt falls through to the next ISO format; the last parse reports the error.
+        try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME); } catch (Exception _) { /* next format */ }
+        try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime(); } catch (Exception _) { /* next format */ }
         try {
-            // Date avec offset uniquement : "1970-01-01+01:00"
+            // Date with an offset only: "1970-01-01+01:00"
             return java.time.OffsetDateTime.parse(s + "T00:00:00" + s.substring(s.length()-6, s.length()),
                     DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime();
-        } catch (Exception ignored) {}
+        } catch (Exception _) {
+            // next format
+        }
         try {
             return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC"));
-        } catch (Exception ignored) {}
+        } catch (Exception _) {
+            // next format
+        }
         return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME).atZone(java.time.ZoneId.of("UTC"));
     }
 

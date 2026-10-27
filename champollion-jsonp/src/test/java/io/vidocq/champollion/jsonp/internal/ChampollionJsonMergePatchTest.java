@@ -108,12 +108,12 @@ class ChampollionJsonMergePatchTest {
     /** RFC 7396 §3 examples — quelques cas canoniques. */
     @Test
     void appendix_examples() {
-        // {"a":"b","c":{"d":"e","f":"g"}} + {"a":"z","c":{"f":null}} = {"a":"z","c":{"d":"e"}}
+        // Patching {"a":"b","c":{"d":"e","f":"g"}} with {"a":"z","c":{"f":null}} gives {"a":"z","c":{"d":"e"}}.
         assertEquals(
                 read("{\"a\":\"z\",\"c\":{\"d\":\"e\"}}"),
                 apply("{\"a\":\"b\",\"c\":{\"d\":\"e\",\"f\":\"g\"}}", "{\"a\":\"z\",\"c\":{\"f\":null}}"));
 
-        // {"a":[{"b":"c"}]} + {"a":[1]} = {"a":[1]}
+        // Patching {"a":[{"b":"c"}]} with {"a":[1]} gives {"a":[1]}.
         assertEquals(
                 read("{\"a\":[1]}"),
                 apply("{\"a\":[{\"b\":\"c\"}]}", "{\"a\":[1]}"));
@@ -133,7 +133,7 @@ class ChampollionJsonMergePatchTest {
         var source = read("{\"a\":1,\"b\":2}");
         var target = read("{\"a\":1}");
         JsonMergePatch diff = ChampollionJsonMergePatch.diff(source, target);
-        // Le patch doit contenir {"b":null}
+        // The patch must carry {"b":null} for the removed member.
         var asJson = diff.toJsonValue();
         assertEquals(JsonValue.NULL, ((jakarta.json.JsonObject) asJson).get("b"));
     }

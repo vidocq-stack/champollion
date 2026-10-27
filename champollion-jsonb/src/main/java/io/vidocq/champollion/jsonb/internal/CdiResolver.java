@@ -62,7 +62,7 @@ final class CdiResolver {
             isUnsatisfied = lookup.findVirtual(instCls, "isUnsatisfied", MethodType.methodType(boolean.class));
             isAmbiguous = lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class));
             available = true;
-        } catch (Throwable ignore) {
+        } catch (Throwable _) {
             // CDI absent from the classpath — fallback newInstance will always be used.
         }
         CDI_CURRENT = current;
@@ -96,7 +96,7 @@ final class CdiResolver {
                     Object bean = INSTANCE_GET.invoke(inst);
                     if (bean != null) return (T) bean;
                 }
-            } catch (Throwable t) {
+            } catch (Throwable _) {
                 // Container not started → fallback newInstance.
             }
         }
@@ -135,7 +135,7 @@ final class CdiResolver {
 
     private static <T> T newInstanceFallback(Class<T> beanClass) throws ReflectiveOperationException {
         var ctor = beanClass.getDeclaredConstructor();
-        try { ctor.setAccessible(true); } catch (Exception ignore) {}
+        try { ctor.setAccessible(true); } catch (Exception _) { /* best effort: newInstance reports an inaccessible constructor */ }
         return ctor.newInstance();
     }
 }

@@ -289,7 +289,7 @@ class ChampollionJsonParserTest {
             @Override public int read(char[] cbuf, int off, int len) throws java.io.IOException {
                 throw new java.io.IOException("boom");
             }
-            @Override public void close() {}
+            @Override public void close() { /* nothing to release */ }
         };
         var p = new ChampollionJsonParser(bad);
         assertThrows(JsonException.class, p::hasNext);

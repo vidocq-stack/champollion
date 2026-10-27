@@ -1198,7 +1198,7 @@ public final class ProtobufJsonRuntime {
                         throw new IOException("uint64 out of range: " + bd);
                     }
                     yield bi.longValue(); // bit-preserving
-                } catch (ArithmeticException e) {
+                } catch (ArithmeticException _) {
                     throw new IOException("uint64 expects integer-valued JSON, got " + bd);
                 }
             }
@@ -1270,7 +1270,9 @@ public final class ProtobufJsonRuntime {
                     throw new IOException("Expected message object, got " + v);
                 }
                 if (fb.elementType == Empty.class) {
-                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {}
+                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {
+                        // Empty has no field to bind: skip up to the closing brace.
+                    }
                     yield Empty.INSTANCE;
                 }
                 yield readMessage(planFor(fb.elementType), parser);
@@ -1290,7 +1292,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int32 out of range: " + bd);
             }
             return bi.intValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("int32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1304,7 +1306,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("uint32 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("uint32 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1318,7 +1320,7 @@ public final class ProtobufJsonRuntime {
                 throw new IOException("int64 out of range: " + bd);
             }
             return bi.longValue();
-        } catch (ArithmeticException e) {
+        } catch (ArithmeticException _) {
             throw new IOException("int64 expects integer-valued JSON, got " + bd);
         }
     }
@@ -1331,7 +1333,7 @@ public final class ProtobufJsonRuntime {
         } else if (v == JsonParser.Event.VALUE_STRING) {
             try {
                 bd = new java.math.BigDecimal(parser.getString());
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException _) {
                 throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
             }
         } else {
@@ -1429,7 +1431,7 @@ public final class ProtobufJsonRuntime {
         MethodHandles.Lookup lookup;
         try {
             lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException e) {
+        } catch (IllegalAccessException _) {
             lookup = MethodHandles.publicLookup();
         }
         List<FieldBinding> fields = new ArrayList<>();

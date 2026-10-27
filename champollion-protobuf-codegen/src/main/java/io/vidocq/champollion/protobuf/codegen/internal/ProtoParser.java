@@ -219,7 +219,7 @@ public final class ProtoParser {
 
     private OptionEntry parseOption() {
         consume(); // 'option'
-        // Skip eventual paren around option name : option (foo.bar) = baz;
+        // Optional parentheses around the option name, as in: option (foo.bar) = baz
         StringBuilder name = new StringBuilder();
         if (peek().kind() == TokenKind.LPAREN) {
             consume();

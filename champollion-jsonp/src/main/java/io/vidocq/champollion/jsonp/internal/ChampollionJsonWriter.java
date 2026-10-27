@@ -104,7 +104,7 @@ public final class ChampollionJsonWriter implements JsonWriter {
         // (no document to materialize).
         try {
             generator.close();
-        } catch (jakarta.json.stream.JsonGenerationException e) {
+        } catch (jakarta.json.stream.JsonGenerationException _) {
             // Incomplete document (close without write*): ignored to allow clean
             // closing in a finally / try-with-resources block.
         }

@@ -255,7 +255,7 @@ public final class ChampollionJsonParser implements JsonParser {
             case OBJECT_VALUE -> state = Scope.OBJECT_COMMA;
             case ARRAY_START, ARRAY_VALUE -> state = Scope.ARRAY_COMMA;
             case ROOT -> { /* handled by the ROOT case after return */ }
-            default -> {}
+            default -> { /* no scope transition after a value in the other states */ }
         }
     }
 

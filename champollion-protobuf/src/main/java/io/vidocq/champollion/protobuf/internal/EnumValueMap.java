@@ -80,7 +80,7 @@ public final class EnumValueMap {
             try {
                 ProtoEnumValue pev = enumClass.getField(e.name()).getAnnotation(ProtoEnumValue.class);
                 value = pev != null ? pev.value() : e.ordinal();
-            } catch (NoSuchFieldException nsfe) {
+            } catch (NoSuchFieldException _) {
                 value = e.ordinal();
             }
             enumToInt.put(e, value);

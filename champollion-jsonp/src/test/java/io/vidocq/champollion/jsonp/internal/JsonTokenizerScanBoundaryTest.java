@@ -53,7 +53,7 @@ class JsonTokenizerScanBoundaryTest {
             pos += n;
             return n;
         }
-        @Override public void close() {}
+        @Override public void close() { /* in-memory source: nothing to release */ }
     }
 
     private static String roundTripString(JsonTokenizer t) {

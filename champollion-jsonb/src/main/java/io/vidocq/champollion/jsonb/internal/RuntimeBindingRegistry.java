@@ -449,7 +449,7 @@ final class RuntimeBindingRegistry {
             // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
-                try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                try { accessor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible accessor fails later, on invoke */ }
                 acc = new MethodAccessor(accessor);
             }
             props.add(new Property(name, acc, w, nillable));
@@ -622,7 +622,7 @@ final class RuntimeBindingRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
                 if (ann != null) return new NumberFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
@@ -665,7 +665,7 @@ final class RuntimeBindingRegistry {
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
                 try { Class.forName(pkg.getName() + ".package-info", false, cl); }
-                catch (Throwable ignored) {}
+                catch (Throwable _) { /* no package-info: no package-level annotation */ }
                 var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
                 if (ann != null) return new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
             }
@@ -851,7 +851,7 @@ final class RuntimeBindingRegistry {
         for (var e : getterByProp.entrySet()) {
             String propName = e.getKey();
             Method m = e.getValue();
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible getter fails later, on invoke */ }
             String name = jsonbNameFromMethod(m, propName);
             Field underlying0 = findFieldByName(type, propName);
             boolean nillable = computeNillable(m, underlying0, type);
@@ -887,7 +887,7 @@ final class RuntimeBindingRegistry {
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
             if (hiddenProps.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on read */ }
             String name = jsonbName(f, f.getName());
             boolean nillable = computeNillable(null, f, type);
             BindingWriter w = customAdapterWriter(f, null)
@@ -965,7 +965,8 @@ final class RuntimeBindingRegistry {
             if (pann != null) {
                 return pann.value().getDeclaredConstructor().newInstance();
             }
-        } catch (ClassNotFoundException ignored) {
+        } catch (ClassNotFoundException _) {
+            // No package-info class: fall through to strategy 2.
         } catch (Exception e) {
             throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
         }
@@ -1048,8 +1049,9 @@ final class RuntimeBindingRegistry {
             switch (strat) {
                 case "LEXICOGRAPHICAL" -> group.sort(java.util.Comparator.comparing(p -> p.name));
                 case "REVERSE" -> group.sort(java.util.Comparator.<Property, String>comparing(p -> p.name).reversed());
-                case "ANY" -> { }
-                default -> { }
+                default -> {
+                    // ANY, and any unknown strategy, keep the declaration order.
+                }
             }
             sortedRest.addAll(group);
         }
@@ -1188,7 +1190,7 @@ final class RuntimeBindingRegistry {
             if (pkg == null) continue;
             ClassLoader cl = c.getClassLoader();
             if (cl == null) cl = ClassLoader.getSystemClassLoader();
-            try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+            try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable _) { /* no package-info: no package-level annotation */ }
             var ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNillable.class);
             if (ann != null) return ann.value();
         }
@@ -1208,7 +1210,7 @@ final class RuntimeBindingRegistry {
     private static Field findFieldByName(Class<?> type, String name) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try { return c.getDeclaredField(name); }
-            catch (NoSuchFieldException ignored) {}
+            catch (NoSuchFieldException _) { /* not declared here: try the superclass */ }
         }
         return null;
     }
@@ -1411,9 +1413,9 @@ final class RuntimeBindingRegistry {
                             .findVirtual(type, accessor.getName(),
                                     java.lang.invoke.MethodType.methodType(c.getType()));
                     acc = new MhAccessor(mh);
-                } catch (NoSuchMethodException | IllegalAccessException ex) {
+                } catch (NoSuchMethodException | IllegalAccessException _) {
                     // Reflection fallback if publicLookup fails (non-exported record).
-                    try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                    try { accessor.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible accessor fails later, on invoke */ }
                     acc = new MethodAccessor(accessor);
                 }
             }
@@ -1439,7 +1441,7 @@ final class RuntimeBindingRegistry {
             String propName = beanPropertyOf(m);
             if (propName == null) continue;
             if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            try { m.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible getter fails later, on invoke */ }
             String name = jsonbNameFromMethod(m, propName);
             boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
@@ -1456,7 +1458,7 @@ final class RuntimeBindingRegistry {
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            try { f.setAccessible(true); } catch (Exception _) { /* best effort: an inaccessible field fails later, on read */ }
             String name = jsonbName(f, f.getName());
             boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
@@ -1741,7 +1743,7 @@ final class RuntimeBindingRegistry {
                     instMethodType);
             var fn = (java.util.function.Function<Object, Object>) callsite.getTarget().invokeExact();
             return new LambdaAccessor(fn);
-        } catch (Throwable t) {
+        } catch (Throwable _) {
             return null;
         }
     }

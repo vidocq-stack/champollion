@@ -452,12 +452,16 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                         pw.println("                if (__e == null) g.writeNull(); else g.write(__e);");
                         pw.println("            }");
                     }
-                    default -> {}
+                    default -> {
+                        // Unreachable: isSupportedComponentType rejects any other array component.
+                    }
                 }
                 pw.println("            g.writeEnd();");
                 pw.println("        }");
             }
-            default -> {}
+            default -> {
+                // Unreachable: isSupportedComponentType rejects any other component kind.
+            }
         }
     }
 
@@ -537,7 +541,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                 };
                 pw.println("        " + typeStr + " _" + name + " = null;");
             }
-            default -> {}
+            default -> {
+                // Unreachable: isSupportedComponentType rejects any other component kind.
+            }
         }
     }
 
@@ -646,10 +652,14 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                         pw.println("                    }");
                         pw.println("                    " + target + " = __ss.toArray(new String[0]);");
                     }
-                    default -> {}
+                    default -> {
+                        // Unreachable: isSupportedComponentType rejects any other array component.
+                    }
                 }
             }
-            default -> {}
+            default -> {
+                // Unreachable: isSupportedComponentType rejects any other component kind.
+            }
         }
     }
 
@@ -707,8 +717,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                         if (!line.isEmpty() && !line.startsWith("#")) all.add(line);
                     }
                 }
-            } catch (IOException ignored) {
-                // Fichier absent au premier round : OK.
+            } catch (IOException _) {
+                // No services file yet on the first round: nothing to append to.
             }
             all.addAll(generatedBindings);
             FileObject f = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);

@@ -91,9 +91,9 @@ class MapWireFormatTest {
         @Test
         @DisplayName("map duplicate key → last wins")
         void duplicateKeyLastWins() throws Exception {
-            // Forge un wire avec deux entries pour la même key "k" :
-            // tag=0x0A, len=5, entry { tag=0x0A len=1 'k' tag=0x10 1 } (key=k, val=1)
-            // tag=0x0A, len=5, entry { tag=0x0A len=1 'k' tag=0x10 2 } (key=k, val=2)
+            // Hand-built wire with two entries for the same key "k", each one being
+            // field tag 0x0A and length 5, then key tag 0x0A, length 1 and 'k',
+            // then value tag 0x10 and the value: 1 for the first entry, 2 for the second.
             byte[] wire = new byte[] {
                     0x0A, 0x05, 0x0A, 0x01, 'k', 0x10, 0x01,
                     0x0A, 0x05, 0x0A, 0x01, 'k', 0x10, 0x02

@@ -77,7 +77,7 @@ class JsonTestSuiteConformanceTest {
                     try {
                         parseFully(content);
                         fail("invalid JSON accepted");
-                    } catch (JsonParsingException expected) {
+                    } catch (JsonParsingException _) {
                         // contractual rejection
                     }
                     // any other Throwable (StackOverflowError, NPE...) propagates and fails
@@ -85,10 +85,9 @@ class JsonTestSuiteConformanceTest {
                 case 'i' -> {
                     try {
                         parseFully(content);
-                    } catch (JsonParsingException acceptable) {
-                        // implementation-defined: rejection is fine too
-                    } catch (NumberFormatException acceptable) {
-                        // i_number_huge_exp & friends: the document parses fine but
+                    } catch (JsonParsingException | NumberFormatException _) {
+                        // Implementation-defined: rejection is fine too.
+                        // NumberFormatException covers i_number_huge_exp & friends: the document parses fine but
                         // materializing the number exceeds BigDecimal's int scale
                         // ("Too many nonzero exponent digits"). Parsson defers to
                         // new BigDecimal(String) exactly the same way — matching the

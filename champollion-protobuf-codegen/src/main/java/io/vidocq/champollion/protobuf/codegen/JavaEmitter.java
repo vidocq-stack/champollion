@@ -241,7 +241,7 @@ public final class JavaEmitter {
      */
     private String simpleNameForReference(String fullName) {
         // Strip any package prefix (before the first uppercase letter).
-        // Proto3 rule: fullNames are {package}.{Type}.{Nested};
+        // Proto3 rule: full names read {package}.{Type}.{Nested}, so
         // we keep the last sequence of names starting with an uppercase letter.
         String[] segs = fullName.split("\\.");
         int start = 0;

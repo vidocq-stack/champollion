@@ -65,7 +65,7 @@ public final class JsonStringTokenizer extends JsonTokenizer {
 
     @Override
     protected BigDecimal rangeBigDecimal() {
-        // String mode: BigDecimal lacks a CharSequence-range constructor;
+        // String mode: BigDecimal lacks a CharSequence-range constructor, so
         // materialize (and cache) the literal, small for sane numbers.
         return new BigDecimal(currentString());
     }

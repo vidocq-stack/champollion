@@ -247,7 +247,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                     if (!line.isEmpty() && !line.startsWith("#")) all.add(line);
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             // No existing service file — create one.
         }
         FileObject out = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);

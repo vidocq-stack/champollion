@@ -63,7 +63,9 @@ public final class ChampollionJsonProvider extends JsonProvider {
     /** Configuration factor. M1.4: minimal — pretty printing. To be expanded over time. */
     public static final String PRETTY_PRINTING = JsonGenerator.PRETTY_PRINTING;
 
-    public ChampollionJsonProvider() {}
+    public ChampollionJsonProvider() {
+        // Stateless provider: the public no-arg constructor is what ServiceLoader needs.
+    }
 
     private static boolean prettyOf(Map<String, ?> config) {
         if (config == null) return false;
@@ -143,9 +145,9 @@ public final class ChampollionJsonProvider extends JsonProvider {
             if (read >= 2 && head[1] == 0) {
                 return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
             }
-            // RFC 8259 §8.1: valid JSON cannot start with 0x00 in UTF-8;
-            // if head[0] == 0 and the encoding cannot be determined (< 2 bytes of
-            // context or ambiguous pattern), throw JsonException.
+            // RFC 8259 §8.1: valid JSON cannot start with a 0x00 byte in UTF-8. When the
+            // first byte is zero and the encoding cannot be determined (fewer than two
+            // bytes of context, or an ambiguous pattern), reject the input.
             if (read >= 1 && head[0] == 0) {
                 throw new jakarta.json.JsonException("Cannot determine JSON encoding");
             }

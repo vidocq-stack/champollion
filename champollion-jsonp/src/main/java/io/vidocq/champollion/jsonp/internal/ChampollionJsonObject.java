@@ -72,7 +72,7 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
         return v.getString();
     }
     @Override public String getString(String name, String defaultValue) {
-        try { return getString(name); } catch (Exception e) { return defaultValue; }
+        try { return getString(name); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public int getInt(String name) {
@@ -81,7 +81,7 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
         return v.intValue();
     }
     @Override public int getInt(String name, int defaultValue) {
-        try { return getInt(name); } catch (Exception e) { return defaultValue; }
+        try { return getInt(name); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public boolean getBoolean(String name) {
@@ -93,7 +93,7 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
     }
 
     @Override public boolean getBoolean(String name, boolean defaultValue) {
-        try { return getBoolean(name); } catch (Exception e) { return defaultValue; }
+        try { return getBoolean(name); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public boolean isNull(String name) {

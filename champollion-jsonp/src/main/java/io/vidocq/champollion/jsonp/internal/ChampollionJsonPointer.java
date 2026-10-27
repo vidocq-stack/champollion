@@ -121,7 +121,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
                 if (cur == null) return false;
             }
             return true;
-        } catch (Exception e) {
+        } catch (Exception _) {
             return false;
         }
     }
@@ -152,7 +152,7 @@ public final class ChampollionJsonPointer implements JsonPointer {
                 int idx = parseIndex(tok, arr.size(), /*allowDash*/ false);
                 if (idx >= arr.size()) return null;
                 return arr.get(idx);
-            } catch (Exception e) {
+            } catch (Exception _) {
                 return null;
             }
         }

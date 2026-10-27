@@ -60,13 +60,13 @@ public final class ChampollionJsonArray extends AbstractList<JsonValue> implemen
     @Override public String getString(int index) { return getJsonString(index).getString(); }
 
     @Override public String getString(int index, String defaultValue) {
-        try { return getString(index); } catch (Exception e) { return defaultValue; }
+        try { return getString(index); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public int getInt(int index) { return getJsonNumber(index).intValue(); }
 
     @Override public int getInt(int index, int defaultValue) {
-        try { return getInt(index); } catch (Exception e) { return defaultValue; }
+        try { return getInt(index); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public boolean getBoolean(int index) {
@@ -77,7 +77,7 @@ public final class ChampollionJsonArray extends AbstractList<JsonValue> implemen
     }
 
     @Override public boolean getBoolean(int index, boolean defaultValue) {
-        try { return getBoolean(index); } catch (Exception e) { return defaultValue; }
+        try { return getBoolean(index); } catch (Exception _) { return defaultValue; }
     }
 
     @Override public boolean isNull(int index) {
