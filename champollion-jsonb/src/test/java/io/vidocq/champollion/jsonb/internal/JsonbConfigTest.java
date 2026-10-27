@@ -165,6 +165,7 @@ class JsonbConfigTest {
             public String getHidden() { return hidden; }
             public void setHidden(String hidden) { this.hidden = hidden; }
             public String getComputed() { return "c"; }
+            public void setAlias(String alias) { this.hidden = alias; }
         }
 
         /** Shows every field and no method: a getter only counts through its backing field. */
@@ -179,7 +180,9 @@ class JsonbConfigTest {
             var config = new JsonbConfig().withPropertyVisibilityStrategy(new FieldsOnly());
             try (var j = JsonbBuilder.create(config)) {
                 assertEquals("{\"hidden\":\"h\",\"visibleField\":\"f\"}", j.toJson(new Mixed()));
-                Mixed back = j.fromJson("{\"hidden\":\"x\",\"visibleField\":\"y\",\"computed\":\"z\"}", Mixed.class);
+                // "alias" has a setter but no field: hidden like the other methods.
+                Mixed back = j.fromJson("{\"hidden\":\"x\",\"visibleField\":\"y\",\"computed\":\"z\",\"alias\":\"w\"}",
+                        Mixed.class);
                 assertEquals("x", back.getHidden());
                 assertEquals("y", back.visibleField);
             }

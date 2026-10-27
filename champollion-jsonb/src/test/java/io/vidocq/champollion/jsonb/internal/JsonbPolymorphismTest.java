@@ -78,6 +78,30 @@ class JsonbPolymorphismTest {
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 
+    @JsonbTypeInfo(key = "@kind", value = @JsonbSubtype(alias = "circle", type = Circle.class))
+    public interface Shape {}
+
+    public static class Circle implements Shape {
+        private double radius;
+        public String label;
+        public double getRadius() { return radius; }
+        public void setRadius(double radius) { this.radius = radius; }
+    }
+
+    @Test
+    void bean_subtype_round_trips_through_its_setters_and_public_fields() throws Exception {
+        try (var j = JsonbBuilder.create()) {
+            var circle = new Circle();
+            circle.setRadius(1.5);
+            circle.label = "unit";
+            String json = j.toJson(circle, (java.lang.reflect.Type) Shape.class);
+            assertEquals("{\"@kind\":\"circle\",\"label\":\"unit\",\"radius\":1.5}", json);
+            Circle back = assertInstanceOf(Circle.class, j.fromJson(json, Shape.class));
+            assertEquals(1.5, back.getRadius());
+            assertEquals("unit", back.label);
+        }
+    }
+
     @Test
     void roundtrip_via_animal_interface() {
         try (var j = JsonbBuilder.create()) {
