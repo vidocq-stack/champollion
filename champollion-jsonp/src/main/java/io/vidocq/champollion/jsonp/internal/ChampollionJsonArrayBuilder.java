@@ -97,30 +97,30 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArrayBuilder add(int index, String value) {
-        return add(index,new ChampollionJsonString(value));
+        return add(index, new ChampollionJsonString(value));
     }
 
     @Override public JsonArrayBuilder add(int index, BigDecimal value) {
-        return add(index,ChampollionJsonNumber.of(value));
+        return add(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder add(int index, BigInteger value) {
-        return add(index,ChampollionJsonNumber.of(new BigDecimal(value)));
+        return add(index, ChampollionJsonNumber.of(new BigDecimal(value)));
     }
 
     @Override public JsonArrayBuilder add(int index, int value) {
-        return add(index,ChampollionJsonNumber.of(value));
+        return add(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder add(int index, long value) {
-        return add(index,ChampollionJsonNumber.of(value));
+        return add(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder add(int index, double value) {
         if (Double.isNaN(value) || Double.isInfinite(value)) {
             throw new NumberFormatException("JSON does not allow NaN or Infinity");
         }
-        return add(index,ChampollionJsonNumber.of(BigDecimal.valueOf(value)));
+        return add(index, ChampollionJsonNumber.of(BigDecimal.valueOf(value)));
     }
 
     @Override public JsonArrayBuilder add(int index, boolean value) {
@@ -128,15 +128,15 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArrayBuilder addNull(int index) {
-        return add(index,JsonValue.NULL);
+        return add(index, JsonValue.NULL);
     }
 
     @Override public JsonArrayBuilder add(int index, JsonObjectBuilder builder) {
-        return add(index,builder.build());
+        return add(index, builder.build());
     }
 
     @Override public JsonArrayBuilder add(int index, JsonArrayBuilder builder) {
-        return add(index,builder.build());
+        return add(index, builder.build());
     }
 
     @Override public JsonArrayBuilder set(int index, JsonValue value) {
@@ -145,30 +145,30 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArrayBuilder set(int index, String value) {
-        return set(index,new ChampollionJsonString(value));
+        return set(index, new ChampollionJsonString(value));
     }
 
     @Override public JsonArrayBuilder set(int index, BigDecimal value) {
-        return set(index,ChampollionJsonNumber.of(value));
+        return set(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder set(int index, BigInteger value) {
-        return set(index,ChampollionJsonNumber.of(new BigDecimal(value)));
+        return set(index, ChampollionJsonNumber.of(new BigDecimal(value)));
     }
 
     @Override public JsonArrayBuilder set(int index, int value) {
-        return set(index,ChampollionJsonNumber.of(value));
+        return set(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder set(int index, long value) {
-        return set(index,ChampollionJsonNumber.of(value));
+        return set(index, ChampollionJsonNumber.of(value));
     }
 
     @Override public JsonArrayBuilder set(int index, double value) {
         if (Double.isNaN(value) || Double.isInfinite(value)) {
             throw new NumberFormatException("JSON does not allow NaN or Infinity");
         }
-        return set(index,ChampollionJsonNumber.of(BigDecimal.valueOf(value)));
+        return set(index, ChampollionJsonNumber.of(BigDecimal.valueOf(value)));
     }
 
     @Override public JsonArrayBuilder set(int index, boolean value) {
@@ -176,15 +176,15 @@ public final class ChampollionJsonArrayBuilder implements JsonArrayBuilder {
     }
 
     @Override public JsonArrayBuilder setNull(int index) {
-        return set(index,JsonValue.NULL);
+        return set(index, JsonValue.NULL);
     }
 
     @Override public JsonArrayBuilder set(int index, JsonObjectBuilder builder) {
-        return set(index,builder.build());
+        return set(index, builder.build());
     }
 
     @Override public JsonArrayBuilder set(int index, JsonArrayBuilder builder) {
-        return set(index,builder.build());
+        return set(index, builder.build());
     }
 
     @Override public JsonArrayBuilder remove(int index) {
