@@ -209,4 +209,52 @@ class JsonbStaticProcessorTest {
         fm.close();
         assertTrue(!ok, "compilation should fail when @JsonbStatic is on a non-record");
     }
+
+    @Test
+    void rejects_unsupported_component_types(@TempDir Path tmp) throws Exception {
+        String date = """
+                package generated.test;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                @JsonbStatic
+                public record Dated(java.util.Date when) {}
+                """;
+        assertEquals(List.of("@JsonbStatic component type not supported in M5.2: java.util.Date"
+                        + " (only primitives + String supported — containers in M5.3)"),
+                compileErrors(tmp.resolve("date"), "generated.test.Dated", date));
+
+        // JSON object keys are strings: a Map component must be keyed by String.
+        String intKeys = """
+                package generated.test;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                @JsonbStatic
+                public record Indexed(java.util.Map<Integer, String> byId) {}
+                """;
+        assertEquals(1, compileErrors(tmp.resolve("map"), "generated.test.Indexed", intKeys).size());
+    }
+
+    /** Compiles {@code source} with the processor and returns the error messages it reported. */
+    private static List<String> compileErrors(Path tmp, String fqn, String source) throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path out = tmp.resolve("out");
+        Files.createDirectories(out);
+        var diagnostics = new javax.tools.DiagnosticCollector<JavaFileObject>();
+        var fm = compiler.getStandardFileManager(diagnostics, null, java.nio.charset.StandardCharsets.UTF_8);
+        String cp = System.getProperty("java.class.path");
+        String mp = System.getProperty("jdk.module.path", "");
+        var task = compiler.getTask(
+                null, fm, diagnostics,
+                List.of("-d", out.toString(), "--release", "25",
+                        "-cp", cp + (mp.isEmpty() ? "" : java.io.File.pathSeparator + mp),
+                        "-processor", JsonbStaticProcessor.class.getName()),
+                null,
+                List.of(new InMemorySource(fqn, source))
+        );
+        boolean ok = task.call();
+        fm.close();
+        assertTrue(!ok, "compilation should fail");
+        return diagnostics.getDiagnostics().stream()
+                .filter(d -> d.getKind() == javax.tools.Diagnostic.Kind.ERROR)
+                .map(d -> d.getMessage(null))
+                .toList();
+    }
 }

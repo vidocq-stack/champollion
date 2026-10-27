@@ -152,6 +152,57 @@ class CodegenContainersTest {
         }
     }
 
+    @Test
+    void narrow_primitives_and_boxed_lists_round_trip(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.cont;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                import java.util.List;
+                @JsonbStatic
+                public record Sample(short s, byte b, float f, List<Long> longs, List<Double> doubles,
+                                     List<Boolean> flags, List<Short> shorts, List<Byte> bytes) {}
+                """;
+        Setup s = setup(tmp, "generated.cont.Sample", src);
+        Object inst = s.targetClass.getDeclaredConstructors()[0].newInstance(
+                (short) 7, (byte) -3, 1.5f, List.of(1L, 2L), List.of(0.5, 2.25),
+                List.of(true, false), List.of((short) 4), List.of((byte) 5));
+        assertWriteEquals(s, inst);
+
+        var sw = new StringWriter();
+        try (JsonGenerator g = Json.createGenerator(sw)) { s.staticBinding.write(g, inst); }
+        assertEquals("{\"s\":7,\"b\":-3,\"f\":1.5,\"longs\":[1,2],\"doubles\":[0.5,2.25],"
+                + "\"flags\":[true,false],\"shorts\":[4],\"bytes\":[5]}", sw.toString());
+        try (JsonParser p = Json.createParser(new StringReader(sw.toString()))) {
+            assertEquals(inst, s.staticBinding.read(p));
+        }
+    }
+
+    @Test
+    void long_double_and_boolean_arrays_round_trip(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.cont;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                @JsonbStatic
+                public record Series(long[] ids, double[] weights, boolean[] flags) {}
+                """;
+        Setup s = setup(tmp, "generated.cont.Series", src);
+        Object inst = s.targetClass.getDeclaredConstructor(long[].class, double[].class, boolean[].class)
+                .newInstance(new long[] {1L, 2L}, new double[] {0.5}, new boolean[] {true, false});
+        assertWriteEquals(s, inst);
+
+        var sw = new StringWriter();
+        try (JsonGenerator g = Json.createGenerator(sw)) { s.staticBinding.write(g, inst); }
+        try (JsonParser p = Json.createParser(new StringReader(sw.toString()))) {
+            Object back = s.staticBinding.read(p);
+            assertTrue(java.util.Arrays.equals(new long[] {1L, 2L},
+                    (long[]) s.targetClass.getMethod("ids").invoke(back)));
+            assertTrue(java.util.Arrays.equals(new double[] {0.5},
+                    (double[]) s.targetClass.getMethod("weights").invoke(back)));
+            assertTrue(java.util.Arrays.equals(new boolean[] {true, false},
+                    (boolean[]) s.targetClass.getMethod("flags").invoke(back)));
+        }
+    }
+
     // ============================================================
     // Plumbing
     // ============================================================
