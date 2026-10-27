@@ -1555,7 +1555,7 @@ final class RuntimeReadRegistry {
             RecordComponent[] comps = concrete.getRecordComponents();
             Class<?>[] paramTypes = new Class<?>[comps.length];
             BindingReader[] readers = new BindingReader[comps.length];
-            Map<String, Integer> indexByName = HashMap.newHashMap(comps.length);
+            Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
             for (int i = 0; i < comps.length; i++) {
                 final RecordComponent comp = comps[i];
                 paramTypes[i] = comp.getType();
