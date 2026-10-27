@@ -870,28 +870,17 @@ public final class RuntimeBinding {
                        int unknownFieldsIndex,
                        MethodHandle unknownFieldsGetter) {
 
+        // A plan is derived from its record type alone, and is cached once per type:
+        // the type identifies it, the arrays derived from it add nothing.
+        @Override public boolean equals(Object o) { return o instanceof BindingPlan other && recordType == other.recordType; }
+        @Override public int hashCode() { return recordType.hashCode(); }
+        @Override public String toString() { return "BindingPlan[" + recordType.getName() + "]"; }
+
         /** Compat ctor pour les call-sites anciens (sans support UnknownFieldSet). */
         BindingPlan(Class<?> recordType, List<FieldBinding> fields,
                     Map<Integer, FieldBinding> byNumber, MethodHandle constructor,
                     Class<?>[] componentTypes) {
             this(recordType, fields, byNumber, constructor, componentTypes, -1, null);
-        }
-
-        // A plan is derived from its record type alone, and is cached once per type:
-        // the type identifies it, the arrays derived from it add nothing.
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof BindingPlan other && recordType == other.recordType;
-        }
-
-        @Override
-        public int hashCode() {
-            return recordType.hashCode();
-        }
-
-        @Override
-        public String toString() {
-            return "BindingPlan[" + recordType.getName() + "]";
         }
     }
 
