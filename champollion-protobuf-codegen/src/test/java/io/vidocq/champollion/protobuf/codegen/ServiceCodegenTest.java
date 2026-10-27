@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.vidocq.champollion.protobuf.Descriptors;
 import io.vidocq.champollion.protobuf.codegen.internal.ProtoParser;
+import io.vidocq.champollion.protobuf.codegen.internal.ProtoSyntaxException;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -79,6 +80,16 @@ class ServiceCodegenTest {
                     }
                     """);
             assertEquals(1, f.findService("Greeter").methods().size());
+        }
+
+        @Test
+        void unexpected_token_inside_a_service_is_rejected() {
+            assertThrows(ProtoSyntaxException.class, () -> ProtoParser.parse("inline.proto", """
+                    syntax = "proto3";
+                    service Greeter {
+                      message Nested {}
+                    }
+                    """));
         }
 
         @Test
