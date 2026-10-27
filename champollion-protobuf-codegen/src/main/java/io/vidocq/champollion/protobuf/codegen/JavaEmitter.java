@@ -269,19 +269,17 @@ public final class JavaEmitter {
         return sb.toString();
     }
 
+    /** Java reserved keywords and literals, and the contextual keywords an identifier cannot take.
+     *  One text rather than one literal per word: several words are also type names. */
+    private static final java.util.Set<String> JAVA_KEYWORDS = java.util.Set.of((
+            "abstract assert boolean break byte case catch char class const continue default do double"
+            + " else enum extends final finally float for goto if implements import instanceof int"
+            + " interface long native new package private protected public return short static strictfp"
+            + " super switch synchronized this throw throws transient try void volatile while true false"
+            + " null record sealed permits non-sealed yield").split(" "));
+
     /** Java reserved keywords: we suffix an underscore. */
     private static String safeIdent(String name) {
-        return switch (name) {
-            case "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
-                 "class", "const", "continue", "default", "do", "double", "else", "enum",
-                 "extends", "final", "finally", "float", "for", "goto", "if", "implements",
-                 "import", "instanceof", "int", "interface", "long", "native", "new", "package",
-                 "private", "protected", "public", "return", "short", "static", "strictfp",
-                 "super", "switch", "synchronized", "this", "throw", "throws", "transient",
-                 "try", "void", "volatile", "while", "true", "false", "null", "record",
-                 "sealed", "permits", "non-sealed", "yield"
-                    -> name + "_";
-            default -> name;
-        };
+        return JAVA_KEYWORDS.contains(name) ? name + "_" : name;
     }
 }
