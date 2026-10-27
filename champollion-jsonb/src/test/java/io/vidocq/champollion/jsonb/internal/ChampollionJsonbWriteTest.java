@@ -208,4 +208,19 @@ class ChampollionJsonbWriteTest {
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }
+
+    @Nested
+    @DisplayName("Primitive arrays")
+    class PrimitiveArrays {
+
+        @Test
+        void float_short_and_byte_arrays_are_json_number_arrays() throws Exception {
+            // JSON-B 3.0 §3.3.1: byte[] defaults to an array of signed numbers (BYTE strategy).
+            try (var j = JsonbBuilder.create()) {
+                assertEquals("[1.5,-2.0]", j.toJson(new float[] {1.5f, -2f}));
+                assertEquals("[1,-2]", j.toJson(new short[] {1, -2}));
+                assertEquals("[-1,127]", j.toJson(new byte[] {-1, 127}));
+            }
+        }
+    }
 }

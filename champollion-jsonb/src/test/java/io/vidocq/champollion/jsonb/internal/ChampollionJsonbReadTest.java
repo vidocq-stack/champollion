@@ -223,4 +223,53 @@ class ChampollionJsonbReadTest {
             } catch (Exception e) { throw new RuntimeException(e); }
         }
     }
+
+    @Nested
+    @DisplayName("Legacy dates — accepted ISO forms")
+    class LegacyDates {
+
+        @Test
+        void date_accepts_zoned_local_and_date_only_iso_forms() throws Exception {
+            // Without a format, java.util.Date reads any ISO-8601 form; local forms are UTC.
+            try (var j = JsonbBuilder.create()) {
+                Instant expected = Instant.parse("2020-01-02T10:00:00Z");
+                assertEquals(expected, j.fromJson("\"2020-01-02T10:00:00Z\"", java.util.Date.class).toInstant());
+                assertEquals(expected, j.fromJson("\"2020-01-02T11:00:00+01:00\"", java.util.Date.class).toInstant());
+                assertEquals(expected, j.fromJson("\"2020-01-02T10:00:00\"", java.util.Date.class).toInstant());
+                assertEquals(Instant.parse("2020-01-02T00:00:00Z"),
+                        j.fromJson("\"2020-01-02\"", java.util.Date.class).toInstant());
+            }
+        }
+
+        @Test
+        void calendar_accepts_zoned_date_only_and_local_forms() throws Exception {
+            try (var j = JsonbBuilder.create()) {
+                Instant expected = Instant.parse("2020-01-02T10:00:00Z");
+                assertEquals(expected, j.fromJson("\"2020-01-02T10:00:00Z\"", java.util.Calendar.class).toInstant());
+                assertEquals(expected,
+                        j.fromJson("\"2020-01-02T11:00:00+01:00\"", java.util.Calendar.class).toInstant());
+                assertEquals(Instant.parse("2020-01-02T00:00:00Z"),
+                        j.fromJson("\"2020-01-02\"", java.util.Calendar.class).toInstant());
+                assertEquals(expected, j.fromJson("\"2020-01-02T10:00:00\"", java.util.Calendar.class).toInstant());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Generic arrays")
+    class GenericArrays {
+
+        public static class Shelves {
+            public List<String>[] rows;
+        }
+
+        @Test
+        void array_of_parameterized_lists_is_read() throws Exception {
+            try (var j = JsonbBuilder.create()) {
+                Shelves s = j.fromJson("{\"rows\":[[\"a\"],[\"b\",\"c\"]]}", Shelves.class);
+                assertEquals(2, s.rows.length);
+                assertEquals(List.of("b", "c"), s.rows[1]);
+            }
+        }
+    }
 }

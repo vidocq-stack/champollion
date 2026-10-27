@@ -24,6 +24,7 @@ import jakarta.json.bind.adapter.JsonbAdapter;
 import jakarta.json.bind.annotation.JsonbCreator;
 import jakarta.json.bind.annotation.JsonbDateFormat;
 import jakarta.json.bind.annotation.JsonbNillable;
+import jakarta.json.bind.annotation.JsonbNumberFormat;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTypeAdapter;
 import jakarta.json.bind.annotation.JsonbTransient;
@@ -279,6 +280,101 @@ class JsonbCustomizationTest {
                 assertEquals("Bob", back.name());
                 assertNull(back.secret(), "secret doit rester null après lecture, malgré la valeur dans le JSON.");
             } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbNumberFormat / @JsonbDateFormat on bean accessors and fields")
+    class BeanFormats {
+
+        public static class Reading {
+            private double value;
+            private double price;
+            private int count;
+            private double ratio;
+            @JsonbDateFormat(value = "dd.MM.yyyy", locale = "")
+            private LocalDate taken;
+            private LocalDate checked;
+
+            public Reading() {}
+
+            Reading(double value, double price, int count, double ratio, LocalDate taken, LocalDate checked) {
+                this.value = value; this.price = price; this.count = count;
+                this.ratio = ratio; this.taken = taken; this.checked = checked;
+            }
+
+            @JsonbNumberFormat(locale = "en")
+            public double getValue() { return value; }
+            public void setValue(double value) { this.value = value; }
+            @JsonbNumberFormat(value = "#,##0.00", locale = "de")
+            public double getPrice() { return price; }
+            public void setPrice(double price) { this.price = price; }
+            @JsonbNumberFormat(value = "", locale = "en")
+            public int getCount() { return count; }
+            public void setCount(int count) { this.count = count; }
+            @JsonbNumberFormat("#0.0")
+            public double getRatio() { return ratio; }
+            public void setRatio(double ratio) { this.ratio = ratio; }
+            public LocalDate getTaken() { return taken; }
+            public void setTaken(LocalDate taken) { this.taken = taken; }
+            public LocalDate getChecked() { return checked; }
+            public void setChecked(LocalDate checked) { this.checked = checked; }
+        }
+
+        @Test
+        void formats_apply_from_the_getter_or_the_backing_field() throws Exception {
+            // JSON-B 3.0 §4.9: "##default" pattern = the locale's default format, "##default" locale = canonical.
+            var reading = new Reading(1234.5, 1234.5, 1234, 0.5,
+                    LocalDate.of(2026, 5, 3), LocalDate.of(2026, 6, 4));
+            String expected = "{\"checked\":\"2026-06-04\",\"count\":\"1,234\",\"price\":\"1.234,50\","
+                    + "\"ratio\":\"0.5\",\"taken\":\"03.05.2026\",\"value\":\"1,234.5\"}";
+            try (var j = JsonbBuilder.create()) {
+                assertEquals(expected, j.toJson(reading));
+                Reading back = j.fromJson(expected, Reading.class);
+                assertEquals(1234.5, back.getValue());
+                assertEquals(1234.5, back.getPrice());
+                assertEquals(1234, back.getCount());
+                assertEquals(0.5, back.getRatio());
+                assertEquals(LocalDate.of(2026, 5, 3), back.getTaken());
+                assertEquals(LocalDate.of(2026, 6, 4), back.getChecked());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("@JsonbCreator with formatted parameters, setters and public fields")
+    class CreatorWithExtras {
+
+        public static class Visit {
+            private final LocalDate on;
+            private final LocalDate until;
+            private int guests;
+            public String note;
+
+            @JsonbCreator
+            public Visit(@JsonbProperty("on") @JsonbDateFormat("dd.MM.yyyy") LocalDate on,
+                         @JsonbProperty("until") @JsonbDateFormat(value = "dd.MM.yyyy", locale = "en") LocalDate until) {
+                this.on = on;
+                this.until = until;
+            }
+
+            public LocalDate getOn() { return on; }
+            public LocalDate getUntil() { return until; }
+            public int getGuests() { return guests; }
+            public void setGuests(int guests) { this.guests = guests; }
+        }
+
+        @Test
+        void properties_outside_the_creator_are_set_after_construction() throws Exception {
+            // JSON-B 3.0 §4.5: members not bound to creator parameters go through setters and fields.
+            try (var j = JsonbBuilder.create()) {
+                Visit v = j.fromJson("{\"on\":\"03.05.2026\",\"until\":\"04.05.2026\",\"guests\":3,\"note\":\"vip\"}",
+                        Visit.class);
+                assertEquals(LocalDate.of(2026, 5, 3), v.getOn());
+                assertEquals(LocalDate.of(2026, 5, 4), v.getUntil());
+                assertEquals(3, v.getGuests());
+                assertEquals("vip", v.note);
+            }
         }
     }
 }
