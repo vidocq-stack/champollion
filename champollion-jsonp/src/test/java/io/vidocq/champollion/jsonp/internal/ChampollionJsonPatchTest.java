@@ -209,5 +209,20 @@ class ChampollionJsonPatchTest {
             JsonObject after = (JsonObject) p.apply(doc);
             assertEquals(JsonValue.FALSE, after.get("a"));
         }
+
+        @Test
+        void builder_test_operation_guards_the_following_operations() {
+            // RFC 6902 §4.6: a failing "test" aborts the whole patch.
+            var passing = new ChampollionJsonPatchBuilder()
+                    .test("/x", 0)
+                    .add("/a", "ok")
+                    .build();
+            JsonObject after = (JsonObject) passing.apply(read("{\"x\":0}"));
+            assertEquals("ok", after.getString("a"));
+
+            var failing = new ChampollionJsonPatchBuilder().test("/x", "zero").build();
+            var doc = read("{\"x\":0}");
+            assertThrows(JsonException.class, () -> failing.apply(doc));
+        }
     }
 }

@@ -110,6 +110,43 @@ class ChampollionJsonGeneratorTest {
             }
             assertEquals("\"" + big + "\"", target.content.toString());
         }
+
+        @Test
+        void a_failing_target_surfaces_as_a_json_exception() {
+            // Spec §3.4: I/O errors of the target are reported as JsonException.
+            var failing = new java.io.Writer() {
+                @Override public void write(char[] cbuf, int off, int len) throws java.io.IOException {
+                    throw new java.io.IOException("disk full");
+                }
+                @Override public void flush() {
+                    // Never reached: the write fails first.
+                }
+                @Override public void close() {
+                    // Nothing to release.
+                }
+            };
+            var g = new ChampollionJsonGenerator(failing, false);
+            g.write(1);
+            var e = assertThrows(jakarta.json.JsonException.class, g::flush);
+            assertEquals("disk full", e.getCause().getMessage());
+        }
+    }
+
+    @Nested
+    @DisplayName("JsonValue arguments")
+    class JsonValues {
+
+        @Test
+        void literal_values_are_written_as_json_literals() {
+            try (var g = gen()) {
+                g.writeStartArray()
+                        .write(jakarta.json.JsonValue.TRUE)
+                        .write(jakarta.json.JsonValue.FALSE)
+                        .write(jakarta.json.JsonValue.NULL)
+                        .writeEnd();
+            }
+            assertEquals("[true,false,null]", out.toString());
+        }
     }
 
     @Nested

@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,6 +74,15 @@ class BuildersAndReaderWriterTest {
             var builder = new ChampollionJsonObjectBuilder();
             assertThrows(NullPointerException.class, () -> builder.add(null, 1));
         }
+
+        @Test
+        void addAll_copies_the_members_of_another_builder() {
+            var o = new ChampollionJsonObjectBuilder()
+                    .add("a", 1)
+                    .addAll(new ChampollionJsonObjectBuilder().add("b", "x").add("a", 2))
+                    .build();
+            assertEquals("{\"a\":2,\"b\":\"x\"}", o.toString());
+        }
     }
 
     @Nested
@@ -105,6 +116,51 @@ class BuildersAndReaderWriterTest {
                     .add(new ChampollionJsonArrayBuilder().add("y"))
                     .build();
             assertEquals("[{\"x\":1},[\"y\"]]", a.toString());
+        }
+
+        @Test
+        void inserts_every_value_type_at_an_index() {
+            // JSON-P §4.8: add(index, value) inserts and shifts the following elements.
+            var a = new ChampollionJsonArrayBuilder()
+                    .add("end")
+                    .add(0, new ChampollionJsonArrayBuilder().add(0))
+                    .add(0, new ChampollionJsonObjectBuilder().add("k", 1))
+                    .addNull(0)
+                    .add(0, false)
+                    .add(0, 2.5)
+                    .add(0, 4L)
+                    .add(0, 3)
+                    .add(0, BigInteger.TWO)
+                    .add(0, new BigDecimal("1.5"))
+                    .add(0, "s")
+                    .build();
+            assertEquals("[\"s\",1.5,2,3,4,2.5,false,null,{\"k\":1},[0],\"end\"]", a.toString());
+        }
+
+        @Test
+        void replaces_every_value_type_at_an_index() {
+            var builder = new ChampollionJsonArrayBuilder();
+            for (int i = 0; i < 10; i++) builder.addNull();
+            var a = builder
+                    .set(0, "s")
+                    .set(1, new BigDecimal("1.5"))
+                    .set(2, BigInteger.TWO)
+                    .set(3, 3)
+                    .set(4, 4L)
+                    .set(5, 2.5)
+                    .set(6, true)
+                    .set(7, new ChampollionJsonObjectBuilder().add("k", 1))
+                    .set(8, new ChampollionJsonArrayBuilder().add(0))
+                    .setNull(9)
+                    .build();
+            assertEquals("[\"s\",1.5,2,3,4,2.5,true,{\"k\":1},[0],null]", a.toString());
+        }
+
+        @Test
+        void indexed_double_rejects_nan_and_infinity() {
+            var builder = new ChampollionJsonArrayBuilder().add(1);
+            assertThrows(NumberFormatException.class, () -> builder.add(0, Double.NaN));
+            assertThrows(NumberFormatException.class, () -> builder.set(0, Double.POSITIVE_INFINITY));
         }
     }
 
@@ -177,6 +233,29 @@ class BuildersAndReaderWriterTest {
                 w.write(new ChampollionJsonObjectBuilder().build());
             }
             assertEquals("{}", sw.toString());
+        }
+
+        @Test
+        void writeArray_and_writeObject_emit_the_structure() {
+            var arrayOut = new StringWriter();
+            try (var w = new ChampollionJsonWriter(arrayOut, /*pretty*/ false)) {
+                w.writeArray(new ChampollionJsonArrayBuilder().add(1).add("x").build());
+            }
+            assertEquals("[1,\"x\"]", arrayOut.toString());
+            var objectOut = new StringWriter();
+            try (var w = new ChampollionJsonWriter(objectOut, /*pretty*/ false)) {
+                w.writeObject(new ChampollionJsonObjectBuilder().add("a", true).build());
+            }
+            assertEquals("{\"a\":true}", objectOut.toString());
+        }
+
+        @Test
+        void close_without_write_is_silent() {
+            // JSON-P §3.5: closing a writer that never wrote must not fail.
+            var sw = new StringWriter();
+            var w = new ChampollionJsonWriter(sw, /*pretty*/ false);
+            w.close();
+            assertEquals("", sw.toString());
         }
 
         @Test

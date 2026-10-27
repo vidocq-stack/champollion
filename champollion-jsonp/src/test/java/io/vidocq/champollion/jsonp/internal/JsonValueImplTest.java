@@ -170,6 +170,27 @@ class JsonValueImplTest {
             ));
             assertEquals("[1,\"x\",null]", a.toString());
         }
+
+        @Test
+        void typed_getters_with_default_return_the_element_when_it_has_the_type() {
+            var a = ChampollionJsonArray.of(List.of(
+                    new ChampollionJsonString("x"), ChampollionJsonNumber.of("7"), JsonValue.TRUE));
+            assertEquals("x", a.getString(0, "fallback"));
+            assertEquals(7, a.getInt(1, -1));
+            assertTrue(a.getBoolean(2, false));
+        }
+
+        @Test
+        void typed_getters_with_default_fall_back_on_mistyped_or_missing_elements() {
+            // JSON-P §4.2: the default is returned when the element is absent or of another type.
+            var a = ChampollionJsonArray.of(List.of(JsonValue.NULL));
+            assertEquals("fallback", a.getString(0, "fallback"));
+            assertEquals(-1, a.getInt(0, -1));
+            assertTrue(a.getBoolean(0, true));
+            assertEquals("fallback", a.getString(5, "fallback"));
+            assertEquals(-1, a.getInt(5, -1));
+            assertFalse(a.getBoolean(5, false));
+        }
     }
 
     @Nested
@@ -206,6 +227,30 @@ class JsonValueImplTest {
             members.put("b", new ChampollionJsonString("x"));
             var o = ChampollionJsonObject.of(members);
             assertEquals("{\"a\":1,\"b\":\"x\"}", o.toString());
+        }
+
+        @Test
+        void typed_getters_with_default_return_the_member_when_it_has_the_type() {
+            var members = new LinkedHashMap<String, JsonValue>();
+            members.put("s", new ChampollionJsonString("x"));
+            members.put("i", ChampollionJsonNumber.of("7"));
+            members.put("b", JsonValue.TRUE);
+            var o = ChampollionJsonObject.of(members);
+            assertEquals("x", o.getString("s", "fallback"));
+            assertEquals(7, o.getInt("i", -1));
+            assertTrue(o.getBoolean("b", false));
+        }
+
+        @Test
+        void typed_getters_with_default_fall_back_on_mistyped_or_missing_members() {
+            // JSON-P §4.1: the default is returned when the member is absent or of another type.
+            var o = ChampollionJsonObject.of(java.util.Map.of("n", JsonValue.NULL));
+            assertEquals("fallback", o.getString("n", "fallback"));
+            assertEquals(-1, o.getInt("n", -1));
+            assertTrue(o.getBoolean("n", true));
+            assertEquals("fallback", o.getString("missing", "fallback"));
+            assertEquals(-1, o.getInt("missing", -1));
+            assertFalse(o.getBoolean("missing", false));
         }
     }
 
