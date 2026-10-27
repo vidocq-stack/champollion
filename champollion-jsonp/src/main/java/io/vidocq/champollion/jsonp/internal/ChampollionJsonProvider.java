@@ -226,8 +226,20 @@ public final class ChampollionJsonProvider extends JsonProvider {
         }
     }
 
-    private static Writer utf8Writer(OutputStream out) {
-        return new OutputStreamWriter(out, StandardCharsets.UTF_8);
+    /**
+     * A generator on {@code out} in {@code charset}: UTF-8, the default, is encoded by the
+     * generator itself; any other charset goes through an {@link OutputStreamWriter}.
+     */
+    private static ChampollionJsonGenerator generatorOn(OutputStream out, Charset charset, boolean pretty) {
+        if (StandardCharsets.UTF_8.equals(charset)) {
+            return new ChampollionJsonGenerator(out, pretty);
+        }
+        return new ChampollionJsonGenerator(new OutputStreamWriter(out, charset), pretty);
+    }
+
+    /** As {@link #generatorOn}, for the object model writer. */
+    private static ChampollionJsonWriter writerOn(OutputStream out, Charset charset, boolean pretty) {
+        return new ChampollionJsonWriter(generatorOn(out, charset, pretty));
     }
 
     // ===== Parser =====
@@ -266,7 +278,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonGenerator createGenerator(OutputStream out) {
-        return new ChampollionJsonGenerator(utf8Writer(out), /*pretty*/ false);
+        return new ChampollionJsonGenerator(out, /*pretty*/ false);
     }
 
     @Override public JsonGeneratorFactory createGeneratorFactory(Map<String, ?> config) {
@@ -277,10 +289,10 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 return new ChampollionJsonGenerator(writer, pretty);
             }
             @Override public JsonGenerator createGenerator(OutputStream out) {
-                return new ChampollionJsonGenerator(utf8Writer(out), pretty);
+                return new ChampollionJsonGenerator(out, pretty);
             }
             @Override public JsonGenerator createGenerator(OutputStream out, Charset charset) {
-                return new ChampollionJsonGenerator(new OutputStreamWriter(out, charset), pretty);
+                return generatorOn(out, charset, pretty);
             }
             @Override public Map<String, ?> getConfigInUse() { return snapshot; }
         };
@@ -327,7 +339,7 @@ public final class ChampollionJsonProvider extends JsonProvider {
     }
 
     @Override public JsonWriter createWriter(OutputStream out) {
-        return new FlushingJsonWriter(new ChampollionJsonWriter(utf8Writer(out), /*pretty*/ false), out);
+        return new FlushingJsonWriter(writerOn(out, StandardCharsets.UTF_8, /*pretty*/ false), out);
     }
 
     @Override public JsonWriterFactory createWriterFactory(Map<String, ?> config) {
@@ -338,11 +350,10 @@ public final class ChampollionJsonProvider extends JsonProvider {
                 return new ChampollionJsonWriter(writer, pretty);
             }
             @Override public JsonWriter createWriter(OutputStream out) {
-                return new FlushingJsonWriter(new ChampollionJsonWriter(utf8Writer(out), pretty), out);
+                return new FlushingJsonWriter(writerOn(out, StandardCharsets.UTF_8, pretty), out);
             }
             @Override public JsonWriter createWriter(OutputStream out, Charset charset) {
-                return new FlushingJsonWriter(
-                        new ChampollionJsonWriter(new OutputStreamWriter(out, charset), pretty), out);
+                return new FlushingJsonWriter(writerOn(out, charset, pretty), out);
             }
             @Override public Map<String, ?> getConfigInUse() { return snapshot; }
         };

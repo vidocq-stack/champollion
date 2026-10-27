@@ -43,7 +43,12 @@ public final class ChampollionJsonWriter implements JsonWriter {
     private boolean consumed;
 
     public ChampollionJsonWriter(Writer writer, boolean pretty) {
-        this.generator = new ChampollionJsonGenerator(writer, pretty);
+        this(new ChampollionJsonGenerator(writer, pretty));
+    }
+
+    /** A writer emitting through {@code generator}, whatever its target. */
+    ChampollionJsonWriter(ChampollionJsonGenerator generator) {
+        this.generator = generator;
     }
 
     @Override public void writeArray(JsonArray array) { write(array); }

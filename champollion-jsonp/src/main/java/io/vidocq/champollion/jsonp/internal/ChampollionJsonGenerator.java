@@ -26,6 +26,7 @@ import jakarta.json.stream.JsonGenerationException;
 import jakarta.json.stream.JsonGenerator;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Writer;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -55,28 +56,45 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     /**
-     * The generator's own buffer: every value, key, comma and escape is appended to it, and the
-     * target {@link Writer} receives one write per full buffer and one at the end. Until now the
-     * target was wrapped in a {@code BufferedWriter} of 256 characters, whose every call takes a
-     * lock: about a dozen locked calls per small object, and a write to the target every 256
-     * characters, which was the hottest frame of the profile of the REST benchmark
-     * (VidocqTools/vidocq-benchmarks).
+     * RFC 8259 §7 escape of each control character: the two-character form when there is one,
+     * otherwise the six-character one with four lower-case hexadecimal digits.
      */
-    private static final int BUFFER_SIZE = 1024;
+    private static final String[] CONTROL_ESCAPES = new String[0x20];
+
+    static {
+        for (int c = 0; c < CONTROL_ESCAPES.length; c++) {
+            CONTROL_ESCAPES[c] = String.format("\\u%04x", c);
+        }
+        CONTROL_ESCAPES['\b'] = "\\b";
+        CONTROL_ESCAPES['\f'] = "\\f";
+        CONTROL_ESCAPES['\n'] = "\\n";
+        CONTROL_ESCAPES['\r'] = "\\r";
+        CONTROL_ESCAPES['\t'] = "\\t";
+    }
 
     private static final String JSON_TRUE = "true";
     private static final String JSON_FALSE = "false";
 
-    private final Writer out;
+    /** The generator's own buffer: every value, key, comma and escape goes to it. */
+    private final GeneratorSink out;
     private final boolean pretty;
     private final Deque<Ctx> stack = new ArrayDeque<>();
-    private final char[] buf = new char[BUFFER_SIZE];
-    private int pos;
     private int depth = 0;
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
         if (out == null) throw new IllegalArgumentException("writer is null");
-        this.out = out;
+        this.out = new WriterSink(out);
+        this.pretty = pretty;
+        this.stack.push(Ctx.ROOT_BEFORE);
+    }
+
+    /**
+     * A generator writing UTF-8 to {@code out}, encoded by the generator itself: no
+     * {@code OutputStreamWriter}, and a buffer that starts small.
+     */
+    public ChampollionJsonGenerator(OutputStream out, boolean pretty) {
+        if (out == null) throw new IllegalArgumentException("output stream is null");
+        this.out = new Utf8StreamSink(out);
         this.pretty = pretty;
         this.stack.push(Ctx.ROOT_BEFORE);
     }
@@ -366,19 +384,18 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         }
         // Spec §3.5: close() closes the underlying Writer/OutputStream and
         // propagates any IOException as JsonException.
-        flushBuffer();
+        out.drain();
         try {
-            out.flush();
-            out.close();
+            out.closeTarget();
         } catch (IOException e) {
             throw new JsonException("I/O error closing generator", e);
         }
     }
 
     @Override public void flush() {
-        flushBuffer();
+        out.drain();
         try {
-            out.flush();
+            out.flushTarget();
         } catch (IOException e) {
             throw new JsonException("I/O error flushing JSON", e);
         }
@@ -446,75 +463,39 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     // ===== low-level write =====
 
     private void writeRaw(String s) {
-        append(s, 0, s.length());
+        out.append(s);
     }
 
     private void write(char c) {
-        if (pos == buf.length) flushBuffer();
-        buf[pos++] = c;
-    }
-
-    /** Appends {@code s[off, off + len)} to the buffer, handing the target full buffers on the way. */
-    private void append(String s, int off, int len) {
-        int end = off + len;
-        while (off < end) {
-            if (pos == buf.length) flushBuffer();
-            int n = Math.min(end - off, buf.length - pos);
-            s.getChars(off, off + n, buf, pos);
-            pos += n;
-            off += n;
-        }
-    }
-
-    /** Hands the target what the buffer holds, in one write. */
-    private void flushBuffer() {
-        if (pos == 0) return;
-        try {
-            out.write(buf, 0, pos);
-        } catch (IOException e) {
-            throw new JsonException("I/O error", e);
-        }
-        pos = 0;
+        out.write(c);
     }
 
     private void writeString(String s) {
-        // Pure ASCII no-escape fast path — covers the overwhelming majority of
-        // record keys and ordinary strings: the whole string is copied at once.
-        int n = s.length();
-        int i = 0;
-        while (i < n) {
-            char c = s.charAt(i);
-            if (c < 0x20 || c == '"' || c == '\\') break;
-            i++;
-        }
+        // Runs of characters that need no escape are appended whole: a pure ASCII name or value,
+        // the overwhelming majority, in one call, and a surrogate pair never split.
         write('"');
-        if (i == n) {
-            append(s, 0, n);
-            write('"');
-            return;
-        }
-        // Clean prefix, then slow path from i onward.
-        if (i > 0) append(s, 0, i);
-        for (; i < n; i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"' -> writeRaw("\\\"");
-                case '\\' -> writeRaw("\\\\");
-                case '\b' -> writeRaw("\\b");
-                case '\f' -> writeRaw("\\f");
-                case '\n' -> writeRaw("\\n");
-                case '\r' -> writeRaw("\\r");
-                case '\t' -> writeRaw("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        writeRaw(String.format("\\u%04x", (int) c));
-                    } else {
-                        write(c);
-                    }
-                }
+        int n = s.length();
+        int start = 0;
+        for (int i = 0; i < n; i++) {
+            String escape = escapeOf(s.charAt(i));
+            if (escape != null) {
+                if (i > start) out.append(s, start, i - start);
+                writeRaw(escape);
+                start = i + 1;
             }
         }
+        if (start < n) out.append(s, start, n - start);
         write('"');
+    }
+
+    /** RFC 8259 §7: the escape of {@code c}, or {@code null} when it is written as is. */
+    private static String escapeOf(char c) {
+        if (c >= 0x20) {
+            if (c == '"') return "\\\"";
+            if (c == '\\') return "\\\\";
+            return null;
+        }
+        return CONTROL_ESCAPES[c];
     }
 
     private void indent() {
