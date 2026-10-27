@@ -69,6 +69,33 @@ class ServiceCodegenTest {
         }
 
         @Test
+        void service_options_are_accepted_and_ignored() {
+            Descriptors.FileDescriptor f = resolve("""
+                    syntax = "proto3";
+                    message Hello {}
+                    service Greeter {
+                      option deprecated = true;
+                      rpc Greet (Hello) returns (Hello);
+                    }
+                    """);
+            assertEquals(1, f.findService("Greeter").methods().size());
+        }
+
+        @Test
+        void rpc_types_must_be_messages() {
+            // Proto3 §services: request and response types are messages, never enums.
+            var file = ProtoParser.parse("inline.proto", """
+                    syntax = "proto3";
+                    message Hello {}
+                    enum Mood { HAPPY = 0; }
+                    service Greeter {
+                      rpc Greet (Hello) returns (Mood);
+                    }
+                    """);
+            assertThrows(SchemaResolver.SchemaResolutionException.class, () -> SchemaResolver.resolve(file));
+        }
+
+        @Test
         void streaming_flags_preserved() {
             Descriptors.FileDescriptor f = resolve("""
                     syntax = "proto3";

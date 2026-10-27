@@ -215,6 +215,22 @@ class ProtoParserTest {
             ProtoFile f = parse(src);
             assertEquals(1, f.messages().get(0).nestedEnums().size());
         }
+
+        @Test
+        void enum_options_and_reserved_ranges_are_skipped() {
+            String src = """
+                    syntax = "proto3";
+                    enum Role {
+                      option allow_alias = true;
+                      reserved 5;
+                      USER = 0;
+                      ADMIN = 1;
+                    }
+                    """;
+            EnumDecl e = parse(src).enums().get(0);
+            assertEquals(2, e.values().size());
+            assertEquals("ADMIN", e.values().get(1).name());
+        }
     }
 
     @Nested

@@ -205,6 +205,12 @@ class SchemaResolverTest {
             assertEquals(Descriptors.Syntax.EDITION_2023,
                     resolve("edition = \"2023\";").syntax());
         }
+
+        @Test
+        void later_editions_map_to_edition_2023() {
+            assertEquals(Descriptors.Syntax.EDITION_2023,
+                    resolve("edition = \"2024\";").syntax());
+        }
     }
 
     @Nested

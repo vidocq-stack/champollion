@@ -111,7 +111,41 @@ class ProtobufStaticProcessorTest {
                 assertEquals(person, back);
             }
         }
+
+        @Test
+        void generated_parser_reads_packed_repeated_scalars(@TempDir Path tmp) throws Exception {
+            // Encoding §packed: repeated scalars arrive as one length-delimited payload.
+            CompileResult r = compile(tmp, Map.of("io.test.Scores", SCORES_SRC));
+            String parser = Files.readString(r.sourcesOutput.resolve("io/test/Scores$$Parser.java"));
+            assertTrue(parser.contains("in.pushLimit(sz)"), parser);
+
+            try (URLClassLoader cl = new URLClassLoader(
+                    new URL[]{r.classesOutput.toUri().toURL()},
+                    ProtobufStaticProcessorTest.class.getClassLoader())) {
+                Class<?> scoresClass = cl.loadClass("io.test.Scores");
+                Object scores = scoresClass.getDeclaredConstructors()[0].newInstance(List.of(3, 270, 86942));
+                Object back = Protobuf.parser(scoresClass).parseFrom(Protobuf.toByteArray(scores));
+                assertEquals(scores, back);
+            }
+        }
     }
+
+    private static final String SCORES_SRC = """
+            package io.test;
+
+            import io.vidocq.champollion.protobuf.FieldType;
+            import io.vidocq.champollion.protobuf.Message;
+            import io.vidocq.champollion.protobuf.ProtobufField;
+            import io.vidocq.champollion.protobuf.ProtobufMessage;
+            import io.vidocq.champollion.protobuf.ProtobufStatic;
+            import java.util.List;
+
+            @ProtobufStatic
+            @ProtobufMessage("io.test.Scores")
+            public record Scores(
+                @ProtobufField(number = 1, type = FieldType.INT32) List<Integer> values
+            ) implements Message {}
+            """;
 
     // ============================================================ Compile harness
 

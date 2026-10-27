@@ -127,6 +127,30 @@ class JavaEmitterTest {
         }
 
         @Test
+        void floating_and_bool_scalars_map_to_primitives() {
+            Map<String, String> out = emit("io.test", """
+                    syntax = "proto3";
+                    message M { float f = 1; double d = 2; bool b = 3; }
+                    """);
+            String src = out.get("io.test.M");
+            assertTrue(src.contains("float f"), src);
+            assertTrue(src.contains("double d"), src);
+            assertTrue(src.contains("boolean b"), src);
+        }
+
+        @Test
+        void repeated_floating_and_bool_scalars_are_boxed_lists() {
+            Map<String, String> out = emit("io.test", """
+                    syntax = "proto3";
+                    message M { repeated float f = 1; repeated double d = 2; repeated bool b = 3; }
+                    """);
+            String src = out.get("io.test.M");
+            assertTrue(src.contains("List<Float> f"), src);
+            assertTrue(src.contains("List<Double> d"), src);
+            assertTrue(src.contains("List<Boolean> b"), src);
+        }
+
+        @Test
         void reserved_java_keyword_field_suffixed() {
             Map<String, String> out = emit("io.test", """
                     syntax = "proto3";
