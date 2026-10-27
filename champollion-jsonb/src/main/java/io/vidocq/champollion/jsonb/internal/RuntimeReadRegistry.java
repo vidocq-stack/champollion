@@ -575,13 +575,15 @@ final class RuntimeReadRegistry {
     }
 
     private jakarta.json.bind.config.PropertyVisibilityStrategy effectiveVisibility(Class<?> type) {
-        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+        Class<?> c = type; // never null: the type being bound
+        do {
             var ann = c.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (ann != null) {
                 try { return ann.value().getDeclaredConstructor().newInstance(); }
                 catch (Exception e) { throw new JsonbException("Cannot instantiate @JsonbVisibility " + ann.value(), e); }
             }
-        }
+            c = c.getSuperclass();
+        } while (c != null && c != Object.class);
         var pkg = type.getPackage();
         if (pkg != null) {
             try { Class.forName(pkg.getName() + ".package-info", false, type.getClassLoader()); }

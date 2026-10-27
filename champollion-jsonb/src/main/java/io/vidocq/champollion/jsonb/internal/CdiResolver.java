@@ -45,6 +45,7 @@ final class CdiResolver {
     private static final MethodHandle INSTANCE_IS_UNSATISFIED;
     private static final MethodHandle INSTANCE_IS_AMBIGUOUS;
     private static final boolean CDI_AVAILABLE;
+    private static final String INJECT = "jakarta.inject.Inject";
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
 
     static {
@@ -115,19 +116,21 @@ final class CdiResolver {
             if (n.startsWith("jakarta.enterprise.context.") && n.endsWith("Scoped")) return true;
             if ("jakarta.inject.Singleton".equals(n)) return true;
         }
-        for (var f : cls.getDeclaredFields()) {
-            for (var ann : f.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
-            }
-        }
-        for (var ctor : cls.getDeclaredConstructors()) {
-            for (var ann : ctor.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
-            }
-        }
-        for (var m : cls.getDeclaredMethods()) {
-            for (var ann : m.getAnnotations()) {
-                if ("jakarta.inject.Inject".equals(ann.annotationType().getName())) return true;
+        return anyInjected(cls.getDeclaredFields())
+                || anyInjected(cls.getDeclaredConstructors())
+                || anyInjected(cls.getDeclaredMethods());
+    }
+
+    /**
+     * Whether one of the members carries {@code jakarta.inject.Inject}. The annotation is matched
+     * by name on purpose: {@code jakarta.inject} is not a dependency of this module, and the
+     * application may load it in another class loader or module layer than this one.
+     */
+    private static boolean anyInjected(java.lang.reflect.AnnotatedElement[] members) {
+        for (var member : members) {
+            for (var ann : member.getAnnotations()) {
+                String name = ann.annotationType().getName();
+                if (INJECT.equals(name)) return true;
             }
         }
         return false;

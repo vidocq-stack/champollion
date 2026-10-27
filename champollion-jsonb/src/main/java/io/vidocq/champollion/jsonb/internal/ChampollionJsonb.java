@@ -363,5 +363,8 @@ public final class ChampollionJsonb implements Jsonb {
         return readRegistry.readerFor(runtimeType).read(p);
     }
 
-    @Override public void close() throws Exception { /* nothing held */ }
+    /** Releases the parser this thread keeps for this instance; other threads drop theirs when they end. */
+    @Override public void close() {
+        parserPool.remove();
+    }
 }
