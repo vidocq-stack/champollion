@@ -50,12 +50,8 @@ final class Utf8StreamSink extends GeneratorSink {
     }
 
     @Override void write(char c) {
-        if (c < 0x80) {
-            if (pos == buf.length) makeRoom();
-            buf[pos++] = (byte) c;
-        } else {
-            encode(c, (char) 0);
-        }
+        if (pos == buf.length) makeRoom();
+        buf[pos++] = (byte) c;
     }
 
     @Override void append(String s, int off, int len) {

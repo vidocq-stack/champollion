@@ -196,6 +196,25 @@ class Utf8StreamGeneratorTest {
             w.writeObject(value);
         }
         assertEquals("{\"nom\":\"Zoé 😀\",\"n\":1}", out.toString(StandardCharsets.UTF_8));
+
+        var factory = PROVIDER.createWriterFactory(Map.of());
+        for (var charset : new java.nio.charset.Charset[] {StandardCharsets.UTF_8, StandardCharsets.UTF_16LE}) {
+            var bytes = new ByteArrayOutputStream();
+            try (var w = factory.createWriter(bytes, charset)) {
+                w.writeObject(value);
+            }
+            assertEquals("{\"nom\":\"Zoé 😀\",\"n\":1}", bytes.toString(charset));
+        }
+        var bytes = new ByteArrayOutputStream();
+        try (var w = factory.createWriter(bytes)) {
+            w.writeObject(value);
+        }
+        assertEquals("{\"nom\":\"Zoé 😀\",\"n\":1}", bytes.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void aNullStreamIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new ChampollionJsonGenerator((OutputStream) null, false));
     }
 
     /** Records what reaches it, and whether it was flushed or closed. */

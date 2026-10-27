@@ -47,7 +47,7 @@ abstract sealed class GeneratorSink permits WriterSink, Utf8StreamSink {
         this.ceiling = ceiling;
     }
 
-    /** Appends one character. */
+    /** Appends one ASCII character: the generator writes punctuation and white space this way, text through {@link #append}. */
     abstract void write(char c);
 
     /** Appends {@code s[off, off + len)}. The generator never splits a surrogate pair between two calls. */
