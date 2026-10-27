@@ -97,64 +97,78 @@ public final class ChampollionJsonProvider extends JsonProvider {
         var pb = new java.io.PushbackInputStream(raw, 4);
         try {
             byte[] head = new byte[4];
-            int read = 0;
-            while (read < 4) {
-                int n = pb.read(head, read, 4 - read);
-                if (n < 0) break;
-                read += n;
-            }
-            // BOM?
-            if (read >= 4 && head[0] == 0x00 && head[1] == 0x00
-                    && (head[2] & 0xff) == 0xFE && (head[3] & 0xff) == 0xFF) {
-                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
-            }
-            if (read >= 4 && (head[0] & 0xff) == 0xFF && (head[1] & 0xff) == 0xFE
-                    && head[2] == 0x00 && head[3] == 0x00) {
-                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
-            }
-            if (read >= 2 && (head[0] & 0xff) == 0xFE && (head[1] & 0xff) == 0xFF) {
-                pb.unread(head, 2, read - 2);
-                return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
-            }
-            if (read >= 2 && (head[0] & 0xff) == 0xFF && (head[1] & 0xff) == 0xFE) {
-                pb.unread(head, 2, read - 2);
-                return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
-            }
-            if (read >= 3 && (head[0] & 0xff) == 0xEF && (head[1] & 0xff) == 0xBB
-                    && (head[2] & 0xff) == 0xBF) {
-                pb.unread(head, 3, read - 3);
-                return utf8Reader(pb);
-            }
-            // No BOM: RFC 8259 §8.1 heuristic on the first 4 bytes.
-            // The first significant JSON character is ASCII (whitespace or structural).
-            // If head[0] == 0 and head[1] == 0 → UTF-32BE
-            // If head[1] == 0 and head[3] == 0 → UTF-16LE
-            // If head[0] == 0 and head[2] == 0 → UTF-16BE
-            // If head[1] == 0 and head[2] == 0 → UTF-32LE
-            // Otherwise → UTF-8
+            int read = readHead(pb, head);
+            Reader marked = byteOrderMarkReader(pb, head, read);
+            if (marked != null) return marked;
             if (read > 0) pb.unread(head, 0, read);
-            if (read >= 4 && head[0] == 0 && head[1] == 0) {
-                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
-            }
-            if (read >= 4 && head[1] == 0 && head[2] == 0 && head[3] == 0) {
-                return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
-            }
-            if (read >= 2 && head[0] == 0) {
-                return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
-            }
-            if (read >= 2 && head[1] == 0) {
-                return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
-            }
-            // RFC 8259 §8.1: valid JSON cannot start with a 0x00 byte in UTF-8. When the
-            // first byte is zero and the encoding cannot be determined (fewer than two
-            // bytes of context, or an ambiguous pattern), reject the input.
-            if (read >= 1 && head[0] == 0) {
-                throw new jakarta.json.JsonException("Cannot determine JSON encoding");
-            }
-            return utf8Reader(pb);
+            return heuristicReader(pb, head, read);
         } catch (IOException e) {
             throw new jakarta.json.JsonException("I/O error during encoding detection", e);
         }
+    }
+
+    /** Reads up to the 4 first bytes of {@code in} into {@code head}; returns how many. */
+    private static int readHead(InputStream in, byte[] head) throws IOException {
+        int read = 0;
+        while (read < head.length) {
+            int n = in.read(head, read, head.length - read);
+            if (n < 0) break;
+            read += n;
+        }
+        return read;
+    }
+
+    /** The reader of the encoding a byte order mark names, the mark skipped; null without one. */
+    private static Reader byteOrderMarkReader(java.io.PushbackInputStream pb, byte[] head, int read) throws IOException {
+        int b0 = head[0] & 0xff;
+        int b1 = head[1] & 0xff;
+        if (read >= 4 && b0 == 0x00 && b1 == 0x00 && (head[2] & 0xff) == 0xFE && (head[3] & 0xff) == 0xFF) {
+            return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
+        }
+        if (read >= 4 && b0 == 0xFF && b1 == 0xFE && head[2] == 0x00 && head[3] == 0x00) {
+            return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
+        }
+        if (read >= 2 && b0 == 0xFE && b1 == 0xFF) {
+            pb.unread(head, 2, read - 2);
+            return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
+        }
+        if (read >= 2 && b0 == 0xFF && b1 == 0xFE) {
+            pb.unread(head, 2, read - 2);
+            return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
+        }
+        if (read >= 3 && b0 == 0xEF && b1 == 0xBB && (head[2] & 0xff) == 0xBF) {
+            pb.unread(head, 3, read - 3);
+            return utf8Reader(pb);
+        }
+        return null;
+    }
+
+    /**
+     * Without a byte order mark, RFC 8259 §8.1: the first significant character of a JSON text is
+     * ASCII, so the zero bytes among the first four tell the encoding. Two leading zeros mean
+     * UTF-32BE, three trailing zeros UTF-32LE, a leading zero UTF-16BE, a zero second byte
+     * UTF-16LE, and no zero UTF-8.
+     */
+    private static Reader heuristicReader(java.io.PushbackInputStream pb, byte[] head, int read) throws IOException {
+        if (read >= 4 && head[0] == 0 && head[1] == 0) {
+            return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32BE"));
+        }
+        if (read >= 4 && head[1] == 0 && head[2] == 0 && head[3] == 0) {
+            return new InputStreamReader(pb, java.nio.charset.Charset.forName("UTF-32LE"));
+        }
+        if (read >= 2 && head[0] == 0) {
+            return new InputStreamReader(pb, StandardCharsets.UTF_16BE);
+        }
+        if (read >= 2 && head[1] == 0) {
+            return new InputStreamReader(pb, StandardCharsets.UTF_16LE);
+        }
+        // RFC 8259 §8.1: valid JSON cannot start with a 0x00 byte in UTF-8. When the
+        // first byte is zero and the encoding cannot be determined (fewer than two
+        // bytes of context, or an ambiguous pattern), reject the input.
+        if (read >= 1 && head[0] == 0) {
+            throw new jakarta.json.JsonException("Cannot determine JSON encoding");
+        }
+        return utf8Reader(pb);
     }
 
     /** The byte buffer an InputStreamReader allocates, whatever the size of the input. */
