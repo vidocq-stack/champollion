@@ -59,7 +59,8 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      * target {@link Writer} receives one write per full buffer and one at the end. Until now the
      * target was wrapped in a {@code BufferedWriter} of 256 characters, whose every call takes a
      * lock: about a dozen locked calls per small object, and a write to the target every 256
-     * characters, which was the hottest frame of the Todo benchmark's profile.
+     * characters, which was the hottest frame of the profile of the REST benchmark
+     * (VidocqTools/vidocq-benchmarks).
      */
     private static final int BUFFER_SIZE = 1024;
 

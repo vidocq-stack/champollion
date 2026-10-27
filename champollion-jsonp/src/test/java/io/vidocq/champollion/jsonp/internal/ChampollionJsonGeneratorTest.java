@@ -56,8 +56,12 @@ class ChampollionJsonGeneratorTest {
             @Override public void write(char[] cbuf, int off, int len) { calls++; content.append(cbuf, off, len); }
             @Override public void write(int c) { calls++; content.append((char) c); }
             @Override public void write(String str, int off, int len) { calls++; content.append(str, off, off + len); }
-            @Override public void flush() { }
-            @Override public void close() { }
+            @Override public void flush() {
+                // Nothing to flush: the content is kept in memory for the assertions.
+            }
+            @Override public void close() {
+                // Nothing to release: the content stays readable after the generator closes it.
+            }
         }
 
         /**
