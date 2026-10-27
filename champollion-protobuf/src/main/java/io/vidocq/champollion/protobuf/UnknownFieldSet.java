@@ -259,6 +259,26 @@ public final class UnknownFieldSet {
             return new RawEntry(fn, WireFormat.WIRETYPE_LENGTH_DELIMITED, 0L, 0, v);
         }
 
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof RawEntry(int n, int w, long v, int f, byte[] bytes)
+                    && fieldNumber == n && wireType == w && varintOrFixed64 == v && fixed32 == f
+                    && java.util.Arrays.equals(lengthDelimited, bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * java.util.Objects.hash(fieldNumber, wireType, varintOrFixed64, fixed32)
+                    + java.util.Arrays.hashCode(lengthDelimited);
+        }
+
+        @Override
+        public String toString() {
+            return "RawEntry[fieldNumber=" + fieldNumber + ", wireType=" + wireType
+                    + ", varintOrFixed64=" + varintOrFixed64 + ", fixed32=" + fixed32
+                    + ", lengthDelimited=" + java.util.Arrays.toString(lengthDelimited) + "]";
+        }
+
         void writeTo(CodedOutputStream out) throws IOException {
             out.writeTag(fieldNumber, wireType);
             switch (wireType) {

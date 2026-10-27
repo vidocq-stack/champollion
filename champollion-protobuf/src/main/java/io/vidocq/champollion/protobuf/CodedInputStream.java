@@ -478,20 +478,23 @@ public abstract sealed class CodedInputStream permits CodedInputStream.ArrayDeco
                         y = buffer[p++];
                         x ^= (y << 28);
                         x ^= (~0 << 7) ^ (~0 << 14) ^ (~0 << 21) ^ (~0 << 28);
-                        if (y < 0
-                                && buffer[p++] < 0
-                                && buffer[p++] < 0
-                                && buffer[p++] < 0
-                                && buffer[p++] < 0
-                                && buffer[p++] < 0) {
-                            // Drop 6 sign-extension bytes: negative int32 encoded in 10 bytes.
-                            throw MalformedProtobufException.malformedVarint();
-                        }
+                        if (y < 0) p = skipSignExtension(p);
                     }
                 }
             }
             position = p;
             return x;
+        }
+
+        /**
+         * Skips the sign-extension bytes of a negative int32 encoded on 10 bytes: the 5 bytes
+         * after the 5th carry no value, and the varint must end within them.
+         */
+        private int skipSignExtension(int p) throws IOException {
+            for (int i = 0; i < 5; i++) {
+                if (buffer[p++] >= 0) return p;
+            }
+            throw MalformedProtobufException.malformedVarint();
         }
 
         @Override

@@ -335,7 +335,7 @@ public final class RuntimeBinding {
         for (Map.Entry<?, ?> e : map.entrySet()) {
             Object k = e.getKey();
             Object v = e.getValue();
-            if (k == null) k = defaultForMapType(fb.mapKeyType, null);
+            if (k == null) k = defaultMapKey(fb.mapKeyType);
             if (v == null) {
                 Object dflt = defaultForMapType(fb.mapValueType, fb.mapValueClass);
                 if (dflt == null) {
@@ -358,6 +358,16 @@ public final class RuntimeBinding {
             out.writeRawBytes(fb.mapValueTag, 0, fb.mapValueTag.length);
             writeScalarTyped(fb.mapValueType, v, out);
         }
+    }
+
+    /**
+     * Default of a null map key. Proto3 §maps only allows integral, bool and string keys, whose
+     * default is never null; any other key type is a broken binding.
+     */
+    private static Object defaultMapKey(FieldType keyType) {
+        Object k = defaultForMapType(keyType, null);
+        if (k == null) throw new IllegalStateException("Map key type " + keyType + " is forbidden by proto3 §maps");
+        return k;
     }
 
     private static Object defaultForMapType(FieldType t, Class<?> messageClass) {
@@ -865,6 +875,23 @@ public final class RuntimeBinding {
                     Map<Integer, FieldBinding> byNumber, MethodHandle constructor,
                     Class<?>[] componentTypes) {
             this(recordType, fields, byNumber, constructor, componentTypes, -1, null);
+        }
+
+        // A plan is derived from its record type alone, and is cached once per type:
+        // the type identifies it, the arrays derived from it add nothing.
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof BindingPlan other && recordType == other.recordType;
+        }
+
+        @Override
+        public int hashCode() {
+            return recordType.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "BindingPlan[" + recordType.getName() + "]";
         }
     }
 

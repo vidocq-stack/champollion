@@ -70,5 +70,22 @@ public final class Wrappers {
 
     @ProtobufMessage("google.protobuf.BytesValue")
     public record BytesValue(@ProtobufField(number = 1, type = FieldType.BYTES) byte[] value)
-            implements Message {}
+            implements Message {
+
+        /** Two values are equal when their bytes are, not when they share the array. */
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof BytesValue(byte[] otherValue) && java.util.Arrays.equals(value, otherValue);
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Arrays.hashCode(value);
+        }
+
+        @Override
+        public String toString() {
+            return "BytesValue[value=" + java.util.Arrays.toString(value) + "]";
+        }
+    }
 }

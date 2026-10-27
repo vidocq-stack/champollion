@@ -352,17 +352,15 @@ public final class SchemaResolver {
 
     private static Descriptors.Syntax toSyntax(ProtoAst.Syntax syntax) {
         return switch (syntax) {
-            case Proto2 ignored -> Descriptors.Syntax.PROTO2;
-            case Proto3 ignored -> Descriptors.Syntax.PROTO3;
-            case Edition e -> "2023".equals(e.name())
-                    ? Descriptors.Syntax.EDITION_2023
-                    : Descriptors.Syntax.EDITION_2023; // all future editions mapped here
+            case Proto2 _ -> Descriptors.Syntax.PROTO2;
+            case Proto3 _ -> Descriptors.Syntax.PROTO3;
+            case Edition _ -> Descriptors.Syntax.EDITION_2023; // every edition, 2023 and later, maps here
         };
     }
 
     private static String join(String scope, String simple) {
         Objects.requireNonNull(simple, "simple");
-        return scope == null || scope.isEmpty() ? simple : scope + "." + simple;
+        return scope.isEmpty() ? simple : scope + "." + simple; // a file without package has scope ""
     }
 
     public static final class SchemaResolutionException extends RuntimeException {

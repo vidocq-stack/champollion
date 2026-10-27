@@ -116,4 +116,9 @@ public record Any(
     public int hashCode() {
         return Objects.hash(type_url) ^ java.util.Arrays.hashCode(value);
     }
+
+    @Override
+    public String toString() {
+        return "Any[type_url=" + type_url + ", value=" + java.util.Arrays.toString(value) + "]";
+    }
 }

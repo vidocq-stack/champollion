@@ -118,48 +118,55 @@ public final class ProtobufJsonRuntime {
             java.util.List<Long> unknownEnumVarints =
                     fb.type == FieldType.ENUM ? unknownVarintsFor(unknownFields, fb.number) : null;
 
-            // Full skip: no known value AND no unknown enum to emit.
-            if (value == null && unknownEnumVarints == null) continue;
+            writeField(fb, value, unknownEnumVarints, gen);
+        }
+        gen.writeEnd();
+    }
 
-            if (fb.type == FieldType.MAP) {
-                Map<?, ?> map = (Map<?, ?>) value;
-                if (map.isEmpty()) continue; // proto3 implicit presence
-                gen.writeStartObject(fb.jsonName);
-                for (Map.Entry<?, ?> e : map.entrySet()) {
-                    String k = mapKeyAsString(fb.mapKeyType, e.getKey());
-                    writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
-                }
-                gen.writeEnd();
-                continue;
+    /**
+     * Writes one field, or nothing when it holds neither a known value nor an unknown enum value
+     * to re-emit ({@code unknownEnumVarints} is only ever set for an enum field).
+     */
+    private static void writeField(FieldBinding fb, Object value, List<Long> unknownEnumVarints,
+                                   JsonGenerator gen) {
+        if (fb.type == FieldType.MAP) {
+            if (value instanceof Map<?, ?> map && !map.isEmpty()) writeMapField(fb, map, gen); // proto3 implicit presence
+        } else if (fb.repeated) {
+            writeRepeatedField(fb, (List<?>) value, unknownEnumVarints, gen);
+        } else if (unknownEnumVarints != null) {
+            // M6.9: unknown enum value — the value was indeed set on the wire/JSON side,
+            // just not mappable to a Java constant of the local enum. It takes precedence
+            // over the proto3 default and must be re-emitted numerically (last-wins if
+            // several wire occurrences).
+            gen.write(fb.jsonName,
+                    unknownEnumVarints.get(unknownEnumVarints.size() - 1).intValue());
+        } else if (value != null && (fb.explicitPresence || !isDefault(fb, value))) {
+            writeScalar(fb, value, gen, fb.jsonName); // else proto3 implicit presence
+        }
+    }
+
+    private static void writeMapField(FieldBinding fb, Map<?, ?> map, JsonGenerator gen) {
+        gen.writeStartObject(fb.jsonName);
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            String k = mapKeyAsString(fb.mapKeyType, e.getKey());
+            writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
+        }
+        gen.writeEnd();
+    }
+
+    private static void writeRepeatedField(FieldBinding fb, List<?> list, List<Long> unknownEnumVarints,
+                                           JsonGenerator gen) {
+        boolean emptyKnown = list == null || list.isEmpty();
+        if (emptyKnown && unknownEnumVarints == null) return; // proto3 canonical : omet [] vide
+        gen.writeStartArray(fb.jsonName);
+        if (list != null) {
+            for (Object item : list) {
+                if (item != null) writeScalar(fb, item, gen, null); // null: unknown enum forward-compat
             }
-            if (fb.repeated) {
-                List<?> list = (List<?>) value;
-                boolean emptyKnown = list == null || list.isEmpty();
-                if (emptyKnown && unknownEnumVarints == null) continue; // proto3 canonical : omet [] vide
-                gen.writeStartArray(fb.jsonName);
-                if (list != null) {
-                    for (Object item : list) {
-                        if (item == null) continue; // unknown enum forward-compat
-                        writeScalar(fb, item, gen, null);
-                    }
-                }
-                if (unknownEnumVarints != null) {
-                    // M6.9: append the numeric unknown enum values to the array.
-                    for (Long v : unknownEnumVarints) gen.write(v.intValue());
-                }
-                gen.writeEnd();
-            } else if (fb.type == FieldType.ENUM && unknownEnumVarints != null) {
-                // M6.9: unknown enum value — the value was indeed set on the wire/JSON side,
-                // just not mappable to a Java constant of the local enum. It takes precedence
-                // over the proto3 default and must be re-emitted numerically (last-wins if
-                // several wire occurrences).
-                gen.write(fb.jsonName,
-                        unknownEnumVarints.get(unknownEnumVarints.size() - 1).intValue());
-            } else if (!fb.explicitPresence && isDefault(fb, value)) {
-                continue; // proto3 implicit presence
-            } else {
-                writeScalar(fb, value, gen, fb.jsonName);
-            }
+        }
+        if (unknownEnumVarints != null) {
+            // M6.9: append the numeric unknown enum values to the array.
+            for (Long v : unknownEnumVarints) gen.write(v.intValue());
         }
         gen.writeEnd();
     }
@@ -1592,7 +1599,25 @@ public final class ProtobufJsonRuntime {
                            MethodHandle constructor,
                            int componentCount,
                            int unknownFieldsIndex,
-                           MethodHandle unknownFieldsGetter) {}
+                           MethodHandle unknownFieldsGetter) {
+
+        // A plan is derived from its record type alone, and is cached once per type:
+        // the type identifies it, the array derived from it adds nothing.
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof JsonBindingPlan other && recordType == other.recordType;
+        }
+
+        @Override
+        public int hashCode() {
+            return recordType.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "JsonBindingPlan[" + recordType.getName() + "]";
+        }
+    }
 
     static final class FieldBinding {
         final int number;

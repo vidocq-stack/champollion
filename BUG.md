@@ -130,3 +130,12 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Symptôme** : a value above `Long.MAX_VALUE` is written as a negative number.
 - **Reproduction minimale** : write a `UInt64Value` holding `-1L` (2^64 - 1 unsigned): the JSON says `"-1"`, the proto3 JSON mapping expects `"18446744073709551615"`.
 - **Hypothèse de cause** : the writer uses `Long.toString` instead of `Long.toUnsignedString`.
+
+## BUG-20261027-05 — Protobuf: `BytesValue` compares and prints the array, not the bytes
+
+- **Date** : 2026-10-27
+- **Statut** : FIXED (fix/sonar-overall-reliability-security, Sonar S6218)
+- **Module touché** : `champollion-protobuf` — `wkt.Wrappers.BytesValue` (and `wkt.Any.toString`)
+- **Symptôme** : two `BytesValue` holding the same bytes are not equal and hash differently; `toString` prints `[B@…`. `Any` already compared its bytes but printed the array identity.
+- **Reproduction minimale** : `new BytesValue(new byte[]{1}).equals(new BytesValue(new byte[]{1}))` is `false`.
+- **Hypothèse de cause** : a record with a `byte[]` component inherits the array's identity `equals`/`hashCode`/`toString`. Fixed by overriding them with `Arrays`.
