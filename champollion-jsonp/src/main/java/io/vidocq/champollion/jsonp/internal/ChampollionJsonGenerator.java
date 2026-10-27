@@ -76,7 +76,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     private static final String JSON_FALSE = "false";
 
     /** The generator's own buffer: every value, key, comma and escape goes to it. */
-    private final GeneratorSink out;
+    private final GeneratorSink<?> out;
     private final boolean pretty;
     private final Deque<Ctx> stack = new ArrayDeque<>();
     private int depth = 0;

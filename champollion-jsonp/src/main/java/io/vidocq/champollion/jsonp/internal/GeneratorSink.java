@@ -21,6 +21,8 @@ package io.vidocq.champollion.jsonp.internal;
 
 import jakarta.json.JsonException;
 
+import java.io.Closeable;
+import java.io.Flushable;
 import java.io.IOException;
 
 /**
@@ -37,13 +39,16 @@ import java.io.IOException;
  * <p>A sink belongs to one generator, used by one thread at a time: no lock, no pooling, no
  * {@code ThreadLocal}.</p>
  */
-abstract sealed class GeneratorSink permits WriterSink, Utf8StreamSink {
+abstract sealed class GeneratorSink<T extends Closeable & Flushable> permits WriterSink, Utf8StreamSink {
 
+    /** The writer or stream the buffer is handed to. */
+    final T out;
     private final int ceiling;
     /** Number of buffered units (characters or bytes) not yet handed to the target. */
     int pos;
 
-    GeneratorSink(int ceiling) {
+    GeneratorSink(T out, int ceiling) {
+        this.out = out;
         this.ceiling = ceiling;
     }
 
@@ -67,10 +72,15 @@ abstract sealed class GeneratorSink permits WriterSink, Utf8StreamSink {
     abstract void writeBuffer() throws IOException;
 
     /** Flushes the target; the buffer must have been drained. */
-    abstract void flushTarget() throws IOException;
+    final void flushTarget() throws IOException {
+        out.flush();
+    }
 
     /** Flushes then closes the target; the buffer must have been drained. */
-    abstract void closeTarget() throws IOException;
+    final void closeTarget() throws IOException {
+        out.flush();
+        out.close();
+    }
 
     /** Doubles the buffer while under the ceiling, otherwise hands it to the target. */
     final void makeRoom() {

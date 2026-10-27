@@ -29,17 +29,15 @@ import java.util.Arrays;
  * on every call, which was the hottest frame of the profile of the REST benchmark
  * (VidocqTools/vidocq-benchmarks).
  */
-final class WriterSink extends GeneratorSink {
+final class WriterSink extends GeneratorSink<Writer> {
 
     private static final int INITIAL = 128;
     private static final int CEILING = 1024;
 
-    private final Writer out;
     private char[] buf = new char[INITIAL];
 
     WriterSink(Writer out) {
-        super(CEILING);
-        this.out = out;
+        super(out, CEILING);
     }
 
     @Override void write(char c) {
@@ -68,14 +66,5 @@ final class WriterSink extends GeneratorSink {
 
     @Override void writeBuffer() throws IOException {
         out.write(buf, 0, pos);
-    }
-
-    @Override void flushTarget() throws IOException {
-        out.flush();
-    }
-
-    @Override void closeTarget() throws IOException {
-        out.flush();
-        out.close();
     }
 }

@@ -33,7 +33,7 @@ import java.util.Arrays;
  * the JDK UTF-8 encoder. The generator hands every run of unescaped characters in one
  * {@link #append} call, so a pair never straddles two calls.</p>
  */
-final class Utf8StreamSink extends GeneratorSink {
+final class Utf8StreamSink extends GeneratorSink<OutputStream> {
 
     private static final int INITIAL = 128;
     private static final int CEILING = 4096;
@@ -41,12 +41,18 @@ final class Utf8StreamSink extends GeneratorSink {
     private static final int MAX_SEQUENCE = 4;
     private static final byte REPLACEMENT = '?';
 
-    private final OutputStream out;
     private byte[] buf = new byte[INITIAL];
 
     Utf8StreamSink(OutputStream out) {
-        super(CEILING);
-        this.out = out;
+        super(out, CEILING);
+    }
+
+    @Override int capacity() {
+        return buf.length;
+    }
+
+    @Override void resize(int capacity) {
+        buf = Arrays.copyOf(buf, capacity);
     }
 
     @Override void write(char c) {
@@ -109,24 +115,7 @@ final class Utf8StreamSink extends GeneratorSink {
         return 1;
     }
 
-    @Override int capacity() {
-        return buf.length;
-    }
-
-    @Override void resize(int capacity) {
-        buf = Arrays.copyOf(buf, capacity);
-    }
-
     @Override void writeBuffer() throws IOException {
         out.write(buf, 0, pos);
-    }
-
-    @Override void flushTarget() throws IOException {
-        out.flush();
-    }
-
-    @Override void closeTarget() throws IOException {
-        out.flush();
-        out.close();
     }
 }
