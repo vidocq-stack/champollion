@@ -107,11 +107,18 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261027-02 — JSON-B: the "date with offset only" fallback can never parse
 
 - **Date** : 2026-10-27
-- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Statut** : FIXED (branch `test/jsonb-coverage`)
 - **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.parseAsZonedDateTime`
-- **Symptôme** : `"2020-01-02+01:00"` read into a `ZonedDateTime` (or `OffsetDateTime`) is rejected.
-- **Reproduction minimale** : `jsonb.fromJson("\"2020-01-02+01:00\"", ZonedDateTime.class)`.
-- **Hypothèse de cause** : the fallback builds `s + "T00:00:00" + last 6 chars`, appending the offset after a string that already ends with it, so the result is never a valid date-time.
+- **Symptôme** : `"2020-01-02+01:00"` or `"2020-01-02Z"` read into a `Calendar` (or a `Calendar`/`Date` member with the
+  default `@JsonbDateFormat`) is rejected with a `DateTimeParseException`. That is the very form the writer uses for a
+  calendar at midnight (`ISO_OFFSET_DATE`, JSON-B 3.0 §3.5.1), so such a calendar did not round-trip.
+- **Reproduction minimale** : `jsonb.fromJson("\"2020-01-02+01:00\"", Calendar.class)`; or write
+  `GregorianCalendar.from(ZonedDateTime.of(2020, 1, 2, 0, 0, 0, 0, ZoneId.of("Europe/Paris")))` and read it back.
+- **Cause** : the fallback built `s + "T00:00:00" + last 6 chars`, appending the offset after a string that already
+  ends with it, so the result was never a valid date-time; and a `Z` offset is one character, not six.
+- **Investigations** :
+  - 2026-10-28 : fix = parse with `DateTimeFormatter.ISO_OFFSET_DATE` and take the start of that day at that offset.
+    Red then green on `CalendarDateWithOffsetRegressionTest` (numeric offset, `Z`, midnight round trip).
 
 ## BUG-20261027-03 — APT: the generated static binding of a `List<Float>` does not compile
 
@@ -139,3 +146,19 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Symptôme** : two `BytesValue` holding the same bytes are not equal and hash differently; `toString` prints `[B@…`. `Any` already compared its bytes but printed the array identity.
 - **Reproduction minimale** : `new BytesValue(new byte[]{1}).equals(new BytesValue(new byte[]{1}))` is `false`.
 - **Hypothèse de cause** : a record with a `byte[]` component inherits the array's identity `equals`/`hashCode`/`toString`. Fixed by overriding them with `Arrays`.
+
+## BUG-20261028-01 — JSON-B: a null `JsonStructure` member cannot be read
+
+- **Date** : 2026-10-28
+- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.Builtins.lookup` (JSON-P types)
+- **Symptôme** : a JSON `null` read into a member of type `JsonStructure` fails with
+  `JsonbException: Failed to instantiate record ...: argument type mismatch` (cause: `ClassCastException`,
+  `JsonValueImpl` cannot be cast to `JsonStructure`).
+- **Reproduction minimale** : `record R(JsonStructure s) {}`, `jsonb.fromJson("{\"s\":null}", R.class)`.
+- **Hypothèse de cause** : the reader shared by `JsonStructure` and `JsonValue` returns `JsonValue.NULL` for a JSON
+  `null`. That is right for `JsonValue` but `JsonValue.NULL` is not a `JsonStructure`; the `JsonStructure` reader
+  should return `null`, like the `JsonObject` and `JsonArray` ones.
+- **Investigations** :
+  - 2026-10-28 : not fixed with the coverage tests: `Builtins.lookup` has a cognitive complexity of 188, so touching
+    it brings Sonar's S3776 back as a new issue; the fix wants that method split by family of types first.

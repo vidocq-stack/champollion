@@ -1799,9 +1799,9 @@ final class RuntimeReadRegistry {
         try { return ZonedDateTime.parse(s, DateTimeFormatter.ISO_ZONED_DATE_TIME); } catch (Exception _) { /* not this format: try the next one */ }
         try { return OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime(); } catch (Exception _) { /* not this format: try the next one */ }
         try {
-            // Date avec offset uniquement : "1970-01-01+01:00"
-            return java.time.OffsetDateTime.parse(s + "T00:00:00" + s.substring(s.length()-6, s.length()),
-                    DateTimeFormatter.ISO_OFFSET_DATE_TIME).toZonedDateTime();
+            // Date with an offset only, as written for a calendar at midnight: "1970-01-01+01:00", "1970-01-01Z"
+            var dateWithOffset = DateTimeFormatter.ISO_OFFSET_DATE.parse(s);
+            return LocalDate.from(dateWithOffset).atStartOfDay(java.time.ZoneOffset.from(dateWithOffset));
         } catch (Exception _) { /* not this format: try the next one */ }
         try {
             return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay(java.time.ZoneId.of("UTC"));
