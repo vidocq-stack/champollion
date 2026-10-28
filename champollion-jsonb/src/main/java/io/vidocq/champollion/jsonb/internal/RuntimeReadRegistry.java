@@ -149,6 +149,34 @@ final class RuntimeReadRegistry {
             }
             return resolvePojo(type);
         }
+
+        /**
+         * Polymorphic reader: reads the discriminator key (first in the JSON,
+         * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
+         * restants directement dans le record/POJO concret via une variante de
+         * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
+         *
+         * <p>Note: Champollion always writes the discriminator key first.
+         * To interoperate with other implementations that place the key elsewhere, it
+         * would need to buffer the whole object — deferred.</p>
+         */
+        private BindingReader polymorphicReader(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
+            // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest). The subtypes are checked
+            // against the bearer of the annotation, found from the type read (BUG-20261028-06): a subtype that does
+            // not extend it would not find it.
+            RuntimeBindingRegistry.validateTypeInfo(type, info);
+            for (var sub : info.value()) {
+                RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
+            }
+            return parser -> {
+                JsonParser.Event e = parser.next();
+                if (e == JsonParser.Event.VALUE_NULL) return null;
+                if (e != JsonParser.Event.START_OBJECT) {
+                    throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
+                }
+                return readMembersOnly(parser, concreteType(parser, info));
+            };
+        }
     };
 
     private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -525,11 +553,8 @@ final class RuntimeReadRegistry {
 
     /** Keeps {@code m} for {@code prop} unless a setter with a more specific parameter type is already known. */
     private static void keepMostSpecificSetter(Map<String, Method> setterByProp, String prop, Method m) {
-        Method existing = setterByProp.get(prop);
-        if (existing == null) {
-            setterByProp.put(prop, m);
-            return;
-        }
+        Method existing = setterByProp.putIfAbsent(prop, m);
+        if (existing == null) return;
         Class<?> ep = existing.getParameterTypes()[0];
         Class<?> np = m.getParameterTypes()[0];
         if (ep.isAssignableFrom(np) && ep != np) setterByProp.put(prop, m);
@@ -604,9 +629,11 @@ final class RuntimeReadRegistry {
     private void addFieldWriters(Class<?> type, java.util.Set<String> hiddenProps, Map<String, BeanWriter> writersByName) {
         for (Field f : type.getFields()) {
             String name = isBindableField(f) && !hiddenProps.contains(f.getName()) ? jsonbName(f) : null;
-            if (name != null && !writersByName.containsKey(name)) {
-                makeAccessible(f);
-                writersByName.put(name, new FieldSetter(f, fieldReader(f)));
+            if (name != null) {
+                writersByName.computeIfAbsent(name, _ -> {
+                    makeAccessible(f);
+                    return new FieldSetter(f, fieldReader(f));
+                });
             }
         }
     }
@@ -652,7 +679,7 @@ final class RuntimeReadRegistry {
     private static String propertyOf(BeanWriter bw) {
         Method method = setterMethod(bw);
         if (method != null) return RuntimeBindingRegistry.beanSetterOf(method);
-        return bw instanceof FieldSetter(Field f, var _) ? f.getName() : null;
+        return bw instanceof FieldSetter(Field f, _) ? f.getName() : null;
     }
 
     /** A setter is visible when the setter or its underlying field is; a field when the field is. */
@@ -665,14 +692,14 @@ final class RuntimeReadRegistry {
             Field underlying = prop == null ? null : findFieldByName(type, prop);
             return methodVisible || (underlying != null && visibility.isVisible(underlying));
         }
-        if (bw instanceof FieldSetter(Field f, var _)) return visibility.isVisible(f);
+        if (bw instanceof FieldSetter(Field f, _)) return visibility.isVisible(f);
         return true;
     }
 
     /** The setter method behind a writer, or null for a field writer. */
     private static Method setterMethod(BeanWriter bw) {
-        if (bw instanceof MethodSetter(Method m, var _)) return m;
-        if (bw instanceof MhSetter(var _, Method m, var _)) return m;
+        if (bw instanceof MethodSetter(Method m, _)) return m;
+        if (bw instanceof MhSetter(_, Method m, _)) return m;
         return null;
     }
 
@@ -1260,26 +1287,38 @@ final class RuntimeReadRegistry {
     private Map<String, BeanWriter> discoverExtraWriters(Class<?> type, java.util.Set<String> creatorNames) {
         if (type.isInterface() || type.isPrimitive() || type.isArray()) return Map.of();
         Map<String, BeanWriter> out = new java.util.LinkedHashMap<>();
-        // Public setters.
+        addExtraSetterWriters(type, creatorNames, out);
+        addExtraFieldWriters(type, creatorNames, out);
+        return out;
+    }
+
+    /** Public setters of the hierarchy, the most specific declaration of a name first. */
+    private void addExtraSetterWriters(Class<?> type, java.util.Set<String> creatorNames, Map<String, BeanWriter> out) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Method m : c.getDeclaredMethods()) {
                 String prop = extraSetterProperty(type, m);
                 String name = prop == null ? null : methodJsonbName(m, findGetter(type, prop), prop);
-                if (name != null && !creatorNames.contains(name) && !out.containsKey(name)) {
-                    makeAccessible(m);
-                    out.put(name, new MethodSetter(m, readerFor(m.getGenericParameterTypes()[0])));
+                if (name != null && !creatorNames.contains(name)) {
+                    out.computeIfAbsent(name, _ -> {
+                        makeAccessible(m);
+                        return new MethodSetter(m, readerFor(m.getGenericParameterTypes()[0]));
+                    });
                 }
             }
         }
-        // Public fields not covered.
+    }
+
+    /** Public fields that no creator parameter nor setter covers. */
+    private void addExtraFieldWriters(Class<?> type, java.util.Set<String> creatorNames, Map<String, BeanWriter> out) {
         for (Field f : type.getFields()) {
             String name = isBindableField(f) ? jsonbName(f) : null;
-            if (name != null && !creatorNames.contains(name) && !out.containsKey(name)) {
-                makeAccessible(f);
-                out.put(name, new FieldSetter(f, readerFor(f.getGenericType())));
+            if (name != null && !creatorNames.contains(name)) {
+                out.computeIfAbsent(name, _ -> {
+                    makeAccessible(f);
+                    return new FieldSetter(f, readerFor(f.getGenericType()));
+                });
             }
         }
-        return out;
     }
 
     /** The property of a public one-argument setter that neither it nor its underlying field makes transient. */
@@ -1712,34 +1751,6 @@ final class RuntimeReadRegistry {
             JsonParser primed = new PrimedParser(e, p);
             out.add(dynamicValue(primed));
         }
-    }
-
-    /**
-     * Polymorphic reader: reads the discriminator key (first in the JSON,
-     * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
-     * restants directement dans le record/POJO concret via une variante de
-     * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
-     *
-     * <p>Note: Champollion always writes the discriminator key first.
-     * To interoperate with other implementations that place the key elsewhere, it
-     * would need to buffer the whole object — deferred.</p>
-     */
-    private BindingReader polymorphicReader(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
-        // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest). The subtypes are checked
-        // against the bearer of the annotation, found from the type read (BUG-20261028-06): a subtype that does
-        // not extend it would not find it.
-        RuntimeBindingRegistry.validateTypeInfo(type, info);
-        for (var sub : info.value()) {
-            RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
-        }
-        return parser -> {
-            JsonParser.Event e = parser.next();
-            if (e == JsonParser.Event.VALUE_NULL) return null;
-            if (e != JsonParser.Event.START_OBJECT) {
-                throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
-            }
-            return readMembersOnly(parser, concreteType(parser, info));
-        };
     }
 
     /**

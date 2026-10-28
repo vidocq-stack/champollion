@@ -889,11 +889,8 @@ final class RuntimeBindingRegistry {
 
     /** Keeps the preferred getter of a property: a {@code getXxx} over an {@code isXxx}, else the most specific type. */
     private static void preferGetter(java.util.Map<String, Method> getterByProp, String propName, Method m) {
-        Method existing = getterByProp.get(propName);
-        if (existing == null) {
-            getterByProp.put(propName, m);
-            return;
-        }
+        Method existing = getterByProp.putIfAbsent(propName, m);
+        if (existing == null) return;
         boolean newIsGet = m.getName().startsWith("get");
         boolean existingIsGet = existing.getName().startsWith("get");
         boolean moreSpecific = existing.getReturnType().isAssignableFrom(m.getReturnType())
