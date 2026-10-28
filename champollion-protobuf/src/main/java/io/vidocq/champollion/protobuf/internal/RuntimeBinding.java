@@ -808,11 +808,10 @@ public final class RuntimeBinding {
             case SINT64 -> in.readSInt64();
             case BOOL -> in.readBool();
             case ENUM -> {
-                int ord = in.readEnum();
+                int value = in.readEnum();
                 if (messageClass == null || !messageClass.isEnum()) yield null;
-                Object[] constants = messageClass.getEnumConstants();
-                if (ord < 0 || ord >= constants.length) yield null;
-                yield constants[ord];
+                // Same lookup as an enum field: @ProtoEnumValue numbers, ordinal fallback, null if unknown.
+                yield EnumValueMap.forClass(messageClass).byValue(value);
             }
             case FIXED32 -> in.readFixed32();
             case SFIXED32 -> in.readSFixed32();

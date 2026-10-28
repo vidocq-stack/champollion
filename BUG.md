@@ -98,11 +98,15 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261027-01 — Protobuf: a map value of enum type is decoded by ordinal, encoded by `@ProtoEnumValue`
 
 - **Date** : 2026-10-27
-- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Statut** : FIXED (test/protobuf-coverage)
 - **Module touché** : `champollion-protobuf` — `RuntimeBinding.readScalarTyped` (ENUM case)
 - **Symptôme** : a map whose values are an enum with explicit `@ProtoEnumValue` numbers round-trips wrong: the writer emits the declared number, the reader looks the number up as an ordinal. A value declared `-1` comes back as `null`.
 - **Reproduction minimale** : a message with `Map<String, Status>` where `Status` has `@ProtoEnumValue(-1) UNKNOWN`; encode `{"a": UNKNOWN}`, decode it.
 - **Hypothèse de cause** : the map value reader uses `values()[n]` instead of the `@ProtoEnumValue` lookup the field reader uses.
+- **Investigations** :
+  - 2026-10-28 : reproduced by `MapEnumValueTest` (declared numbers -1 and 10 read back as `null`, and the number 1,
+    which no constant declares, read back as the constant of ordinal 1). Fix: the map value reader uses
+    `EnumValueMap.byValue`, like the field reader. Regression test: `MapEnumValueTest`.
 
 ## BUG-20261027-02 — JSON-B: the "date with offset only" fallback can never parse
 
