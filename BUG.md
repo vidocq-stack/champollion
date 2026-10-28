@@ -299,3 +299,19 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Fix** : `writeMessage` opens the object and delegates to `writeMessageBody`, which now runs the top-level field
   loop, so both levels share one writer.
 - **Regression test** : `NestedMessageJsonTest`.
+
+## BUG-20261028-14 — Protobuf APT: the static parser decodes an enum by ordinal, not by `@ProtoEnumValue`
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf-codegen` — `ProtobufStaticProcessor` (the enum read it generates)
+- **Symptôme** : with `@ProtobufStatic`, an enum field whose constants declare `@ProtoEnumValue` numbers reads back
+  wrong: the writer emits the declared number, the generated parser indexes `values()` with it, so a declared
+  number reads as `null` or as another constant.
+- **Reproduction minimale** : `enum Status { @ProtoEnumValue(0) NONE, @ProtoEnumValue(7) ACTIVE }` in a
+  `@ProtobufStatic` record: encode `ACTIVE`, parse with the generated `$$Parser`: `null`.
+- **Cause** : the generated `lookupEnumOrNull(values, ordinal)` helper predates `@ProtoEnumValue`, which the
+  runtime binding honours through `EnumValueMap`.
+- **Fix** : the processor emits one decoder per enum type, a switch from the declared number (or the ordinal when
+  none is declared) to the constant, computed at compile time; unknown numbers still read as `null`.
+- **Regression test** : `ProtobufStaticProcessorTest.generated_parser_decodes_enums_by_their_declared_number`.

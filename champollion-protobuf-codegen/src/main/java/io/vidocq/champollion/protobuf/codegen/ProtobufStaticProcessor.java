@@ -20,6 +20,7 @@
 package io.vidocq.champollion.protobuf.codegen;
 
 import io.vidocq.champollion.protobuf.FieldType;
+import io.vidocq.champollion.protobuf.ProtoEnumValue;
 import io.vidocq.champollion.protobuf.ProtobufField;
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.ProtobufStatic;
@@ -201,11 +202,7 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             pw.println("        return result;");
             pw.println(END_METHOD);
             pw.println();
-            // Lenient enum helper (proto3 forward-compat: unknown values → null).
-            pw.println("    private static <E> E lookupEnumOrNull(E[] values, int ordinal) {");
-            pw.println("        if (ordinal < 0 || ordinal >= values.length) return null;");
-            pw.println("        return values[ordinal];");
-            pw.println(END_METHOD);
+            emitEnumDecoders(pw, comps);
             pw.println("}");
         }
     }
@@ -354,11 +351,50 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             case BOOL -> "in.readBool()";
             case STRING -> "in.readStringRequireUtf8()";
             case BYTES -> "in.readBytes()";
-            case ENUM -> "lookupEnumOrNull(" + javaElemType + ".values(), in.readEnum())";
+            case ENUM -> enumDecoderName(javaElemType) + "(in.readEnum())";
             case MESSAGE -> "readNested(" + javaElemType + ".class, in)";
             // MAP is not supported in static codegen — the reflective runtime handles these fields.
             case MAP -> "/* MAP handled by runtime */null";
         };
+    }
+
+    /**
+     * One decoder per enum type the record reads: a switch from the wire number to the constant, built at compile
+     * time from the {@link ProtoEnumValue} numbers (the ordinal when a constant declares none), the first constant
+     * winning for an aliased number. An unknown number decodes to {@code null} (proto3 forward compatibility).
+     */
+    private static void emitEnumDecoders(PrintWriter pw, List<? extends RecordComponentElement> comps) {
+        Set<String> emitted = new LinkedHashSet<>();
+        for (RecordComponentElement rc : comps) {
+            ProtobufField pf = rc.getAnnotation(ProtobufField.class);
+            if (pf == null || pf.type() != FieldType.ENUM) continue;
+            TypeMirror tm = rc.asType();
+            TypeMirror enumType = isListType(tm) ? ((DeclaredType) tm).getTypeArguments().get(0) : tm;
+            TypeElement enumElement = (TypeElement) ((DeclaredType) enumType).asElement();
+            String fqn = enumElement.getQualifiedName().toString();
+            if (!emitted.add(fqn)) continue;
+            pw.println();
+            pw.println("    private static " + fqn + " " + enumDecoderName(fqn) + "(int number) {");
+            pw.println("        return switch (number) {");
+            Set<Integer> numbers = new LinkedHashSet<>();
+            int ordinal = 0;
+            for (Element constant : enumElement.getEnclosedElements()) {
+                if (constant.getKind() != ElementKind.ENUM_CONSTANT) continue;
+                ProtoEnumValue declared = constant.getAnnotation(ProtoEnumValue.class);
+                int number = declared != null ? declared.value() : ordinal;
+                ordinal++;
+                if (numbers.add(number)) {
+                    pw.println("            case " + number + " -> " + fqn + "." + constant.getSimpleName() + ";");
+                }
+            }
+            pw.println("            default -> null;");
+            pw.println("        };");
+            pw.println(END_METHOD);
+        }
+    }
+
+    private static String enumDecoderName(String enumFqn) {
+        return "decode_" + enumFqn.replace('.', '_');
     }
 
     static boolean isListType(TypeMirror tm) {

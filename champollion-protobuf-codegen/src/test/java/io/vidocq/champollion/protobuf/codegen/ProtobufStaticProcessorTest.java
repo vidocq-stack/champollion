@@ -252,6 +252,52 @@ class ProtobufStaticProcessorTest {
         }
 
         @Test
+        void generated_parser_decodes_enums_by_their_declared_number(@TempDir Path tmp) throws Exception {
+            String status = """
+                    package io.test;
+
+                    import io.vidocq.champollion.protobuf.ProtoEnumValue;
+
+                    public enum Status {
+                        @ProtoEnumValue(0) NONE,
+                        @ProtoEnumValue(7) ACTIVE,
+                        @ProtoEnumValue(-1) BROKEN
+                    }
+                    """;
+            String account = """
+                    package io.test;
+
+                    import io.vidocq.champollion.protobuf.FieldType;
+                    import io.vidocq.champollion.protobuf.Message;
+                    import io.vidocq.champollion.protobuf.ProtobufField;
+                    import io.vidocq.champollion.protobuf.ProtobufMessage;
+                    import io.vidocq.champollion.protobuf.ProtobufStatic;
+                    import java.util.List;
+
+                    @ProtobufStatic
+                    @ProtobufMessage("io.test.Account")
+                    public record Account(
+                        @ProtobufField(number = 1, type = FieldType.ENUM) Status status,
+                        @ProtobufField(number = 2, type = FieldType.ENUM) List<Status> history
+                    ) implements Message {}
+                    """;
+            CompileResult r = compile(tmp, Map.of("io.test.Status", status, "io.test.Account", account));
+            try (URLClassLoader cl = new URLClassLoader(
+                    new URL[]{r.classesOutput.toUri().toURL()},
+                    ProtobufStaticProcessorTest.class.getClassLoader())) {
+                Object[] constants = cl.loadClass("io.test.Status").getEnumConstants();
+                Object value = cl.loadClass("io.test.Account").getDeclaredConstructors()[0]
+                        .newInstance(constants[1], List.of(constants[2], constants[0], constants[1]));
+                Parser<?> generated = (Parser<?>) cl.loadClass("io.test.Account$$Parser")
+                        .getDeclaredConstructor().newInstance();
+                assertEquals(value, generated.parseFrom(Protobuf.toByteArray(value)));
+                // number 1 is the ordinal of ACTIVE, but no constant declares it: unknown, read as null
+                Object unknown = generated.parseFrom(new byte[] {0x08, 0x01});
+                assertNull(unknown.getClass().getMethod("status").invoke(unknown));
+            }
+        }
+
+        @Test
         void only_records_are_accepted(@TempDir Path tmp) throws Exception {
             String src = """
                     package io.test;
