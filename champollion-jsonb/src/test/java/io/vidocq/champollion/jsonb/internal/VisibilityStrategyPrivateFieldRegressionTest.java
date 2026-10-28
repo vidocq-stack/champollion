@@ -32,9 +32,9 @@ import java.lang.reflect.Method;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * BUG-20261028-04 (write side): JSON-B 3.0 §4.6.1 lets a {@link PropertyVisibilityStrategy} decide for every field,
- * so a private field without accessor becomes a property when the strategy makes it visible. The writer only
- * offered public fields and getters to the strategy.
+ * BUG-20261028-04: JSON-B 3.0 §4.6.1 lets a {@link PropertyVisibilityStrategy} decide for every field, so a private
+ * field without accessor becomes a property when the strategy makes it visible. The writer and the reader only
+ * offered public fields and accessors to the strategy.
  */
 @DisplayName("BUG-20261028-04 — a visibility strategy exposes private fields without accessor")
 class VisibilityStrategyPrivateFieldRegressionTest {
@@ -86,6 +86,38 @@ class VisibilityStrategyPrivateFieldRegressionTest {
     void without_a_strategy_only_public_members_are_written() throws Exception {
         try (Jsonb jsonb = JsonbBuilder.create()) {
             assertEquals("{\"open\":1}", jsonb.toJson(new Bean()));
+        }
+    }
+
+    private static final String FULL_DOCUMENT = "{\"inherited\":\"I\",\"hidden\":\"H\",\"open\":2,\"secret\":\"S\"}";
+
+    @Test
+    void a_strategy_that_shows_every_field_reads_the_private_ones() throws Exception {
+        try (Jsonb jsonb = JsonbBuilder.create(new JsonbConfig().withPropertyVisibilityStrategy(new AllFields()))) {
+            Bean bean = jsonb.fromJson(FULL_DOCUMENT, Bean.class);
+            assertEquals("I", bean.inherited());
+            assertEquals("HSt" + Bean.CONSTANT, bean.hidden());
+            assertEquals(2, bean.open);
+        }
+    }
+
+    @Test
+    void the_strategy_still_leaves_the_fields_it_rejects_unread() throws Exception {
+        try (Jsonb jsonb = JsonbBuilder.create(
+                new JsonbConfig().withPropertyVisibilityStrategy(new AllFieldsButSecret()))) {
+            Bean bean = jsonb.fromJson(FULL_DOCUMENT, Bean.class);
+            assertEquals("I", bean.inherited());
+            assertEquals("Hst" + Bean.CONSTANT, bean.hidden());
+        }
+    }
+
+    @Test
+    void without_a_strategy_only_public_members_are_read() throws Exception {
+        try (Jsonb jsonb = JsonbBuilder.create()) {
+            Bean bean = jsonb.fromJson(FULL_DOCUMENT, Bean.class);
+            assertEquals("i", bean.inherited());
+            assertEquals("hst" + Bean.CONSTANT, bean.hidden());
+            assertEquals(2, bean.open);
         }
     }
 }

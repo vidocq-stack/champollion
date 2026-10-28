@@ -447,7 +447,7 @@ final class RuntimeReadRegistry {
         addSetterWriters(type, setterByProp, writersByName);
         addFieldWriters(type, hiddenProps, writersByName);
         // Apply PropertyVisibilityStrategy (config / @JsonbVisibility / package).
-        applyVisibility(type, writersByName);
+        applyVisibility(type, hiddenProps, writersByName);
 
         return parser -> readObjectAndApply(parser, ctor, ctorMh, type, writersByName);
     }
@@ -606,20 +606,53 @@ final class RuntimeReadRegistry {
             String name = isBindableField(f) && !hiddenProps.contains(f.getName()) ? jsonbName(f) : null;
             if (name != null && !writersByName.containsKey(name)) {
                 makeAccessible(f);
-                BindingReader reader = customAdapterReader(f, null)
-                        .or(() -> customDeserializerReader(f, null, f.getGenericType()))
-                        .orElseGet(() -> readerFor(f.getGenericType()));
-                writersByName.put(name, new FieldSetter(f, reader));
+                writersByName.put(name, new FieldSetter(f, fieldReader(f)));
             }
         }
     }
 
-    /** Keeps the writers that the effective {@code PropertyVisibilityStrategy}, if any, makes visible. */
-    private void applyVisibility(Class<?> type, Map<String, BeanWriter> writersByName) {
+    /** §4.7 {@code @JsonbTypeAdapter} / {@code @JsonbTypeDeserializer} on the field, else the reader of its type. */
+    private BindingReader fieldReader(Field f) {
+        return customAdapterReader(f, null)
+                .or(() -> customDeserializerReader(f, null, f.getGenericType()))
+                .orElseGet(() -> readerFor(f.getGenericType()));
+    }
+
+    /**
+     * Applies the effective {@code PropertyVisibilityStrategy}, if any. §4.6.1: the strategy decides for every field,
+     * so the non-public ones are offered to it too before the writers it rejects are dropped.
+     */
+    private void applyVisibility(Class<?> type, java.util.Set<String> hiddenProps, Map<String, BeanWriter> writersByName) {
         var visibility = effectiveVisibility(type);
         if (visibility != null) {
+            addNonPublicFieldWriters(type, hiddenProps, writersByName);
             writersByName.values().removeIf(bw -> !isVisible(visibility, type, bw));
         }
+    }
+
+    /**
+     * Adds the non-public, non-final instance fields of the hierarchy that no setter nor public field already covers,
+     * the most specific declaration of a name first; a field that cannot be made accessible is left out.
+     */
+    private void addNonPublicFieldWriters(Class<?> type, java.util.Set<String> hiddenProps,
+                                          Map<String, BeanWriter> writersByName) {
+        var covered = new java.util.HashSet<>(hiddenProps);
+        for (BeanWriter bw : writersByName.values()) covered.add(propertyOf(bw));
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (!Modifier.isPublic(f.getModifiers()) && !f.isSynthetic() && isBindableField(f)
+                        && covered.add(f.getName()) && f.trySetAccessible()) {
+                    writersByName.putIfAbsent(jsonbName(f), new FieldSetter(f, fieldReader(f)));
+                }
+            }
+        }
+    }
+
+    /** The Java property behind a writer: the setter's property or the field's name. */
+    private static String propertyOf(BeanWriter bw) {
+        Method method = setterMethod(bw);
+        if (method != null) return RuntimeBindingRegistry.beanSetterOf(method);
+        return bw instanceof FieldSetter(Field f, var _) ? f.getName() : null;
     }
 
     /** A setter is visible when the setter or its underlying field is; a field when the field is. */
