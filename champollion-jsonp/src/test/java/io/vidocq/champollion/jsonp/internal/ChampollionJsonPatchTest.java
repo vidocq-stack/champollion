@@ -29,6 +29,8 @@ import jakarta.json.JsonValue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.StringReader;
 
@@ -170,27 +172,15 @@ class ChampollionJsonPatchTest {
     @DisplayName("Validation / errors")
     class Errors {
 
-        @Test
-        void rejects_unknown_op() {
+        /** An unknown op, an op without its path, a replace on a missing path. */
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "[{\"op\":\"frobulate\",\"path\":\"/x\"}]",
+                "[{\"op\":\"add\"}]",
+                "[{\"op\":\"replace\",\"path\":\"/x\",\"value\":1}]"})
+        void rejects_an_invalid_operation(String operations) {
             var doc = read("{}");
-            var p = patch("[{\"op\":\"frobulate\",\"path\":\"/x\"}]");
-            var jsonPatch = new ChampollionJsonPatch(p);
-            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
-        }
-
-        @Test
-        void rejects_op_missing_required_member() {
-            var doc = read("{}");
-            var p = patch("[{\"op\":\"add\"}]"); // path manquant
-            var jsonPatch = new ChampollionJsonPatch(p);
-            assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
-        }
-
-        @Test
-        void rejects_replace_on_missing_path() {
-            var doc = read("{}");
-            var p = patch("[{\"op\":\"replace\",\"path\":\"/x\",\"value\":1}]");
-            var jsonPatch = new ChampollionJsonPatch(p);
+            var jsonPatch = new ChampollionJsonPatch(patch(operations));
             assertThrows(JsonException.class, () -> jsonPatch.apply(doc));
         }
     }
