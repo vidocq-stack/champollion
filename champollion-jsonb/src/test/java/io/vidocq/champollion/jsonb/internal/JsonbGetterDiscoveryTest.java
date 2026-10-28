@@ -140,6 +140,7 @@ class JsonbGetterDiscoveryTest {
     void an_alias_that_is_not_a_subtype_is_rejected() {
         var lion = new Lion();
         assertThrows(JsonbException.class, () -> jsonb.toJson(lion, (Type) Animal.class));
-        // The read side accepts it: BUG-20261028-06 (still open).
+        // The read side rejects it too (BUG-20261028-06).
+        assertThrows(JsonbException.class, () -> jsonb.fromJson("{\"@t\":\"z\"}", Animal.class));
     }
 }

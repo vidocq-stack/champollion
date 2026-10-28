@@ -139,7 +139,7 @@ final class RuntimeReadRegistry {
             // TOP of the chain's @JsonbTypeInfo.
             var chain = RuntimeBindingRegistry.typeInfoChain(type);
             var info = chain.isEmpty() ? null : chain.get(0);
-            if (info != null) return polymorphicReader(info);
+            if (info != null) return polymorphicReader(type, info);
             if (type.isRecord()) return resolveRecord(type);
             if (type.isPrimitive()) return get(box(type));
             if (java.util.Map.class.isAssignableFrom(type)) return mapReader(RuntimeReadRegistry.this::dynamicValue, type);
@@ -1696,8 +1696,11 @@ final class RuntimeReadRegistry {
      * To interoperate with other implementations that place the key elsewhere, it
      * would need to buffer the whole object — deferred.</p>
      */
-    private BindingReader polymorphicReader(jakarta.json.bind.annotation.JsonbTypeInfo info) {
-        // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest).
+    private BindingReader polymorphicReader(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest). The subtypes are checked
+        // against the bearer of the annotation, found from the type read (BUG-20261028-06): a subtype that does
+        // not extend it would not find it.
+        RuntimeBindingRegistry.validateTypeInfo(type, info);
         for (var sub : info.value()) {
             RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
         }

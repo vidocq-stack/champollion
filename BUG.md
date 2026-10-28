@@ -260,7 +260,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-06 — JSON-B: an `@JsonbSubtype` that is not a subtype is accepted on read
 
 - **Date** : 2026-10-28
-- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Statut** : FIXED (quality/sonar-zero)
 - **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.polymorphicReader`
 - **Symptôme** : `@JsonbTypeInfo(key = "@t", value = @JsonbSubtype(alias = "z", type = NotAPet.class))` on
   `interface Animal`, `NotAPet` not implementing it: `toJson(..., Animal.class)` is rejected (JSON-B 3.0 §4.8), but
@@ -272,6 +272,10 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: `polymorphicReader` and `validateTypeInfo` are both above Sonar's
     complexity threshold.
+  - 2026-10-28 : once `polymorphicReader` was split, fix = it also validates the `@JsonbTypeInfo` from the type being
+    read, whose bearer is always found, as the writer does from the concrete type; `validateTypeInfo` is unchanged.
+    Red then green.
+- **Regression test** : `JsonbGetterDiscoveryTest.an_alias_that_is_not_a_subtype_is_rejected` (now both sides).
 
 ## BUG-20261028-11 — Protobuf: the stream encoder under-counts the bytes it has written
 
