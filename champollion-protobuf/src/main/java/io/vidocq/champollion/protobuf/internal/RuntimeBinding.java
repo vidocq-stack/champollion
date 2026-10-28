@@ -254,8 +254,8 @@ public final class RuntimeBinding {
         } else if (fb.repeated) {
             writeRepeated(fb, (List<?>) value, out);
         } else if (fb.explicitPresence || !isDefault(fb, value)) {
-            // Proto3 implicit presence omits default values on the wire;
-            // EXPLICIT presence (proto2 / Edition 2023 override) always writes them.
+            // Proto3 implicit presence omits default values on the wire, while explicit
+            // presence, as in proto2 or an Edition 2023 override, always writes them.
             out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
             writeScalar(fb, value, out);
         }

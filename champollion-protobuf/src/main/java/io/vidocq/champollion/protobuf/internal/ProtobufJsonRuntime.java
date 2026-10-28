@@ -566,8 +566,7 @@ public final class ProtobufJsonRuntime {
      */
     private static void writeJsonFloating(double v, JsonGenerator gen, String key) {
         if (Double.isNaN(v)) writeJsonString(gen, key, NAN);
-        else if (v == Double.POSITIVE_INFINITY) writeJsonString(gen, key, INFINITY);
-        else if (v == Double.NEGATIVE_INFINITY) writeJsonString(gen, key, NEGATIVE_INFINITY);
+        else if (Double.isInfinite(v)) writeJsonString(gen, key, v > 0 ? INFINITY : NEGATIVE_INFINITY);
         else writeJsonDouble(gen, key, v);
     }
 
