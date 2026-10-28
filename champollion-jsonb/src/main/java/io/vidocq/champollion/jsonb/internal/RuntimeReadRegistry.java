@@ -178,8 +178,7 @@ final class RuntimeReadRegistry {
         }
         if (direct == null) return null;
         final jakarta.json.bind.adapter.JsonbAdapter adapter = direct;
-        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(
-                (Class<? extends jakarta.json.bind.adapter.JsonbAdapter>) adapter.getClass());
+        java.lang.reflect.Type adaptedGeneric = RuntimeBindingRegistry.findAdaptedGenericType(adapter.getClass());
         BindingReader inner = readerForGeneric(adaptedGeneric);
         return parser -> {
             Object adaptedValue = inner.read(parser);
@@ -361,10 +360,10 @@ final class RuntimeReadRegistry {
         if (ctorMh == null) {
             try {
                 reflCtor = type.getDeclaredConstructor(paramTypes);
-                try { reflCtor.setAccessible(true); } catch (Exception ignore) {}
             } catch (NoSuchMethodException e) {
                 throw new JsonbException("Canonical record constructor not found for " + type, e);
             }
+            makeAccessible(reflCtor);
         }
         final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
         final Constructor<?> finalReflCtor = reflCtor;
@@ -425,12 +424,12 @@ final class RuntimeReadRegistry {
             try {
                 ctorMh = java.lang.invoke.MethodHandles.publicLookup()
                         .findConstructor(type, java.lang.invoke.MethodType.methodType(void.class));
-            } catch (NoSuchMethodException | IllegalAccessException ignored) {
+            } catch (NoSuchMethodException | IllegalAccessException _) {
                 ctorMh = null;
             }
         }
         if (ctorMh == null) {
-            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(ctor);
         }
         final java.lang.invoke.MethodHandle finalCtorMh = ctorMh;
         // Discover JavaBean setters (§3.7) + public-field fallback.
@@ -484,7 +483,7 @@ final class RuntimeReadRegistry {
             Method m = e.getValue();
             Method getter = findGetter(type, prop);
             if (getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(m);
             String name = methodJsonbName(m, getter, prop);
             Class<?> paramType = m.getParameterTypes()[0];
             Field underlyingF = findFieldByName(type, prop);
@@ -516,12 +515,12 @@ final class RuntimeReadRegistry {
                             .findVirtual(m.getDeclaringClass(), m.getName(),
                                     java.lang.invoke.MethodType.methodType(void.class, paramType));
                     setter = new MhSetter(mh, m, reader);
-                } catch (NoSuchMethodException | IllegalAccessException ignored) {
+                } catch (NoSuchMethodException | IllegalAccessException _) {
                     setter = null;
                 }
             }
             if (setter == null) {
-                try { m.setAccessible(true); } catch (Exception ignore) {}
+                makeAccessible(m);
                 setter = new MethodSetter(m, reader);
             }
             writersByName.put(name, setter);
@@ -536,7 +535,7 @@ final class RuntimeReadRegistry {
             if (hiddenProps.contains(f.getName())) continue;
             String name = jsonbName(f);
             if (writersByName.containsKey(name)) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(f);
             BindingReader reader = customAdapterReader(f, null)
                     .or(() -> customDeserializerReader(f, null, f.getGenericType()))
                     .orElseGet(() -> readerFor(f.getGenericType()));
@@ -584,8 +583,7 @@ final class RuntimeReadRegistry {
         } while (c != null && c != Object.class);
         var pkg = type.getPackage();
         if (pkg != null) {
-            try { Class.forName(pkg.getName() + ".package-info", false, type.getClassLoader()); }
-            catch (Throwable ignored) {}
+            loadPackageInfo(pkg, type.getClassLoader());
             var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (pann != null) {
                 try { return pann.value().getDeclaredConstructor().newInstance(); }
@@ -733,13 +731,13 @@ final class RuntimeReadRegistry {
                 if (pkg == null) continue;
                 ClassLoader cl = c.getClassLoader();
                 if (cl == null) cl = ClassLoader.getSystemClassLoader();
-                try { Class.forName(pkg.getName() + ".package-info", false, cl); } catch (Throwable ignored) {}
+                loadPackageInfo(pkg, cl);
                 ann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
             }
         }
         if (ann == null) return null;
         String pattern = ann.value();
-        java.util.Locale locale = "##default".equals(ann.locale()) ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
+        java.util.Locale locale = jakarta.json.bind.annotation.JsonbNumberFormat.DEFAULT_LOCALE.equals(ann.locale()) ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
         java.text.NumberFormat fmt;
         if ("##default".equals(pattern) || pattern.isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(locale);
@@ -790,6 +788,23 @@ final class RuntimeReadRegistry {
         if (target == BigDecimal.class) return new BigDecimal(n.toString());
         if (target == BigInteger.class) return new BigInteger(n.toString());
         return n;
+    }
+
+    /**
+     * Opens a member that the binding reads or writes (JSON-B maps private and protected members too).
+     * When the module system refuses it, the member is left as it is and its use reports the failure.
+     */
+    private static void makeAccessible(java.lang.reflect.AccessibleObject member) {
+        member.trySetAccessible();
+    }
+
+    /** Loads the {@code package-info} class of {@code pkg}, so that the annotations of the package can be read. */
+    private static void loadPackageInfo(Package pkg, ClassLoader loader) {
+        try {
+            Class.forName(pkg.getName() + ".package-info", false, loader);
+        } catch (ClassNotFoundException | LinkageError _) {
+            // No (loadable) package-info: the package carries no annotation.
+        }
     }
 
     /** Finds a field (any visibility) on the class or its parents. */
@@ -945,7 +960,7 @@ final class RuntimeReadRegistry {
         var ann = p.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
         if (ann == null) return java.util.Optional.empty();
         var spec = new RuntimeBindingRegistry.DateFormatSpec(ann.value(),
-                ann.locale().equals("##default") ? java.util.Locale.getDefault()
+                jakarta.json.bind.annotation.JsonbDateFormat.DEFAULT_LOCALE.equals(ann.locale()) ? java.util.Locale.getDefault()
                         : java.util.Locale.forLanguageTag(ann.locale()));
         return java.util.Optional.of(makeDateReader(paramType, spec));
     }
@@ -995,7 +1010,7 @@ final class RuntimeReadRegistry {
      * the constructor or static factory to produce the instance.
      */
     private BindingReader resolveCreator(java.lang.reflect.Executable creator) {
-        try { creator.setAccessible(true); } catch (Exception ignore) {}
+        makeAccessible(creator);
         java.lang.reflect.Parameter[] params = creator.getParameters();
         Class<?>[] paramTypes = creator.getParameterTypes();
         boolean[] required = new boolean[params.length];
@@ -1003,9 +1018,7 @@ final class RuntimeReadRegistry {
         Map<String, Integer> indexByName = HashMap.newHashMap(params.length);
         for (int i = 0; i < params.length; i++) {
             final int idx = i;
-            final Type genericParamType = creator instanceof Constructor<?> c
-                    ? c.getGenericParameterTypes()[i]
-                    : ((java.lang.reflect.Method) creator).getGenericParameterTypes()[i];
+            final Type genericParamType = creator.getGenericParameterTypes()[i];
             final java.lang.reflect.Parameter param = params[i];
             final Class<?> paramType = paramTypes[i];
             // §4.7 / §4.4 — @JsonbDateFormat / @JsonbTypeAdapter / @JsonbTypeDeserializer
@@ -1060,7 +1073,7 @@ final class RuntimeReadRegistry {
                 String name = methodJsonbName(m, getter, prop);
                 if (creatorNames.contains(name)) continue;
                 if (out.containsKey(name)) continue;
-                try { m.setAccessible(true); } catch (Exception ignore) {}
+                makeAccessible(m);
                 BindingReader reader = readerFor(m.getGenericParameterTypes()[0]);
                 out.put(name, new MethodSetter(m, reader));
             }
@@ -1073,7 +1086,7 @@ final class RuntimeReadRegistry {
             String name = jsonbName(f);
             if (creatorNames.contains(name)) continue;
             if (out.containsKey(name)) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(f);
             BindingReader reader = readerFor(f.getGenericType());
             out.put(name, new FieldSetter(f, reader));
         }
@@ -1126,9 +1139,7 @@ final class RuntimeReadRegistry {
         if (required != null) {
             for (int i = 0; i < paramTypes.length; i++) {
                 if (required[i] && !seen[i]) {
-                    String paramName = creator instanceof Constructor<?> cc
-                            ? cc.getParameters()[i].getName()
-                            : ((java.lang.reflect.Method) creator).getParameters()[i].getName();
+                    String paramName = creator.getParameters()[i].getName();
                     throw new JsonbException("Missing required @JsonbCreator parameter '" + paramName
                             + "' for " + creator.getDeclaringClass().getName());
                 }
@@ -1561,7 +1572,7 @@ final class RuntimeReadRegistry {
             RecordComponent[] comps = concrete.getRecordComponents();
             Class<?>[] paramTypes = new Class<?>[comps.length];
             BindingReader[] readers = new BindingReader[comps.length];
-            Map<String, Integer> indexByName = new HashMap<>(comps.length * 2);
+            Map<String, Integer> indexByName = HashMap.newHashMap(comps.length);
             for (int i = 0; i < comps.length; i++) {
                 final RecordComponent comp = comps[i];
                 paramTypes[i] = comp.getType();
@@ -1577,7 +1588,7 @@ final class RuntimeReadRegistry {
             catch (NoSuchMethodException e) {
                 throw new JsonbException("Canonical record constructor not found for " + concrete, e);
             }
-            try { ctor.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(ctor);
             Object[] args = new Object[paramTypes.length];
             for (int i = 0; i < paramTypes.length; i++) args[i] = defaultFor(paramTypes[i]);
             JsonParser.Event e;
@@ -1615,7 +1626,7 @@ final class RuntimeReadRegistry {
         if (!Modifier.isPublic(cMods) && !Modifier.isProtected(cMods)) {
             throw new JsonbException("No accessible no-arg constructor for " + concrete);
         }
-        try { ctor.setAccessible(true); } catch (Exception ignore) {}
+        makeAccessible(ctor);
         Object inst;
         try { inst = ctor.newInstance(); }
         catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed for " + concrete, ex); }
@@ -1626,7 +1637,7 @@ final class RuntimeReadRegistry {
             if (sm.getParameterCount() != 1) continue;
             String prop = RuntimeBindingRegistry.beanSetterOf(sm);
             if (prop == null) continue;
-            try { sm.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(sm);
             BindingReader reader = readerFor(sm.getGenericParameterTypes()[0]);
             writers.put(prop, new MethodSetter(sm, reader));
         }
@@ -1636,7 +1647,7 @@ final class RuntimeReadRegistry {
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods) || Modifier.isFinal(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (writers.containsKey(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            makeAccessible(f);
             BindingReader reader = readerFor(f.getGenericType());
             writers.put(f.getName(), new FieldSetter(f, reader));
         }
