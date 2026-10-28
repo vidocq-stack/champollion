@@ -420,84 +420,87 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             case LONG -> pw.println(INDENT_8 + key + SPACE_G_WRITE + accessor + ");");
             case DOUBLE, FLOAT -> pw.println(INDENT_8 + key + " g.write((double) " + accessor + ");");
             case BOOLEAN -> pw.println(INDENT_8 + key + SPACE_G_WRITE + accessor + ");");
-            case DECLARED -> {
-                DeclaredType dt = (DeclaredType) tm;
-                String fqn = dt.asElement().toString();
-                if (JAVA_LANG_STRING.equals(fqn)) {
-                    pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + "); }");
-                    if (nillable) {
-                        // @JsonbNillable: null values are serialized as JSON null.
-                        pw.println("        else { " + key + " g.writeNull(); }");
-                    }
-                } else if (isEnum(dt)) {
-                    pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + ".name()); }");
-                } else if (isStaticRecord(dt)) {
-                    // Nested @JsonbStatic record: direct delegation to the generated binding of the subtype.
-                    String binding = bindingFqnOf(dt);
-                    pw.println(IF_8 + accessor + NOT_NULL_THEN);
-                    pw.println(INDENT_12 + key);
-                    pw.println("            new " + binding + "().write(g, " + accessor + ");");
-                    pw.println(CLOSE_8);
-                } else if (JAVA_UTIL_LIST.equals(fqn)) {
-                    TypeMirror elem = dt.getTypeArguments().get(0);
-                    pw.println(IF_8 + accessor + NOT_NULL_THEN);
-                    pw.println(INDENT_12 + key);
-                    pw.println("            g.writeStartArray();");
-                    String elemFqn = ((TypeElement) ((DeclaredType) elem).asElement()).getQualifiedName().toString();
-                    pw.println("            for (" + elemFqn + " __e : " + accessor + ") {");
-                    pw.println("                if (__e == null) g.writeNull(); else " + writeInline("__e", elem) + ";");
-                    pw.println(CLOSE_12);
-                    pw.println(WRITE_END_12);
-                    pw.println(CLOSE_8);
-                } else if (JAVA_UTIL_OPTIONAL.equals(fqn)) {
-                    TypeMirror inner = dt.getTypeArguments().get(0);
-                    pw.println(IF_8 + accessor + " != null && " + accessor + ".isPresent()) {");
-                    String innerFqn = ((TypeElement) ((DeclaredType) inner).asElement()).getQualifiedName().toString();
-                    pw.println(INDENT_12 + innerFqn + " __v = " + accessor + ".get();");
-                    pw.println(INDENT_12 + key);
-                    pw.println(INDENT_12 + writeInline("__v", inner) + ";");
-                    pw.println(CLOSE_8);
-                } else if (JAVA_UTIL_MAP.equals(fqn)) {
-                    TypeMirror valT = dt.getTypeArguments().get(1);
-                    String valFqn = ((TypeElement) ((DeclaredType) valT).asElement()).getQualifiedName().toString();
-                    pw.println(IF_8 + accessor + NOT_NULL_THEN);
-                    pw.println(INDENT_12 + key);
-                    pw.println("            g.writeStartObject();");
-                    pw.println("            for (java.util.Map.Entry<String, " + valFqn + "> __en : " + accessor + ".entrySet()) {");
-                    pw.println("                g.writeKey(__en.getKey());");
-                    pw.println("                if (__en.getValue() == null) g.writeNull(); else " + writeInline("__en.getValue()", valT) + ";");
-                    pw.println(CLOSE_12);
-                    pw.println(WRITE_END_12);
-                    pw.println(CLOSE_8);
-                }
-            }
-            case ARRAY -> {
-                TypeMirror comp = ((ArrayType) tm).getComponentType();
-                pw.println(IF_8 + accessor + NOT_NULL_THEN);
-                pw.println(INDENT_12 + key);
-                pw.println("            g.writeStartArray();");
-                switch (comp.getKind()) {
-                    case INT -> pw.println("            for (int __e : " + accessor + WRITE_ELEMENT);
-                    case LONG -> pw.println("            for (long __e : " + accessor + WRITE_ELEMENT);
-                    case DOUBLE -> pw.println("            for (double __e : " + accessor + WRITE_ELEMENT);
-                    case BOOLEAN -> pw.println("            for (boolean __e : " + accessor + WRITE_ELEMENT);
-                    case DECLARED -> {
-                        // String[]
-                        pw.println("            for (String __e : " + accessor + ") {");
-                        pw.println("                if (__e == null) g.writeNull(); else g.write(__e);");
-                        pw.println(CLOSE_12);
-                    }
-                    default -> {
-                        // Unreachable: isSupportedComponentType rejects any other array component.
-                    }
-                }
-                pw.println(WRITE_END_12);
-                pw.println(CLOSE_8);
-            }
+            case DECLARED -> emitWriteDeclared(pw, (DeclaredType) tm, accessor, key, nillable);
+            case ARRAY -> emitWriteArray(pw, (ArrayType) tm, accessor, key);
             default -> {
                 // Unreachable: isSupportedComponentType rejects any other component kind.
             }
         }
+    }
+
+    private void emitWriteDeclared(PrintWriter pw, DeclaredType dt, String accessor, String key, boolean nillable) {
+        String fqn = dt.asElement().toString();
+        if (JAVA_LANG_STRING.equals(fqn)) {
+            pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + "); }");
+            if (nillable) {
+                // @JsonbNillable: null values are serialized as JSON null.
+                pw.println("        else { " + key + " g.writeNull(); }");
+            }
+        } else if (isEnum(dt)) {
+            pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + ".name()); }");
+        } else if (isStaticRecord(dt)) {
+            // Nested @JsonbStatic record: direct delegation to the generated binding of the subtype.
+            String binding = bindingFqnOf(dt);
+            pw.println(IF_8 + accessor + NOT_NULL_THEN);
+            pw.println(INDENT_12 + key);
+            pw.println("            new " + binding + "().write(g, " + accessor + ");");
+            pw.println(CLOSE_8);
+        } else if (JAVA_UTIL_LIST.equals(fqn)) {
+            TypeMirror elem = dt.getTypeArguments().get(0);
+            pw.println(IF_8 + accessor + NOT_NULL_THEN);
+            pw.println(INDENT_12 + key);
+            pw.println("            g.writeStartArray();");
+            String elemFqn = ((TypeElement) ((DeclaredType) elem).asElement()).getQualifiedName().toString();
+            pw.println("            for (" + elemFqn + " __e : " + accessor + ") {");
+            pw.println("                if (__e == null) g.writeNull(); else " + writeInline("__e", elem) + ";");
+            pw.println(CLOSE_12);
+            pw.println(WRITE_END_12);
+            pw.println(CLOSE_8);
+        } else if (JAVA_UTIL_OPTIONAL.equals(fqn)) {
+            TypeMirror inner = dt.getTypeArguments().get(0);
+            pw.println(IF_8 + accessor + " != null && " + accessor + ".isPresent()) {");
+            String innerFqn = ((TypeElement) ((DeclaredType) inner).asElement()).getQualifiedName().toString();
+            pw.println(INDENT_12 + innerFqn + " __v = " + accessor + ".get();");
+            pw.println(INDENT_12 + key);
+            pw.println(INDENT_12 + writeInline("__v", inner) + ";");
+            pw.println(CLOSE_8);
+        } else if (JAVA_UTIL_MAP.equals(fqn)) {
+            TypeMirror valT = dt.getTypeArguments().get(1);
+            String valFqn = ((TypeElement) ((DeclaredType) valT).asElement()).getQualifiedName().toString();
+            pw.println(IF_8 + accessor + NOT_NULL_THEN);
+            pw.println(INDENT_12 + key);
+            pw.println("            g.writeStartObject();");
+            pw.println("            for (java.util.Map.Entry<String, " + valFqn + "> __en : " + accessor + ".entrySet()) {");
+            pw.println("                g.writeKey(__en.getKey());");
+            pw.println("                if (__en.getValue() == null) g.writeNull(); else " + writeInline("__en.getValue()", valT) + ";");
+            pw.println(CLOSE_12);
+            pw.println(WRITE_END_12);
+            pw.println(CLOSE_8);
+        }
+    }
+
+    private static void emitWriteArray(PrintWriter pw, ArrayType arrayType, String accessor, String key) {
+        TypeMirror comp = arrayType.getComponentType();
+        pw.println(IF_8 + accessor + NOT_NULL_THEN);
+        pw.println(INDENT_12 + key);
+        pw.println("            g.writeStartArray();");
+        switch (comp.getKind()) {
+            case INT -> pw.println("            for (int __e : " + accessor + WRITE_ELEMENT);
+            case LONG -> pw.println("            for (long __e : " + accessor + WRITE_ELEMENT);
+            case DOUBLE -> pw.println("            for (double __e : " + accessor + WRITE_ELEMENT);
+            case BOOLEAN -> pw.println("            for (boolean __e : " + accessor + WRITE_ELEMENT);
+            case DECLARED -> {
+                // String[]
+                pw.println("            for (String __e : " + accessor + ") {");
+                pw.println("                if (__e == null) g.writeNull(); else g.write(__e);");
+                pw.println(CLOSE_12);
+            }
+            default -> {
+                // Unreachable: isSupportedComponentType rejects any other array component.
+            }
+        }
+        pw.println(WRITE_END_12);
+        pw.println(CLOSE_8);
     }
 
     /**
@@ -737,24 +740,30 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return readLeaf(ev, p, dt.asElement().toString());
     }
 
+    /** Services already written by a previous round or an incremental build, to append to. */
+    private static Set<String> readExistingServices(Filer filer) {
+        Set<String> all = new LinkedHashSet<>();
+        try {
+            FileObject existing = filer.getResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(existing.openInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.strip();
+                    if (!line.isEmpty() && !line.startsWith("#")) all.add(line);
+                }
+            }
+        } catch (IOException _) {
+            // No services file yet on the first round: nothing to append to.
+        }
+        return all;
+    }
+
     private void writeServicesFile() {
         Filer filer = processingEnv.getFiler();
         try {
             // Read existing services (to append across multi-rounds / incremental builds)
-            Set<String> all = new LinkedHashSet<>();
-            try {
-                FileObject existing = filer.getResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
-                try (var reader = new BufferedReader(
-                        new InputStreamReader(existing.openInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        line = line.strip();
-                        if (!line.isEmpty() && !line.startsWith("#")) all.add(line);
-                    }
-                }
-            } catch (IOException _) {
-                // No services file yet on the first round: nothing to append to.
-            }
+            Set<String> all = readExistingServices(filer);
             all.addAll(generatedBindings);
             FileObject f = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
             try (var w = f.openWriter()) {

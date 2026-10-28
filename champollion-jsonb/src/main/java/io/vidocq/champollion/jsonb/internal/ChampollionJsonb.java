@@ -88,9 +88,10 @@ public final class ChampollionJsonb implements Jsonb {
         String effectiveDateFormat = (this.strictIJson && defaultDateFormat == null)
                 ? "yyyy-MM-dd'T'HH:mm:ss'Z'xxx"
                 : defaultDateFormat;
-        java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> adapterMap = collectAdapters(config);
+        var adapterMap = collectAdapters(config);
         this.writeRegistry = new RuntimeBindingRegistry(effectiveDateFormat, this.writeNullValues, binaryStrategy,
-                namingStrategy, orderStrategy, visibilityStrategy, configLocale, adapterMap);
+                namingStrategy, orderStrategy, visibilityStrategy, configLocale);
+        this.writeRegistry.setGlobalAdapters(adapterMap);
         this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired, adapterMap);
         this.writeRegistry.setGlobalSerializers(collectSerializers(config));
         this.readRegistry.setGlobalDeserializers(collectDeserializers(config));
@@ -120,25 +121,10 @@ public final class ChampollionJsonb implements Jsonb {
         var arr = (jakarta.json.bind.adapter.JsonbAdapter[]) opt.get();
         java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> out = new java.util.LinkedHashMap<>();
         for (var ad : arr) {
-            Class<?> orig = findAdapterOriginalType(ad.getClass());
+            Class<?> orig = findGenericArg(ad.getClass(), jakarta.json.bind.adapter.JsonbAdapter.class);
             if (orig != null) out.put(orig, ad);
         }
         return out;
-    }
-
-    @SuppressWarnings("rawtypes")
-    private static Class<?> findAdapterOriginalType(Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass) {
-        for (Class<?> c = adapterClass; c != null && c != Object.class; c = c.getSuperclass()) {
-            for (java.lang.reflect.Type t : c.getGenericInterfaces()) {
-                if (t instanceof java.lang.reflect.ParameterizedType pt
-                        && pt.getRawType() == jakarta.json.bind.adapter.JsonbAdapter.class) {
-                    java.lang.reflect.Type orig = pt.getActualTypeArguments()[0];
-                    if (orig instanceof Class<?> oc) return oc;
-                    if (orig instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
-                }
-            }
-        }
-        return null;
     }
 
     @SuppressWarnings("rawtypes")
@@ -174,12 +160,17 @@ public final class ChampollionJsonb implements Jsonb {
         for (Class<?> c = impl; c != null && c != Object.class; c = c.getSuperclass()) {
             for (java.lang.reflect.Type t : c.getGenericInterfaces()) {
                 if (t instanceof java.lang.reflect.ParameterizedType pt && pt.getRawType() == iface) {
-                    java.lang.reflect.Type arg = pt.getActualTypeArguments()[0];
-                    if (arg instanceof Class<?> ac) return ac;
-                    if (arg instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
+                    return rawClassOf(pt.getActualTypeArguments()[0]);
                 }
             }
         }
+        return null;
+    }
+
+    /** Raw class of a type argument: the class itself, the raw type of a parameterized type, {@code null} otherwise. */
+    private static Class<?> rawClassOf(java.lang.reflect.Type arg) {
+        if (arg instanceof Class<?> ac) return ac;
+        if (arg instanceof java.lang.reflect.ParameterizedType ap) return (Class<?>) ap.getRawType();
         return null;
     }
 
