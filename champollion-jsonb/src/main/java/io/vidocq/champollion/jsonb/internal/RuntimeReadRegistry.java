@@ -60,7 +60,7 @@ final class RuntimeReadRegistry {
     private final boolean failOnUnknownProperties;
     private final boolean creatorParametersRequired;
     @SuppressWarnings("rawtypes")
-    private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters;
+    private final java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters = new java.util.LinkedHashMap<>();
     @SuppressWarnings("rawtypes")
     private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> globalDeserializers = new java.util.LinkedHashMap<>();
     private final ChampollionDeserializationContext deserContext = new ChampollionDeserializationContext(this);
@@ -71,25 +71,25 @@ final class RuntimeReadRegistry {
         if (map != null) this.globalDeserializers.putAll(map);
     }
 
-    RuntimeReadRegistry() { this(null, null, null, null, null, false, false, java.util.Map.of()); }
+    RuntimeReadRegistry() { this(null, null, null, null, null, false, false); }
 
-    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false, false, java.util.Map.of()); }
+    RuntimeReadRegistry(String defaultDateFormat) { this(defaultDateFormat, null, null, null, null, false, false); }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, null, null, null, false, false, java.util.Map.of());
+        this(defaultDateFormat, binaryDataStrategy, null, null, null, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false, false, java.util.Map.of());
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, null, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
                         String propertyNamingStrategy,
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false, false, java.util.Map.of());
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, false, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
@@ -97,7 +97,7 @@ final class RuntimeReadRegistry {
                         jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
                         java.util.Locale configLocale,
                         boolean failOnUnknownProperties) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, false, java.util.Map.of());
+        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, false);
     }
 
     RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
@@ -106,17 +106,6 @@ final class RuntimeReadRegistry {
                         java.util.Locale configLocale,
                         boolean failOnUnknownProperties,
                         boolean creatorParametersRequired) {
-        this(defaultDateFormat, binaryDataStrategy, propertyNamingStrategy, propertyVisibilityStrategy, configLocale, failOnUnknownProperties, creatorParametersRequired, java.util.Map.of());
-    }
-
-    @SuppressWarnings("rawtypes")
-    RuntimeReadRegistry(String defaultDateFormat, String binaryDataStrategy,
-                        String propertyNamingStrategy,
-                        jakarta.json.bind.config.PropertyVisibilityStrategy propertyVisibilityStrategy,
-                        java.util.Locale configLocale,
-                        boolean failOnUnknownProperties,
-                        boolean creatorParametersRequired,
-                        java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> globalAdapters) {
         this.defaultDateFormat = defaultDateFormat;
         this.binaryDataStrategy = binaryDataStrategy;
         this.propertyNamingStrategy = propertyNamingStrategy;
@@ -124,7 +113,13 @@ final class RuntimeReadRegistry {
         this.configLocale = configLocale;
         this.failOnUnknownProperties = failOnUnknownProperties;
         this.creatorParametersRequired = creatorParametersRequired;
-        this.globalAdapters = globalAdapters == null ? java.util.Map.of() : globalAdapters;
+    }
+
+    /** The adapters registered with {@code JsonbConfig.withAdapters}, by their {@code Original} type. */
+    @SuppressWarnings("rawtypes")
+    void setGlobalAdapters(java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> map) {
+        this.globalAdapters.clear();
+        if (map != null) this.globalAdapters.putAll(map);
     }
 
     /** Readers resolved by raw class. */

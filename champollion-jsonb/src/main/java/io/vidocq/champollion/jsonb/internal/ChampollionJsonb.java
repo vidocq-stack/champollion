@@ -92,7 +92,8 @@ public final class ChampollionJsonb implements Jsonb {
         this.writeRegistry = new RuntimeBindingRegistry(effectiveDateFormat, this.writeNullValues, binaryStrategy,
                 namingStrategy, orderStrategy, visibilityStrategy, configLocale);
         this.writeRegistry.setGlobalAdapters(adapterMap);
-        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired, adapterMap);
+        this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired);
+        this.readRegistry.setGlobalAdapters(adapterMap);
         this.writeRegistry.setGlobalSerializers(collectSerializers(config));
         this.readRegistry.setGlobalDeserializers(collectDeserializers(config));
         this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
