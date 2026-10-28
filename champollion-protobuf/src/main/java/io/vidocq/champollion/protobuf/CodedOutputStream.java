@@ -426,6 +426,7 @@ public abstract sealed class CodedOutputStream {
             int firstChunk = buffer.length - position;
             System.arraycopy(value, off, buffer, position, firstChunk);
             position = buffer.length;
+            totalBytesWritten += firstChunk;
             flushBuffer();
             int remaining = length - firstChunk;
             if (remaining >= buffer.length) {

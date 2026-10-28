@@ -120,6 +120,18 @@ class CodedStreamsRoundTripTest {
     }
 
     @Test
+    void stream_encoder_counts_every_byte_written() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        CodedOutputStream out = CodedOutputStream.newInstance(bytes, 4);
+        out.writeRawByte(0);
+        out.writeRawBytes(BLOB, 0, BLOB.length);
+        out.writeRawBytes(BLOB, 0, 2);
+        out.flush();
+        assertEquals(1 + BLOB.length + 2, bytes.size());
+        assertEquals(bytes.size(), out.getTotalBytesWritten());
+    }
+
+    @Test
     void default_stream_encoder_and_decoder_round_trip() throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         CodedOutputStream out = CodedOutputStream.newInstance(bytes);

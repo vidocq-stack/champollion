@@ -244,3 +244,16 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: `polymorphicReader` and `validateTypeInfo` are both above Sonar's
     complexity threshold.
+
+## BUG-20261028-11 — Protobuf: the stream encoder under-counts the bytes it has written
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf` — `CodedOutputStream.StreamEncoder.writeRawBytes`
+- **Symptôme** : `getTotalBytesWritten()` of a `CodedOutputStream` over an `OutputStream` returns less than the bytes
+  actually written once a block larger than the free space of its buffer is written.
+- **Reproduction minimale** : `CodedOutputStream.newInstance(out, 4)`, `writeRawByte(0)`, `writeRawBytes(12 bytes)`,
+  `flush()`: 13 bytes reach `out`, `getTotalBytesWritten()` says 10.
+- **Cause** : when the block does not fit, the first chunk fills the end of the buffer and is flushed, but only the
+  remainder was added to the counter.
+- **Regression test** : `CodedStreamsRoundTripTest.stream_encoder_counts_every_byte_written`.
