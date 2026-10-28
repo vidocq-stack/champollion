@@ -69,6 +69,14 @@ public final class ProtobufJsonRuntime {
 
     private static final ConcurrentHashMap<Class<?>, JsonBindingPlan> PLANS = new ConcurrentHashMap<>();
 
+    /** JSON strings of the non-finite floating-point values (proto3 JSON §float/double). */
+    private static final String NAN = "NaN";
+    private static final String INFINITY = "Infinity";
+    private static final String NEGATIVE_INFINITY = "-Infinity";
+    /** Members of the JSON form of an {@code Any}. */
+    private static final String ANY_TYPE = "@type";
+    private static final String ANY_VALUE = "value";
+
     private ProtobufJsonRuntime() {}
 
     // ============================================================ Write
@@ -116,12 +124,13 @@ public final class ProtobufJsonRuntime {
             try {
                 value = fb.getter.invoke(message);
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw new IllegalStateException("Failed to read " + plan.recordType.getSimpleName()
+                        + "#" + fb.number, t);
             }
 
             // M6.9: collect unknown enum values for this field number.
             java.util.List<Long> unknownEnumVarints =
-                    fb.type == FieldType.ENUM ? unknownVarintsFor(unknownFields, fb.number) : null;
+                    fb.type == FieldType.ENUM ? unknownVarintsFor(unknownFields, fb.number) : List.of();
 
             writeField(fb, value, unknownEnumVarints, gen);
         }
@@ -129,7 +138,7 @@ public final class ProtobufJsonRuntime {
 
     /**
      * Writes one field, or nothing when it holds neither a known value nor an unknown enum value
-     * to re-emit ({@code unknownEnumVarints} is only ever set for an enum field).
+     * to re-emit ({@code unknownEnumVarints} is only ever non-empty for an enum field).
      */
     private static void writeField(FieldBinding fb, Object value, List<Long> unknownEnumVarints,
                                    JsonGenerator gen) {
@@ -137,7 +146,7 @@ public final class ProtobufJsonRuntime {
             if (value instanceof Map<?, ?> map && !map.isEmpty()) writeMapField(fb, map, gen); // proto3 implicit presence
         } else if (fb.repeated) {
             writeRepeatedField(fb, (List<?>) value, unknownEnumVarints, gen);
-        } else if (unknownEnumVarints != null) {
+        } else if (!unknownEnumVarints.isEmpty()) {
             // M6.9: unknown enum value — the value was indeed set on the wire/JSON side,
             // just not mappable to a Java constant of the local enum. It takes precedence
             // over the proto3 default and must be re-emitted numerically (last-wins if
@@ -153,7 +162,7 @@ public final class ProtobufJsonRuntime {
         gen.writeStartObject(fb.jsonName);
         for (Map.Entry<?, ?> e : map.entrySet()) {
             String k = mapKeyAsString(fb.mapKeyType, e.getKey());
-            writeMapValue(fb.mapValueType, fb.mapValueClass, e.getValue(), gen, k);
+            writeMapValue(fb.mapValueType, e.getValue(), gen, k);
         }
         gen.writeEnd();
     }
@@ -161,17 +170,15 @@ public final class ProtobufJsonRuntime {
     private static void writeRepeatedField(FieldBinding fb, List<?> list, List<Long> unknownEnumVarints,
                                            JsonGenerator gen) {
         boolean emptyKnown = list == null || list.isEmpty();
-        if (emptyKnown && unknownEnumVarints == null) return; // proto3 canonical : omet [] vide
+        if (emptyKnown && unknownEnumVarints.isEmpty()) return; // proto3 canonical : omet [] vide
         gen.writeStartArray(fb.jsonName);
         if (list != null) {
             for (Object item : list) {
                 if (item != null) writeScalar(fb, item, gen, null); // null: unknown enum forward-compat
             }
         }
-        if (unknownEnumVarints != null) {
-            // M6.9: append the numeric unknown enum values to the array.
-            for (Long v : unknownEnumVarints) gen.write(v.intValue());
-        }
+        // M6.9: append the numeric unknown enum values to the array.
+        for (Long v : unknownEnumVarints) gen.write(v.intValue());
         gen.writeEnd();
     }
 
@@ -183,17 +190,16 @@ public final class ProtobufJsonRuntime {
             return (io.vidocq.champollion.protobuf.UnknownFieldSet)
                     plan.unknownFieldsGetter.invoke(message);
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw new IllegalStateException("Failed to read unknownFields", t);
         }
     }
 
-    /** M6.9: varints (unknown enum values) for a given field number, or {@code null}. */
+    /** M6.9: varints (unknown enum values) for a given field number, empty when there is none. */
     private static java.util.List<Long> unknownVarintsFor(
             io.vidocq.champollion.protobuf.UnknownFieldSet ufs, int fieldNumber) {
-        if (ufs == null || ufs.isEmpty()) return null;
+        if (ufs == null || ufs.isEmpty()) return List.of();
         io.vidocq.champollion.protobuf.UnknownFieldSet.Field f = ufs.get(fieldNumber);
-        if (f == null || f.varints().isEmpty()) return null;
-        return f.varints();
+        return f == null ? List.of() : f.varints();
     }
 
     /** Convertit une key de map en string JSON (spec proto3 JSON §maps). */
@@ -217,8 +223,7 @@ public final class ProtobufJsonRuntime {
     }
 
     /** Writes a map value according to its FieldType. Reuses the runtime writeScalar. */
-    private static void writeMapValue(FieldType type, Class<?> messageClass, Object value,
-                                      JsonGenerator gen, String key) {
+    private static void writeMapValue(FieldType type, Object value, JsonGenerator gen, String key) {
         if (value == null) {
             gen.writeNull(key);
             return;
@@ -234,89 +239,39 @@ public final class ProtobufJsonRuntime {
             case STRING -> gen.write(key, (String) value);
             case BYTES -> gen.write(key, java.util.Base64.getEncoder().encodeToString((byte[]) value));
             case ENUM -> gen.write(key, ((Enum<?>) value).name());
-            case MESSAGE -> {
-                if (writeWktAsValue(value, gen, key)) return;
-                gen.writeStartObject(key);
-                writeMessageBody(planFor(value.getClass()), value, gen);
-                gen.writeEnd();
-            }
+            case MESSAGE -> writeMessageValue(value, gen, key);
             case MAP -> throw new IllegalStateException("Nested MAP is forbidden");
         }
     }
 
     private static void writeScalar(FieldBinding fb, Object value, JsonGenerator gen, String key) {
         switch (fb.type) {
-            case INT32, SINT32, SFIXED32 -> {
-                int v = (int) value;
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case UINT32, FIXED32 -> {
-                // Proto3 JSON canonical: uint32 must always appear as
-                // a non-negative integer — a "negative" Java int (= value > 2^31)
-                // must be promoted to an unsigned long.
-                long v = Integer.toUnsignedLong((int) value);
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case INT64, SINT64, SFIXED64 -> {
-                // Proto3 canonical: signed int64 always as a string.
-                String v = Long.toString((long) value);
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case UINT64, FIXED64 -> {
-                // Proto3 canonical: unsigned uint64 always as a string,
-                // in unsigned representation.
-                String v = Long.toUnsignedString((long) value);
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case BOOL -> {
-                boolean v = (boolean) value;
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case FLOAT -> {
-                float v = (float) value;
-                if (Float.isNaN(v)) {
-                    if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
-                } else if (v == Float.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
-                } else if (v == Float.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
-                } else {
-                    if (key != null) gen.write(key, v); else gen.write(v);
-                }
-            }
-            case DOUBLE -> {
-                double v = (double) value;
-                if (Double.isNaN(v)) {
-                    if (key != null) gen.write(key, "NaN"); else gen.write("NaN");
-                } else if (v == Double.POSITIVE_INFINITY) {
-                    if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity");
-                } else if (v == Double.NEGATIVE_INFINITY) {
-                    if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity");
-                } else {
-                    if (key != null) gen.write(key, v); else gen.write(v);
-                }
-            }
-            case STRING -> {
-                String v = (String) value;
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case BYTES -> {
-                String v = Base64.getEncoder().encodeToString((byte[]) value);
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case ENUM -> {
-                String v = ((Enum<?>) value).name();
-                if (key != null) gen.write(key, v); else gen.write(v);
-            }
-            case MESSAGE -> {
-                // WKT as a nested field: emit the canonical flat value (string/number).
-                if (writeWktAsValue(value, gen, key)) return;
-                if (key != null) gen.writeStartObject(key); else gen.writeStartObject();
-                JsonBindingPlan nested = planFor(value.getClass());
-                writeMessageBody(nested, value, gen);
-                gen.writeEnd();
-            }
+            case INT32, SINT32, SFIXED32 -> writeJsonNumber(gen, key, (int) value);
+            // Proto3 JSON canonical: uint32 must always appear as
+            // a non-negative integer — a "negative" Java int (= value > 2^31)
+            // must be promoted to an unsigned long.
+            case UINT32, FIXED32 -> writeJsonNumber(gen, key, Integer.toUnsignedLong((int) value));
+            // Proto3 canonical: signed int64 always as a string.
+            case INT64, SINT64, SFIXED64 -> writeJsonString(gen, key, Long.toString((long) value));
+            // Proto3 canonical: unsigned uint64 always as a string, in unsigned representation.
+            case UINT64, FIXED64 -> writeJsonString(gen, key, Long.toUnsignedString((long) value));
+            case BOOL -> writeJsonBoolean(gen, key, (boolean) value);
+            case FLOAT -> writeJsonFloating((float) value, gen, key);
+            case DOUBLE -> writeJsonFloating((double) value, gen, key);
+            case STRING -> writeJsonString(gen, key, (String) value);
+            case BYTES -> writeJsonString(gen, key, Base64.getEncoder().encodeToString((byte[]) value));
+            case ENUM -> writeJsonString(gen, key, ((Enum<?>) value).name());
+            case MESSAGE -> writeMessageValue(value, gen, key);
+            case MAP -> throw new IllegalStateException("MAP type should be handled via writeMapField, not writeScalar");
         }
+    }
+
+    /** A nested message: a WKT as its canonical flat value (string/number), any other one as an object. */
+    private static void writeMessageValue(Object value, JsonGenerator gen, String key) {
+        if (writeWktAsValue(value, gen, key)) return;
+        if (key != null) gen.writeStartObject(key); else gen.writeStartObject();
+        writeMessageBody(planFor(value.getClass()), value, gen);
+        gen.writeEnd();
     }
 
     // ============================================================ Well-Known Types
@@ -388,67 +343,48 @@ public final class ProtobufJsonRuntime {
     /** Emits a Value while respecting its oneof — null if all sub-fields are null. */
     private static void writeValueDynamic(io.vidocq.champollion.protobuf.wkt.Value v,
                                           JsonGenerator gen, String key) {
-        if (v == null) {
-            if (key != null) gen.writeNull(key); else gen.writeNull();
-            return;
-        }
-        if (v.nullValue() != null) {
-            if (key != null) gen.writeNull(key); else gen.writeNull();
+        if (v == null || v.nullValue() != null) {
+            writeJsonNull(gen, key);
         } else if (v.numberValue() != null) {
-            double d = v.numberValue();
-            if (key != null) gen.write(key, d); else gen.write(d);
+            writeJsonDouble(gen, key, v.numberValue());
         } else if (v.stringValue() != null) {
-            if (key != null) gen.write(key, v.stringValue()); else gen.write(v.stringValue());
+            writeJsonString(gen, key, v.stringValue());
         } else if (v.boolValue() != null) {
-            if (key != null) gen.write(key, v.boolValue()); else gen.write(v.boolValue());
+            writeJsonBoolean(gen, key, v.boolValue());
         } else if (v.structValue() != null) {
             writeStructAsObject(v.structValue(), gen, key);
         } else if (v.listValue() != null) {
             writeListValueAsArray(v.listValue(), gen, key);
         } else {
             // Absent de tous les sub-fields → null JSON (sentinelle).
-            if (key != null) gen.writeNull(key); else gen.writeNull();
+            writeJsonNull(gen, key);
         }
     }
 
     private static boolean writeWktAsValue(Object v, JsonGenerator gen, String key) {
-        if (v instanceof Empty) {
-            if (key != null) gen.writeStartObject(key).writeEnd();
-            else gen.writeStartObject().writeEnd();
-            return true;
+        switch (v) {
+            case Empty _ -> writeEmptyObject(gen, key);
+            case Timestamp t -> writeJsonString(gen, key, formatTimestamp(t));
+            case Duration d -> writeJsonString(gen, key, formatDuration(d));
+            case FieldMask m -> writeJsonString(gen, key, formatFieldMask(m));
+            case Any a -> writeAny(a, gen, key);
+            case io.vidocq.champollion.protobuf.wkt.Struct s -> writeStructAsObject(s, gen, key);
+            case io.vidocq.champollion.protobuf.wkt.ListValue lv -> writeListValueAsArray(lv, gen, key);
+            case io.vidocq.champollion.protobuf.wkt.Value vv -> writeValueDynamic(vv, gen, key);
+            default -> {
+                return writeWrapperAsValue(v, gen, key);
+            }
         }
-        if (v instanceof Timestamp t) {
-            String s = formatTimestamp(t);
-            if (key != null) gen.write(key, s); else gen.write(s);
-            return true;
-        }
-        if (v instanceof Duration d) {
-            String s = formatDuration(d);
-            if (key != null) gen.write(key, s); else gen.write(s);
-            return true;
-        }
-        if (v instanceof FieldMask m) {
-            String s = formatFieldMask(m);
-            if (key != null) gen.write(key, s); else gen.write(s);
-            return true;
-        }
-        if (v instanceof Any a) {
-            writeAny(a, gen, key);
-            return true;
-        }
-        if (v instanceof io.vidocq.champollion.protobuf.wkt.Struct s) {
-            writeStructAsObject(s, gen, key);
-            return true;
-        }
-        if (v instanceof io.vidocq.champollion.protobuf.wkt.ListValue lv) {
-            writeListValueAsArray(lv, gen, key);
-            return true;
-        }
-        if (v instanceof io.vidocq.champollion.protobuf.wkt.Value vv) {
-            writeValueDynamic(vv, gen, key);
-            return true;
-        }
-        return writeWrapperAsValue(v, gen, key);
+        return true;
+    }
+
+    private static void writeEmptyObject(JsonGenerator gen, String key) {
+        if (key != null) gen.writeStartObject(key).writeEnd();
+        else gen.writeStartObject().writeEnd();
+    }
+
+    private static void writeJsonNull(JsonGenerator gen, String key) {
+        if (key != null) gen.writeNull(key); else gen.writeNull();
     }
 
     // ============================================================ Any JSON canonical
@@ -468,8 +404,7 @@ public final class ProtobufJsonRuntime {
         String typeUrl = any.type_url();
         // Spec proto3 §any : Any default (typeUrl="" et value vide) → JSON object vide.
         if (typeUrl.isEmpty() && (any.value() == null || any.value().length == 0)) {
-            if (key != null) gen.writeStartObject(key).writeEnd();
-            else gen.writeStartObject().writeEnd();
+            writeEmptyObject(gen, key);
             return;
         }
         String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
@@ -477,11 +412,11 @@ public final class ProtobufJsonRuntime {
 
         if (key != null) gen.writeStartObject(key);
         else gen.writeStartObject();
-        gen.write("@type", typeUrl);
+        gen.write(ANY_TYPE, typeUrl);
 
         if (type == null) {
             // Fallback: unknown type — emits the base64 value.
-            gen.write("value", java.util.Base64.getEncoder().encodeToString(any.value()));
+            gen.write(ANY_VALUE, java.util.Base64.getEncoder().encodeToString(any.value()));
             gen.writeEnd();
             return;
         }
@@ -491,12 +426,12 @@ public final class ProtobufJsonRuntime {
         try {
             wrapped = Protobuf.parser(type).parseFrom(any.value());
         } catch (java.io.IOException e) {
-            throw new RuntimeException("Cannot decode Any.value as " + type, e);
+            throw new java.io.UncheckedIOException("Cannot decode Any.value as " + type, e);
         }
 
         if (isWktClass(type) && type != Empty.class) {
             // WKT: a single "value" field with the WKT canonical format.
-            writeWktAsValue(wrapped, gen, "value");
+            writeWktAsValue(wrapped, gen, ANY_VALUE);
         } else if (type == Empty.class) {
             // Proto3 §any spec: Any wrapping Empty does NOT emit a "value" — only @type.
         } else {
@@ -520,10 +455,10 @@ public final class ProtobufJsonRuntime {
     private static Any readAnyFromObject(JsonObject obj) throws java.io.IOException {
         // Spec: empty Any {} = default Any (type_url="", value=byte[0]).
         if (obj.isEmpty()) return new Any("", new byte[0]);
-        if (!obj.containsKey("@type")) {
+        if (!obj.containsKey(ANY_TYPE)) {
             throw new java.io.IOException("Any object must contain @type");
         }
-        String typeUrl = obj.getString("@type");
+        String typeUrl = obj.getString(ANY_TYPE);
         // Proto3 §any spec: @type must be of the form '<base>/<full.name>'
         // (typically type.googleapis.com/<full.name>). No slash = invalid.
         // Also: empty @type with other fields present = invalid (a partial Any
@@ -538,51 +473,40 @@ public final class ProtobufJsonRuntime {
         String fullName = TypeRegistry.fullNameFromTypeUrl(typeUrl);
         Class<?> type = TypeRegistry.lookup(fullName);
 
-        byte[] valueBytes;
         if (type == null) {
             // Fallback : value comme base64
-            JsonValue v = obj.get("value");
-            if (v == null) valueBytes = new byte[0];
-            else if (v instanceof JsonString js) {
-                valueBytes = java.util.Base64.getDecoder().decode(js.getString());
-            } else {
-                valueBytes = new byte[0];
-            }
+            byte[] valueBytes = obj.get(ANY_VALUE) instanceof JsonString js
+                    ? java.util.Base64.getDecoder().decode(js.getString())
+                    : new byte[0];
             return new Any(typeUrl, valueBytes);
         }
-
         if (isWktClass(type)) {
-            // WKT: a single "value" field to parse through the WKT machinery
-            JsonValue v = obj.get("value");
-            if (v == null) {
-                if (type == Empty.class) {
-                    valueBytes = new byte[0];
-                } else {
-                    throw new java.io.IOException("Any/" + fullName + " missing required 'value'");
-                }
-            } else if (type == Any.class && v instanceof JsonObject jo) {
-                // Special case: Any wrapping Any. Recurse in DOM to avoid
-                // re-tokenizing via fromJsonString (which can loop in streaming).
-                Any nested = readAnyFromObject(jo);
-                valueBytes = Protobuf.toByteArray(nested);
-            } else {
-                String wktJson = jsonValueToString(v);
-                Object wrapped = fromJsonString(type, wktJson);
-                valueBytes = Protobuf.toByteArray(wrapped);
-            }
-            return new Any(typeUrl, valueBytes);
+            return new Any(typeUrl, wktAnyValue(type, fullName, obj.get(ANY_VALUE)));
         }
 
         // Message ordinaire : reconstruire un JSON object sans @type, parser via runtime
         var builder = Json.createObjectBuilder();
         for (var entry : obj.entrySet()) {
-            if (!entry.getKey().equals("@type")) builder.add(entry.getKey(), entry.getValue());
+            if (!entry.getKey().equals(ANY_TYPE)) builder.add(entry.getKey(), entry.getValue());
         }
         JsonObject withoutType = builder.build();
         String inner = jsonValueToString(withoutType);
         Object wrapped = fromJsonString(type, inner);
-        valueBytes = Protobuf.toByteArray(wrapped);
-        return new Any(typeUrl, valueBytes);
+        return new Any(typeUrl, Protobuf.toByteArray(wrapped));
+    }
+
+    /** The bytes of a WKT wrapped in an {@code Any}: its single "value" member, parsed through the WKT machinery. */
+    private static byte[] wktAnyValue(Class<?> type, String fullName, JsonValue v) throws java.io.IOException {
+        if (v == null) {
+            if (type == Empty.class) return new byte[0];
+            throw new java.io.IOException("Any/" + fullName + " missing required 'value'");
+        }
+        if (type == Any.class && v instanceof JsonObject jo) {
+            // Special case: Any wrapping Any. Recurse in DOM to avoid
+            // re-tokenizing via fromJsonString (which can loop in streaming).
+            return Protobuf.toByteArray(readAnyFromObject(jo));
+        }
+        return Protobuf.toByteArray(fromJsonString(type, jsonValueToString(v)));
     }
 
     private static String jsonValueToString(JsonValue v) {
@@ -603,8 +527,8 @@ public final class ProtobufJsonRuntime {
      */
     private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
         switch (v) {
-            case Wrappers.DoubleValue(var value) -> writeWrapperDouble(value, gen, key);
-            case Wrappers.FloatValue(var value) -> writeWrapperFloat(value, gen, key);
+            case Wrappers.DoubleValue(var value) -> writeJsonFloating(value, gen, key);
+            case Wrappers.FloatValue(var value) -> writeJsonFloating(value, gen, key);
             case Wrappers.Int64Value(var value) -> writeJsonString(gen, key, Long.toString(value));
             case Wrappers.UInt64Value(var value) -> writeJsonString(gen, key, Long.toUnsignedString(value));
             case Wrappers.Int32Value(var value) -> writeJsonNumber(gen, key, value);
@@ -632,18 +556,19 @@ public final class ProtobufJsonRuntime {
         if (key != null) gen.write(key, value); else gen.write(value);
     }
 
-    private static void writeWrapperDouble(double v, JsonGenerator gen, String key) {
-        if (Double.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Double.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
-        else if (v == Double.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
-        else { if (key != null) gen.write(key, v); else gen.write(v); }
+    private static void writeJsonDouble(JsonGenerator gen, String key, double value) {
+        if (key != null) gen.write(key, value); else gen.write(value);
     }
 
-    private static void writeWrapperFloat(float v, JsonGenerator gen, String key) {
-        if (Float.isNaN(v)) { if (key != null) gen.write(key, "NaN"); else gen.write("NaN"); }
-        else if (v == Float.POSITIVE_INFINITY) { if (key != null) gen.write(key, "Infinity"); else gen.write("Infinity"); }
-        else if (v == Float.NEGATIVE_INFINITY) { if (key != null) gen.write(key, "-Infinity"); else gen.write("-Infinity"); }
-        else { if (key != null) gen.write(key, v); else gen.write(v); }
+    /**
+     * A float or double (a float is widened, as {@link JsonGenerator} has no float overload): the
+     * non-finite values as their proto3 JSON strings, the others as numbers.
+     */
+    private static void writeJsonFloating(double v, JsonGenerator gen, String key) {
+        if (Double.isNaN(v)) writeJsonString(gen, key, NAN);
+        else if (v == Double.POSITIVE_INFINITY) writeJsonString(gen, key, INFINITY);
+        else if (v == Double.NEGATIVE_INFINITY) writeJsonString(gen, key, NEGATIVE_INFINITY);
+        else writeJsonDouble(gen, key, v);
     }
 
     /**
@@ -680,6 +605,31 @@ public final class ProtobufJsonRuntime {
     private static String formatDuration(Duration d) {
         long sec = d.seconds();
         int nanos = d.nanos();
+        checkDurationRange(sec, nanos);
+        StringBuilder sb = new StringBuilder();
+        // Negative representation: sign on seconds OR nanos (proto guarantees the same sign).
+        boolean negative = sec < 0 || nanos < 0;
+        if (negative) {
+            sb.append('-');
+            sec = -sec;
+            nanos = -nanos;
+        }
+        sb.append(sec);
+        if (nanos > 0) {
+            sb.append('.');
+            // Adaptive precision: 3, 6 or 9 digits depending on what is needed.
+            String s = String.format("%09d", nanos);
+            int trim = s.length();
+            while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
+            // Rounded up to a multiple of 3 (3, 6, or 9 canonical digits).
+            int width = (trim + 2) / 3 * 3;
+            sb.append(s, 0, width);
+        }
+        sb.append('s');
+        return sb.toString();
+    }
+
+    private static void checkDurationRange(long sec, int nanos) {
         if (sec < DURATION_SECONDS_MIN || sec > DURATION_SECONDS_MAX) {
             throw new IllegalArgumentException(
                     "Duration seconds out of range [" + DURATION_SECONDS_MIN
@@ -696,27 +646,6 @@ public final class ProtobufJsonRuntime {
                     "Duration seconds and nanos must have the same sign: "
                             + sec + "s " + nanos + "ns");
         }
-        StringBuilder sb = new StringBuilder();
-        // Negative representation: sign on seconds OR nanos (proto guarantees the same sign).
-        boolean negative = sec < 0 || nanos < 0;
-        if (negative) {
-            sb.append('-');
-            sec = -sec;
-            nanos = -nanos;
-        }
-        sb.append(sec);
-        if (nanos > 0) {
-            sb.append('.');
-            // Adaptive precision: 3, 6 or 9 digits depending on what is needed.
-            String s = String.format("%09d", nanos);
-            int trim = s.length();
-            while (trim > 3 && s.charAt(trim - 1) == '0') trim--;
-            // Rounded to a multiple of 3 (3, 6, or 9 canonical digits).
-            int width = trim <= 3 ? 3 : (trim <= 6 ? 6 : 9);
-            sb.append(s, 0, width);
-        }
-        sb.append('s');
-        return sb.toString();
     }
 
     private static String formatFieldMask(FieldMask m) {
@@ -776,9 +705,7 @@ public final class ProtobufJsonRuntime {
             sec = Long.parseLong(body.substring(0, dot));
             String frac = body.substring(dot + 1);
             // Pad to 9 digits or truncate if longer (the first 9).
-            if (frac.length() > 9) frac = frac.substring(0, 9);
-            else while (frac.length() < 9) frac += "0";
-            nanos = Integer.parseInt(frac);
+            nanos = Integer.parseInt((frac + "000000000").substring(0, 9));
         }
         if (negative) { sec = -sec; nanos = -nanos; }
         // Valide les bornes ±315_576_000_000.
@@ -830,9 +757,7 @@ public final class ProtobufJsonRuntime {
             }
             if (type == Empty.class) {
                 // Consume the END_OBJECT and return the singleton.
-                while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {
-                    // skip unexpected fields
-                }
+                skipToEndObject(parser);
                 return (T) Empty.INSTANCE;
             }
             JsonBindingPlan plan = planFor(type);
@@ -1017,7 +942,6 @@ public final class ProtobufJsonRuntime {
         throw new IOException("Expected int32 value, got " + v);
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object readMessage(JsonBindingPlan plan, JsonParser parser) throws IOException {
         Object[] slots = new Object[plan.componentCount];
         boolean[] hasValue = new boolean[plan.componentCount];
@@ -1029,93 +953,46 @@ public final class ProtobufJsonRuntime {
                         ? io.vidocq.champollion.protobuf.UnknownFieldSet.newBuilder()
                         : null;
 
-        while (parser.hasNext()) {
-            JsonParser.Event e = parser.next();
-            if (e == JsonParser.Event.END_OBJECT) break;
-            if (e != JsonParser.Event.KEY_NAME) {
-                throw new IOException("Expected key, got " + e);
-            }
+        while (nextKey(parser, "key")) {
             String key = parser.getString();
-            FieldBinding fb = plan.byJsonName.get(key);
-            if (fb == null) fb = plan.byProtoName.get(key);
+            FieldBinding fb = fieldFor(plan, key);
             JsonParser.Event v = parser.next();
             if (fb == null) {
                 skipValue(parser, v);
-                continue;
-            }
-            if (v == JsonParser.Event.VALUE_NULL) {
-                // Special WKT Value case: JSON null → Value(null_value=NULL_VALUE)
-                // (spec §google.protobuf.Value). For other types, null = absent.
-                if (fb.elementType == io.vidocq.champollion.protobuf.wkt.Value.class) {
-                    slots[fb.componentIndex] = io.vidocq.champollion.protobuf.wkt.Value.ofNull();
-                    hasValue[fb.componentIndex] = true;
-                }
-                continue;
-            }
-            // Reject two property keys from the same oneofGroup
-            if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
-                String already = seenOneofs.put(fb.oneofGroup, key);
-                if (already != null) {
-                    throw new IOException("oneof '" + fb.oneofGroup
-                            + "': '" + key + "' duplicate, '" + already + "' already set");
-                }
-            }
-            if (fb.type == FieldType.MAP) {
-                if (v != JsonParser.Event.START_OBJECT) {
-                    throw new IOException("Expected object for map field " + key);
-                }
-                java.util.LinkedHashMap<Object, Object> map = new java.util.LinkedHashMap<>();
-                slots[fb.componentIndex] = map;
-                hasValue[fb.componentIndex] = true;
-                while (parser.hasNext()) {
-                    JsonParser.Event ek = parser.next();
-                    if (ek == JsonParser.Event.END_OBJECT) break;
-                    if (ek != JsonParser.Event.KEY_NAME) {
-                        throw new IOException("Expected map key, got " + ek);
-                    }
-                    String rawKey = parser.getString();
-                    Object mk = parseMapKey(fb.mapKeyType, rawKey);
-                    JsonParser.Event ev = parser.next();
-                    Object mv = readMapValue(fb.mapValueType, fb.mapValueClass, parser, ev);
-                    map.put(mk, mv);
-                }
-                continue;
-            }
-            if (fb.repeated) {
-                if (v != JsonParser.Event.START_ARRAY) {
-                    throw new IOException("Expected array for repeated field " + key);
-                }
-                List list = new ArrayList<>();
-                slots[fb.componentIndex] = list;
-                hasValue[fb.componentIndex] = true;
-                while (true) {
-                    JsonParser.Event next = parser.next();
-                    if (next == JsonParser.Event.END_ARRAY) break;
-                    Object scalar = readScalar(fb, parser, next);
-                    if (scalar instanceof UnknownEnumInt uei) {
-                        if (unknownFieldsBuilder != null) {
-                            unknownFieldsBuilder.recordVarint(fb.number, uei.value());
-                        }
-                        // No addition to the list — a Java enum cannot carry an
-                        // unknown value. The wire/JSON side re-emits via UnknownFieldSet.
-                    } else {
-                        list.add(scalar);
-                    }
-                }
+            } else if (v == JsonParser.Event.VALUE_NULL) {
+                readNull(fb, slots, hasValue);
             } else {
-                Object scalar = readScalar(fb, parser, v);
-                if (scalar instanceof UnknownEnumInt uei) {
-                    if (unknownFieldsBuilder != null) {
-                        unknownFieldsBuilder.recordVarint(fb.number, uei.value());
-                    }
-                    // slots[idx] stays null — will be defaulted below.
-                } else {
-                    slots[fb.componentIndex] = scalar;
-                    hasValue[fb.componentIndex] = true;
-                }
+                checkOneof(fb, key, seenOneofs);
+                readField(fb, key, parser, v, slots, hasValue, unknownFieldsBuilder);
             }
         }
+        fillDefaults(plan, slots, hasValue, unknownFieldsBuilder);
+        try {
+            return plan.constructor.invokeWithArguments(slots);
+        } catch (Throwable t) {
+            throw new IOException("Cannot invoke constructor of " + plan.recordType, t);
+        }
+    }
 
+    /** The field of a JSON member, by its JSON name or else its proto name; null when unknown. */
+    private static FieldBinding fieldFor(JsonBindingPlan plan, String key) {
+        FieldBinding fb = plan.byJsonName.get(key);
+        return fb != null ? fb : plan.byProtoName.get(key);
+    }
+
+    /**
+     * A JSON null: absent for every type but the WKT Value, where it reads as
+     * Value(null_value=NULL_VALUE) (spec §google.protobuf.Value).
+     */
+    private static void readNull(FieldBinding fb, Object[] slots, boolean[] hasValue) {
+        if (fb.elementType == io.vidocq.champollion.protobuf.wkt.Value.class) {
+            slots[fb.componentIndex] = io.vidocq.champollion.protobuf.wkt.Value.ofNull();
+            hasValue[fb.componentIndex] = true;
+        }
+    }
+
+    private static void fillDefaults(JsonBindingPlan plan, Object[] slots, boolean[] hasValue,
+                                     io.vidocq.champollion.protobuf.UnknownFieldSet.Builder unknownFieldsBuilder) {
         // UnknownFieldSet slot: inject the builder if present (preserve unknown enum + future unknowns).
         if (plan.unknownFieldsIndex >= 0) {
             slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
@@ -1124,26 +1001,103 @@ public final class ProtobufJsonRuntime {
         }
         // Fill in proto3 defaults.
         for (int i = 0; i < slots.length; i++) {
-            if (hasValue[i]) continue;
-            if (i == plan.unknownFieldsIndex) continue;
-            FieldBinding fb = plan.byComponentIndex[i];
-            if (fb == null) {
-                // Component without @ProtobufField (e.g. UnknownFieldSet). Default by type.
-                Class<?> ct = plan.recordType.getRecordComponents()[i].getType();
-                if (ct == io.vidocq.champollion.protobuf.UnknownFieldSet.class) {
-                    slots[i] = io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY;
-                } else {
-                    slots[i] = null;
-                }
-                continue;
+            if (!hasValue[i] && i != plan.unknownFieldsIndex) slots[i] = defaultForComponent(plan, i);
+        }
+    }
+
+    /**
+     * Moves to the next member of an object: {@code true} on its key, {@code false} at the end of
+     * the object (or of the input); any other event is rejected.
+     */
+    private static boolean nextKey(JsonParser parser, String what) throws IOException {
+        if (!parser.hasNext()) return false;
+        JsonParser.Event e = parser.next();
+        if (e == JsonParser.Event.END_OBJECT) return false;
+        if (e != JsonParser.Event.KEY_NAME) {
+            throw new IOException("Expected " + what + ", got " + e);
+        }
+        return true;
+    }
+
+    /** Rejects two property keys from the same oneofGroup. */
+    private static void checkOneof(FieldBinding fb, String key, Map<String, String> seenOneofs) throws IOException {
+        if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
+            String already = seenOneofs.put(fb.oneofGroup, key);
+            if (already != null) {
+                throw new IOException("oneof '" + fb.oneofGroup
+                        + "': '" + key + "' duplicate, '" + already + "' already set");
             }
-            slots[i] = defaultFor(fb);
         }
-        try {
-            return plan.constructor.invokeWithArguments(slots);
-        } catch (Throwable t) {
-            throw new IOException("Cannot invoke constructor of " + plan.recordType, t);
+    }
+
+    private static void readField(FieldBinding fb, String key, JsonParser parser, JsonParser.Event v,
+                                  Object[] slots, boolean[] hasValue,
+                                  io.vidocq.champollion.protobuf.UnknownFieldSet.Builder unknownFieldsBuilder)
+            throws IOException {
+        if (fb.type == FieldType.MAP) {
+            slots[fb.componentIndex] = readMapField(fb, key, parser, v);
+            hasValue[fb.componentIndex] = true;
+        } else if (fb.repeated) {
+            slots[fb.componentIndex] = readRepeatedField(fb, key, parser, v, unknownFieldsBuilder);
+            hasValue[fb.componentIndex] = true;
+        } else {
+            Object scalar = readScalar(fb, parser, v);
+            if (scalar instanceof UnknownEnumInt(int value)) {
+                if (unknownFieldsBuilder != null) {
+                    unknownFieldsBuilder.recordVarint(fb.number, value);
+                }
+                // slots[idx] stays null — will be defaulted below.
+            } else {
+                slots[fb.componentIndex] = scalar;
+                hasValue[fb.componentIndex] = true;
+            }
         }
+    }
+
+    private static Map<Object, Object> readMapField(FieldBinding fb, String key, JsonParser parser,
+                                                    JsonParser.Event v) throws IOException {
+        if (v != JsonParser.Event.START_OBJECT) {
+            throw new IOException("Expected object for map field " + key);
+        }
+        java.util.LinkedHashMap<Object, Object> map = new java.util.LinkedHashMap<>();
+        while (nextKey(parser, "map key")) {
+            Object mk = parseMapKey(fb.mapKeyType, parser.getString());
+            JsonParser.Event ev = parser.next();
+            map.put(mk, readMapValue(fb.mapValueType, fb.mapValueClass, parser, ev));
+        }
+        return map;
+    }
+
+    private static List<Object> readRepeatedField(
+            FieldBinding fb, String key, JsonParser parser, JsonParser.Event v,
+            io.vidocq.champollion.protobuf.UnknownFieldSet.Builder unknownFieldsBuilder) throws IOException {
+        if (v != JsonParser.Event.START_ARRAY) {
+            throw new IOException("Expected array for repeated field " + key);
+        }
+        List<Object> list = new ArrayList<>();
+        for (JsonParser.Event next = parser.next(); next != JsonParser.Event.END_ARRAY; next = parser.next()) {
+            Object scalar = readScalar(fb, parser, next);
+            if (scalar instanceof UnknownEnumInt(int value)) {
+                if (unknownFieldsBuilder != null) {
+                    unknownFieldsBuilder.recordVarint(fb.number, value);
+                }
+                // No addition to the list — a Java enum cannot carry an
+                // unknown value. The wire/JSON side re-emits via UnknownFieldSet.
+            } else {
+                list.add(scalar);
+            }
+        }
+        return list;
+    }
+
+    private static Object defaultForComponent(JsonBindingPlan plan, int componentIndex) {
+        FieldBinding fb = plan.byComponentIndex[componentIndex];
+        if (fb != null) return defaultFor(fb);
+        // Component without @ProtobufField (e.g. UnknownFieldSet). Default by type.
+        Class<?> ct = plan.recordType.getRecordComponents()[componentIndex].getType();
+        return ct == io.vidocq.champollion.protobuf.UnknownFieldSet.class
+                ? io.vidocq.champollion.protobuf.UnknownFieldSet.EMPTY
+                : null;
     }
 
     /** Sentinelle interne pour porter un enum value entier dont la mapping est inconnue. */
@@ -1152,99 +1106,103 @@ public final class ProtobufJsonRuntime {
     private static Object readScalar(FieldBinding fb, JsonParser parser, JsonParser.Event v) throws IOException {
         return switch (fb.type) {
             case INT32, SINT32, SFIXED32 -> readInt32Range(parser, v);
-            case UINT32, FIXED32 -> {
-                long raw = readUInt32Range(parser, v);
-                yield (int) raw;
-            }
+            case UINT32, FIXED32 -> (int) readUInt32Range(parser, v);
             case INT64, SINT64, SFIXED64 -> readInt64Range(parser, v);
-            case UINT64, FIXED64 -> {
-                java.math.BigDecimal bd = readBigDecimal(parser, v, "uint64");
-                try {
-                    java.math.BigInteger bi = bd.toBigIntegerExact();
-                    java.math.BigInteger max = new java.math.BigInteger("FFFFFFFFFFFFFFFF", 16);
-                    if (bi.signum() < 0 || bi.compareTo(max) > 0) {
-                        throw new IOException("uint64 out of range: " + bd);
-                    }
-                    yield bi.longValue(); // bit-preserving
-                } catch (ArithmeticException e) {
-                    throw new IOException("uint64 expects integer-valued JSON, got " + bd);
-                }
-            }
-            case BOOL -> {
-                if (v == JsonParser.Event.VALUE_TRUE) yield true;
-                if (v == JsonParser.Event.VALUE_FALSE) yield false;
-                throw new IOException("Expected boolean, got " + v);
-            }
-            case FLOAT -> {
-                Number n = readFloating(parser, v);
-                float f = n.floatValue();
-                // A non-special value that overflows to infinity during the cast = out of range.
-                if (Float.isInfinite(f) && !Double.isInfinite(n.doubleValue())) {
-                    throw new IOException("float JSON value out of range: " + n);
-                }
-                yield f;
-            }
-            case DOUBLE -> {
-                Number n = readFloating(parser, v);
-                double d = n.doubleValue();
-                // A BigDecimal outside double range → Double.NEGATIVE/POSITIVE_INFINITY.
-                // We reject only if the input was not explicitly "Infinity"/"-Infinity".
-                if (Double.isInfinite(d) && n instanceof java.math.BigDecimal) {
-                    throw new IOException("double JSON value out of range: " + n);
-                }
-                yield d;
-            }
+            case UINT64, FIXED64 -> readUInt64Range(parser, v); // bit-preserving
+            case BOOL -> readBoolean(v);
+            case FLOAT -> readFloat(parser, v);
+            case DOUBLE -> readDouble(parser, v);
             case STRING -> {
-                if (v != JsonParser.Event.VALUE_STRING) {
-                    throw new IOException("Expected string, got " + v);
-                }
+                requireJsonString(v, "string");
                 yield parser.getString();
             }
             case BYTES -> {
-                if (v != JsonParser.Event.VALUE_STRING) {
-                    throw new IOException("Expected base64 string, got " + v);
-                }
+                requireJsonString(v, "base64 string");
                 yield Base64.getDecoder().decode(parser.getString());
             }
-            case ENUM -> {
-                Object[] constants = fb.elementType.getEnumConstants();
-                if (v == JsonParser.Event.VALUE_STRING) {
-                    String name = parser.getString();
-                    for (Object c : constants) {
-                        if (((Enum<?>) c).name().equals(name)) yield c;
-                    }
-                    // Proto3 JSON canonical: unknown enum value is tolerated (forward compat).
-                    yield null;
-                }
-                if (v == JsonParser.Event.VALUE_NUMBER) {
-                    // Proto3 JSON §enum spec: integer value accepted + unknown
-                    // value preserved numerically during reserialization. If EnumValueMap
-                    // does not map it → return UnknownEnumInt(value), which the caller
-                    // stores in UnknownFieldSet for re-emission.
-                    int protoValue = parser.getInt();
-                    Object mapped = EnumValueMap.forClass(fb.elementType).byValue(protoValue);
-                    if (mapped != null) yield mapped;
-                    yield new UnknownEnumInt(protoValue);
-                }
-                if (v == JsonParser.Event.VALUE_NULL) yield null;
-                throw new IOException("Expected enum value, got " + v);
-            }
-            case MESSAGE -> {
-                // Nested WKT: the value is a scalar (string/number/bool) except Empty.
-                if (isWktClass(fb.elementType) && fb.elementType != Empty.class) {
-                    yield readWktValue(fb.elementType, parser, v);
-                }
-                if (v != JsonParser.Event.START_OBJECT) {
-                    throw new IOException("Expected message object, got " + v);
-                }
-                if (fb.elementType == Empty.class) {
-                    while (parser.hasNext() && parser.next() != JsonParser.Event.END_OBJECT) {}
-                    yield Empty.INSTANCE;
-                }
-                yield readMessage(planFor(fb.elementType), parser);
-            }
+            case ENUM -> readEnum(fb.elementType, parser, v);
+            case MESSAGE -> readMessageValue(fb.elementType, parser, v);
             case MAP -> throw new IOException("MAP type not yet implemented in JSON read scalar branch");
         };
+    }
+
+    private static void requireJsonString(JsonParser.Event v, String what) throws IOException {
+        if (v != JsonParser.Event.VALUE_STRING) {
+            throw new IOException("Expected " + what + ", got " + v);
+        }
+    }
+
+    private static boolean readBoolean(JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_TRUE) return true;
+        if (v == JsonParser.Event.VALUE_FALSE) return false;
+        throw new IOException("Expected boolean, got " + v);
+    }
+
+    private static float readFloat(JsonParser parser, JsonParser.Event v) throws IOException {
+        Number n = readFloating(parser, v);
+        float f = n.floatValue();
+        // A non-special value that overflows to infinity during the cast = out of range.
+        if (Float.isInfinite(f) && !Double.isInfinite(n.doubleValue())) {
+            throw new IOException("float JSON value out of range: " + n);
+        }
+        return f;
+    }
+
+    private static double readDouble(JsonParser parser, JsonParser.Event v) throws IOException {
+        Number n = readFloating(parser, v);
+        double d = n.doubleValue();
+        // A BigDecimal outside double range → Double.NEGATIVE/POSITIVE_INFINITY.
+        // We reject only if the input was not explicitly "Infinity"/"-Infinity".
+        if (Double.isInfinite(d) && n instanceof java.math.BigDecimal) {
+            throw new IOException("double JSON value out of range: " + n);
+        }
+        return d;
+    }
+
+    private static Object readEnum(Class<?> enumClass, JsonParser parser, JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_STRING) {
+            String name = parser.getString();
+            for (Object c : enumClass.getEnumConstants()) {
+                if (((Enum<?>) c).name().equals(name)) return c;
+            }
+            // Proto3 JSON canonical: unknown enum value is tolerated (forward compat).
+            return null;
+        }
+        if (v == JsonParser.Event.VALUE_NUMBER) {
+            // Proto3 JSON §enum spec: integer value accepted + unknown
+            // value preserved numerically during reserialization. If EnumValueMap
+            // does not map it → return UnknownEnumInt(value), which the caller
+            // stores in UnknownFieldSet for re-emission.
+            int protoValue = parser.getInt();
+            Object mapped = EnumValueMap.forClass(enumClass).byValue(protoValue);
+            return mapped != null ? mapped : new UnknownEnumInt(protoValue);
+        }
+        if (v == JsonParser.Event.VALUE_NULL) return null;
+        throw new IOException("Expected enum value, got " + v);
+    }
+
+    private static Object readMessageValue(Class<?> messageClass, JsonParser parser, JsonParser.Event v)
+            throws IOException {
+        // Nested WKT: the value is a scalar (string/number/bool) except Empty.
+        if (isWktClass(messageClass) && messageClass != Empty.class) {
+            return readWktValue(messageClass, parser, v);
+        }
+        if (v != JsonParser.Event.START_OBJECT) {
+            throw new IOException("Expected message object, got " + v);
+        }
+        if (messageClass == Empty.class) {
+            skipToEndObject(parser);
+            return Empty.INSTANCE;
+        }
+        return readMessage(planFor(messageClass), parser);
+    }
+
+    /** Skips the members of an object up to its END_OBJECT (an Empty has none to keep). */
+    private static void skipToEndObject(JsonParser parser) {
+        boolean end = false;
+        while (!end && parser.hasNext()) {
+            end = parser.next() == JsonParser.Event.END_OBJECT;
+        }
     }
 
     /** Accepte {@code 1}, {@code 1.0}, {@code 1e5}, {@code "1"} etc.
@@ -1293,18 +1251,11 @@ public final class ProtobufJsonRuntime {
 
     private static java.math.BigDecimal readBigDecimal(JsonParser parser, JsonParser.Event v,
                                                        String typeName) throws IOException {
-        java.math.BigDecimal bd;
-        if (v == JsonParser.Event.VALUE_NUMBER) {
-            bd = parser.getBigDecimal();
-        } else if (v == JsonParser.Event.VALUE_STRING) {
-            try {
-                bd = new java.math.BigDecimal(parser.getString());
-            } catch (NumberFormatException _) {
-                throw new IOException("Cannot parse " + typeName + " from string: " + parser.getString());
-            }
-        } else {
-            throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
-        }
+        java.math.BigDecimal bd = switch (v) {
+            case VALUE_NUMBER -> parser.getBigDecimal();
+            case VALUE_STRING -> parseBigDecimal(parser.getString(), typeName);
+            default -> throw new IOException("Expected " + typeName + "-compatible JSON, got " + v);
+        };
         // Early reject: a BigDecimal with an integer part > 20 digits can never
         // represent a uint64 (max 18446744073709551615, 20 digits).
         // Avoids toBigIntegerExact() materializing a gigantic number
@@ -1316,14 +1267,22 @@ public final class ProtobufJsonRuntime {
         return bd;
     }
 
+    private static java.math.BigDecimal parseBigDecimal(String s, String typeName) throws IOException {
+        try {
+            return new java.math.BigDecimal(s);
+        } catch (NumberFormatException _) {
+            throw new IOException("Cannot parse " + typeName + " from string: " + s);
+        }
+    }
+
     private static Number readFloating(JsonParser parser, JsonParser.Event v) throws IOException {
         if (v == JsonParser.Event.VALUE_NUMBER) return parser.getBigDecimal();
         if (v == JsonParser.Event.VALUE_STRING) {
             String s = parser.getString();
             return switch (s) {
-                case "NaN" -> Double.NaN;
-                case "Infinity" -> Double.POSITIVE_INFINITY;
-                case "-Infinity" -> Double.NEGATIVE_INFINITY;
+                case NAN -> Double.NaN;
+                case INFINITY -> Double.POSITIVE_INFINITY;
+                case NEGATIVE_INFINITY -> Double.NEGATIVE_INFINITY;
                 default -> Double.parseDouble(s);
             };
         }
@@ -1394,12 +1353,7 @@ public final class ProtobufJsonRuntime {
         }
         RecordComponent[] components = type.getRecordComponents();
         Class<?>[] componentTypes = new Class<?>[components.length];
-        MethodHandles.Lookup lookup;
-        try {
-            lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException e) {
-            lookup = MethodHandles.publicLookup();
-        }
+        MethodHandles.Lookup lookup = lookupFor(type);
         List<FieldBinding> fields = new ArrayList<>();
         Map<String, FieldBinding> byJsonName = new HashMap<>();
         Map<String, FieldBinding> byProtoName = new HashMap<>();
@@ -1410,50 +1364,18 @@ public final class ProtobufJsonRuntime {
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
+            ProtobufField pf = rc.getAnnotation(ProtobufField.class);
             if (rc.getType() == io.vidocq.champollion.protobuf.UnknownFieldSet.class
                     && "unknownFields".equals(rc.getName())) {
                 unknownFieldsIndex = i;
-                try {
-                    unknownFieldsGetter = lookup.unreflect(rc.getAccessor());
-                } catch (IllegalAccessException e) {
-                    throw new IllegalStateException(e);
-                }
-                continue;
+                unknownFieldsGetter = unreflectAccessor(lookup, rc);
+            } else if (pf != null) {
+                FieldBinding fb = fieldBinding(pf, rc, i, unreflectAccessor(lookup, rc));
+                fields.add(fb);
+                byJsonName.put(fb.jsonName, fb);
+                byProtoName.put(fb.protoName, fb);
+                byComponentIndex[i] = fb;
             }
-            ProtobufField pf = rc.getAnnotation(ProtobufField.class);
-            if (pf == null) continue;
-            boolean isMap = pf.type() == FieldType.MAP;
-            boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
-            Class<?> element;
-            FieldType mapKeyType = null;
-            FieldType mapValueType = null;
-            Class<?> mapValueClass = null;
-            if (isMap) {
-                mapKeyType = pf.mapKey();
-                mapValueType = pf.mapValue();
-                mapValueClass = resolveMapValue(rc);
-                element = java.util.Map.class;
-            } else if (repeated) {
-                element = resolveListElement(rc);
-            } else {
-                element = rc.getType();
-            }
-            MethodHandle getter;
-            try {
-                getter = lookup.unreflect(rc.getAccessor());
-            } catch (IllegalAccessException e) {
-                throw new IllegalStateException("cannot access accessor for " + rc.getName(), e);
-            }
-            String protoName = rc.getName();
-            String jsonName = Descriptors.toJsonName(protoName);
-            FieldBinding fb = new FieldBinding(
-                    pf.number(), pf.type(), repeated, pf.explicitPresence(),
-                    pf.oneofGroup(), element, i, getter, protoName, jsonName,
-                    mapKeyType, mapValueType, mapValueClass);
-            fields.add(fb);
-            byJsonName.put(jsonName, fb);
-            byProtoName.put(protoName, fb);
-            byComponentIndex[i] = fb;
         }
         fields.sort((a, b) -> Integer.compare(a.number, b.number));
 
@@ -1466,6 +1388,39 @@ public final class ProtobufJsonRuntime {
 
         return new JsonBindingPlan(type, fields, byJsonName, byProtoName, byComponentIndex,
                 constructor, components.length, unknownFieldsIndex, unknownFieldsGetter);
+    }
+
+    private static MethodHandles.Lookup lookupFor(Class<?> type) {
+        try {
+            return MethodHandles.privateLookupIn(type, MethodHandles.lookup());
+        } catch (IllegalAccessException _) {
+            // A public record in a module that does not open its package: its accessors and
+            // canonical constructor are public, publicLookup reaches them.
+            return MethodHandles.publicLookup();
+        }
+    }
+
+    private static MethodHandle unreflectAccessor(MethodHandles.Lookup lookup, RecordComponent rc) {
+        try {
+            return lookup.unreflect(rc.getAccessor());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("cannot access accessor for " + rc.getName(), e);
+        }
+    }
+
+    private static FieldBinding fieldBinding(ProtobufField pf, RecordComponent rc, int componentIndex,
+                                             MethodHandle getter) {
+        boolean isMap = pf.type() == FieldType.MAP;
+        boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
+        Class<?> element;
+        if (isMap) {
+            element = java.util.Map.class;
+        } else if (repeated) {
+            element = resolveListElement(rc);
+        } else {
+            element = rc.getType();
+        }
+        return new FieldBinding(pf, rc, repeated, element, componentIndex, getter);
     }
 
     /** Parse une key JSON string en typed key selon mapKeyType. */
@@ -1595,30 +1550,23 @@ public final class ProtobufJsonRuntime {
         final FieldType mapValueType;
         final Class<?> mapValueClass;
 
-        FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
-                     String oneofGroup, Class<?> elementType, int componentIndex,
-                     MethodHandle getter, String protoName, String jsonName) {
-            this(number, type, repeated, explicitPresence, oneofGroup, elementType,
-                 componentIndex, getter, protoName, jsonName, null, null, null);
-        }
-
-        FieldBinding(int number, FieldType type, boolean repeated, boolean explicitPresence,
-                     String oneofGroup, Class<?> elementType, int componentIndex,
-                     MethodHandle getter, String protoName, String jsonName,
-                     FieldType mapKeyType, FieldType mapValueType, Class<?> mapValueClass) {
-            this.number = number;
-            this.type = type;
+        /** Binds the record component {@code rc} from its {@code @ProtobufField}. */
+        FieldBinding(ProtobufField pf, RecordComponent rc, boolean repeated, Class<?> elementType,
+                     int componentIndex, MethodHandle getter) {
+            this.number = pf.number();
+            this.type = pf.type();
             this.repeated = repeated;
-            this.explicitPresence = explicitPresence;
-            this.oneofGroup = oneofGroup;
+            this.explicitPresence = pf.explicitPresence();
+            this.oneofGroup = pf.oneofGroup();
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;
-            this.protoName = protoName;
-            this.jsonName = jsonName;
-            this.mapKeyType = mapKeyType;
-            this.mapValueType = mapValueType;
-            this.mapValueClass = mapValueClass;
+            this.protoName = rc.getName();
+            this.jsonName = Descriptors.toJsonName(rc.getName());
+            boolean isMap = pf.type() == FieldType.MAP;
+            this.mapKeyType = isMap ? pf.mapKey() : null;
+            this.mapValueType = isMap ? pf.mapValue() : null;
+            this.mapValueClass = isMap ? resolveMapValue(rc) : null;
         }
     }
 }
