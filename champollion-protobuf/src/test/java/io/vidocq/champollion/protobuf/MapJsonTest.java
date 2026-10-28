@@ -152,6 +152,12 @@ class MapJsonTest {
     }
 
     @Test
+    void well_known_type_values_are_read_from_their_json_form() {
+        Values back = ProtobufJson.fromJson(Values.class, "{\"times\":{\"k\":\"1970-01-01T00:00:01Z\"}}");
+        assertEquals(Map.of(KEY, new Timestamp(1, 0)), back.times());
+    }
+
+    @Test
     void null_values_are_written_and_read_as_json_null() {
         Map<String, String> strings = new HashMap<>();
         strings.put(KEY, null);

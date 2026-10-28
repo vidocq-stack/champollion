@@ -1550,25 +1550,29 @@ public final class ProtobufJsonRuntime {
             case DOUBLE -> parser.getBigDecimal().doubleValue();
             case STRING -> parser.getString();
             case BYTES -> java.util.Base64.getDecoder().decode(parser.getString());
-            case ENUM -> {
-                if (v == JsonParser.Event.VALUE_STRING) {
-                    String name = parser.getString();
-                    if (messageClass != null && messageClass.isEnum()) {
-                        for (Object c : messageClass.getEnumConstants()) {
-                            if (((Enum<?>) c).name().equals(name)) yield c;
-                        }
-                    }
-                    yield null;
-                }
-                yield null;
-            }
-            case MESSAGE -> {
-                if (messageClass == null) throw new IOException("Map value MESSAGE without class");
-                if (v != JsonParser.Event.START_OBJECT) throw new IOException("Expected message object");
-                yield readMessage(planFor(messageClass), parser);
-            }
+            case ENUM -> readMapEnumValue(messageClass, parser, v);
+            case MESSAGE -> readMapMessageValue(messageClass, parser, v);
             case MAP -> throw new IOException("Nested MAP is forbidden");
         };
+    }
+
+    /** An enum map value by its name; an unknown name, or any other JSON value, reads as {@code null}. */
+    private static Object readMapEnumValue(Class<?> enumClass, JsonParser parser, JsonParser.Event v) {
+        if (v != JsonParser.Event.VALUE_STRING || enumClass == null || !enumClass.isEnum()) return null;
+        String name = parser.getString();
+        for (Object c : enumClass.getEnumConstants()) {
+            if (((Enum<?>) c).name().equals(name)) return c;
+        }
+        return null;
+    }
+
+    /** A message map value: a well-known type in its own JSON form, as the writer emits it, else an object. */
+    private static Object readMapMessageValue(Class<?> messageClass, JsonParser parser, JsonParser.Event v)
+            throws IOException {
+        if (messageClass == null) throw new IOException("Map value MESSAGE without class");
+        if (isWktClass(messageClass) && messageClass != Empty.class) return readWktValue(messageClass, parser, v);
+        if (v != JsonParser.Event.START_OBJECT) throw new IOException("Expected message object");
+        return readMessage(planFor(messageClass), parser);
     }
 
     private static Class<?> resolveMapValue(RecordComponent rc) {

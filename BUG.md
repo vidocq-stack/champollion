@@ -257,3 +257,17 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Cause** : when the block does not fit, the first chunk fills the end of the buffer and is flushed, but only the
   remainder was added to the counter.
 - **Regression test** : `CodedStreamsRoundTripTest.stream_encoder_counts_every_byte_written`.
+
+## BUG-20261028-12 — Protobuf JSON: a map value of a well-known type cannot be read back
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf` — `ProtobufJsonRuntime.readMapValue` (MESSAGE case)
+- **Symptôme** : a `map<string, google.protobuf.Timestamp>` (or any other well-known type as the map value) is written
+  in the well-known type's JSON form, `{"k":"1970-01-01T00:00:01Z"}`, but reading that JSON fails with
+  `IOException: Expected message object`.
+- **Reproduction minimale** : `ProtobufJson.fromJson(Values.class, "{\"times\":{\"k\":\"1970-01-01T00:00:01Z\"}}")`
+  where `times` is `@ProtobufField(type = MAP, mapValue = MESSAGE) Map<String, Timestamp>`.
+- **Cause** : the writer goes through the well-known type mapping for map values, the reader only accepted a JSON
+  object and parsed it field by field.
+- **Regression test** : `MapJsonTest.well_known_type_values_are_read_from_their_json_form`.
