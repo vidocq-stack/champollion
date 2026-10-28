@@ -31,6 +31,7 @@ import java.io.Reader;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * JSON-P 2.1 object model reader based on {@link ChampollionJsonParser}.
@@ -127,22 +128,7 @@ public final class ChampollionJsonReader implements JsonReader {
             // If the current event produced a value (END_* or VALUE_*), attach it to the parent.
             if (currentValue != null) {
                 if (stack.isEmpty()) return currentValue;
-                Frame parent = stack.peek();
-                if (parent instanceof ObjectFrame of) {
-                    String key = of.pendingKey;
-                    switch (keyStrategy) {
-                        case LAST -> of.members.put(key, currentValue);
-                        case FIRST -> of.members.putIfAbsent(key, currentValue);
-                        case NONE -> {
-                            if (of.members.putIfAbsent(key, currentValue) != null) {
-                                throw new JsonException("Duplicate key '" + key + "' (KeyStrategy.NONE)");
-                            }
-                        }
-                    }
-                    of.pendingKey = null;
-                } else {
-                    ((ArrayFrame) parent).values.add(currentValue);
-                }
+                attach(stack.peek(), currentValue, keyStrategy);
                 currentValue = null;
             }
 
@@ -151,6 +137,33 @@ public final class ChampollionJsonReader implements JsonReader {
                 return currentValue;
             }
             e = parser.next();
+        }
+    }
+
+    /** Adds a completed value to its enclosing container, under the pending key for an object. */
+    private static void attach(Frame parent, JsonValue value, jakarta.json.JsonConfig.KeyStrategy keyStrategy) {
+        switch (parent) {
+            case ObjectFrame of -> {
+                putMember(of.members, of.pendingKey, value, keyStrategy);
+                of.pendingKey = null;
+            }
+            case ArrayFrame af -> af.values.add(value);
+        }
+    }
+
+    /** JSON-P 2.1 {@code KeyStrategy}: the last duplicate wins, the first one wins, or duplicates are rejected. */
+    private static void putMember(Map<String, JsonValue> members, String key, JsonValue value,
+                                  jakarta.json.JsonConfig.KeyStrategy keyStrategy) {
+        switch (keyStrategy) {
+            case LAST -> members.put(key, value);
+            case FIRST -> members.putIfAbsent(key, value);
+            case NONE -> rejectDuplicate(members.putIfAbsent(key, value), key);
+        }
+    }
+
+    private static void rejectDuplicate(JsonValue previous, String key) {
+        if (previous != null) {
+            throw new JsonException("Duplicate key '" + key + "' (KeyStrategy.NONE)");
         }
     }
 

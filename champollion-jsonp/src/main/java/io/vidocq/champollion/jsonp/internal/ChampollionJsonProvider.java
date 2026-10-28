@@ -383,31 +383,37 @@ public final class ChampollionJsonProvider extends JsonProvider {
 
     /** Converts an arbitrary value (retrieved from a Map) into a JsonValue. */
     private static JsonValue toJsonValue(Object v) {
-        if (v == null) return JsonValue.NULL;
-        if (v instanceof JsonValue jv) return jv;
-        if (v instanceof String s) return new ChampollionJsonString(s);
-        if (v instanceof Boolean b) return b ? JsonValue.TRUE : JsonValue.FALSE;
-        if (v instanceof Integer i) return ChampollionJsonNumber.of(i);
-        if (v instanceof Long l) return ChampollionJsonNumber.of(l);
-        if (v instanceof java.math.BigDecimal bd) return ChampollionJsonNumber.of(bd);
-        if (v instanceof java.math.BigInteger bi) return ChampollionJsonNumber.of(new java.math.BigDecimal(bi));
-        if (v instanceof Number n) return ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(n.doubleValue()));
-        if (v instanceof Map<?, ?> m) {
-            var ob = new ChampollionJsonObjectBuilder();
-            for (var e : m.entrySet()) {
-                if (!(e.getKey() instanceof String k)) {
-                    throw new IllegalArgumentException("nested Map keys must be String");
-                }
-                ob.add(k, toJsonValue(e.getValue()));
+        return switch (v) {
+            case null -> JsonValue.NULL;
+            case JsonValue jv -> jv;
+            case String s -> new ChampollionJsonString(s);
+            case Boolean b -> b.booleanValue() ? JsonValue.TRUE : JsonValue.FALSE;
+            case Integer i -> ChampollionJsonNumber.of(i);
+            case Long l -> ChampollionJsonNumber.of(l);
+            case java.math.BigDecimal bd -> ChampollionJsonNumber.of(bd);
+            case java.math.BigInteger bi -> ChampollionJsonNumber.of(new java.math.BigDecimal(bi));
+            case Number n -> ChampollionJsonNumber.of(java.math.BigDecimal.valueOf(n.doubleValue()));
+            case Map<?, ?> m -> nestedObject(m);
+            case java.util.Collection<?> c -> nestedArray(c);
+            default -> throw new IllegalArgumentException("Unsupported value type for JSON conversion: " + v.getClass());
+        };
+    }
+
+    private static JsonValue nestedObject(Map<?, ?> m) {
+        var ob = new ChampollionJsonObjectBuilder();
+        for (var e : m.entrySet()) {
+            if (!(e.getKey() instanceof String k)) {
+                throw new IllegalArgumentException("nested Map keys must be String");
             }
-            return ob.build();
+            ob.add(k, toJsonValue(e.getValue()));
         }
-        if (v instanceof java.util.Collection<?> c) {
-            var ab = new ChampollionJsonArrayBuilder();
-            for (Object x : c) ab.add(toJsonValue(x));
-            return ab.build();
-        }
-        throw new IllegalArgumentException("Unsupported value type for JSON conversion: " + v.getClass());
+        return ob.build();
+    }
+
+    private static JsonValue nestedArray(java.util.Collection<?> c) {
+        var ab = new ChampollionJsonArrayBuilder();
+        for (Object x : c) ab.add(toJsonValue(x));
+        return ab.build();
     }
 
     @Override public JsonArrayBuilder createArrayBuilder() {
