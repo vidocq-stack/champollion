@@ -46,7 +46,7 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
 
     public static ChampollionJsonObject of(Map<String, ? extends JsonValue> source) {
         if (source == null) throw new IllegalArgumentException("source is null");
-        var copy = new LinkedHashMap<String, JsonValue>(source.size());
+        LinkedHashMap<String, JsonValue> copy = LinkedHashMap.newLinkedHashMap(source.size());
         for (var e : source.entrySet()) {
             if (e.getKey() == null) throw new IllegalArgumentException("null key not allowed");
             if (e.getValue() == null) throw new IllegalArgumentException("null value not allowed (use JsonValue.NULL)");
@@ -101,6 +101,18 @@ public final class ChampollionJsonObject extends AbstractMap<String, JsonValue> 
         if (v == null) throw new NullPointerException("No mapping for member: " + name);
         return v == JsonValue.NULL;
     }
+
+    /**
+     * {@link Map#equals} contract (JSON-P §4.1: a {@code JsonObject} equals any map holding the same
+     * members); compares the backing maps directly when both sides are ours.
+     */
+    @Override public boolean equals(Object o) {
+        if (o instanceof ChampollionJsonObject other) return members.equals(other.members);
+        return super.equals(o);
+    }
+
+    /** {@link Map#hashCode} contract, computed by the backing map. */
+    @Override public int hashCode() { return members.hashCode(); }
 
     @Override public String toString() {
         var sb = new StringBuilder().append('{');

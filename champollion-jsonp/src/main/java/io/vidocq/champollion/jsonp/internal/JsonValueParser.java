@@ -52,9 +52,11 @@ public final class JsonValueParser implements JsonParser {
 
     public JsonValueParser(JsonValue root) {
         if (root == null) throw new IllegalArgumentException("root is null");
-        if (root instanceof JsonObject o) stack.push(new ObjectFrame(o, false));
-        else if (root instanceof JsonArray a) stack.push(new ArrayFrame(a, false));
-        else stack.push(new ScalarFrame(root));
+        stack.push(switch (root) {
+            case JsonObject o -> new ObjectFrame(o, false);
+            case JsonArray a -> new ArrayFrame(a, false);
+            default -> new ScalarFrame(root);
+        });
     }
 
     @Override public boolean hasNext() { return !stack.isEmpty(); }

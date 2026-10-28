@@ -63,15 +63,16 @@ final class ChampollionJsonPatchDiff {
                                   ChampollionJsonArrayBuilder ops) {
         if (ChampollionJsonPatch.equalsByValue(source, target)) return;
 
-        if (source instanceof JsonObject so && target instanceof JsonObject to) {
-            diffObject(pointer, so, to, ops);
-        } else if (source instanceof JsonArray sa && target instanceof JsonArray ta) {
-            diffArray(pointer, sa, ta, ops);
-        } else {
+        switch (new Pair(source, target)) {
+            case Pair(JsonObject so, JsonObject to) -> diffObject(pointer, so, to, ops);
+            case Pair(JsonArray sa, JsonArray ta) -> diffArray(pointer, sa, ta, ops);
             // Different type or different scalar → replace
-            ops.add(replaceOp(pointer, target));
+            default -> ops.add(replaceOp(pointer, target));
         }
     }
+
+    /** The two values compared at one pointer, deconstructed by structure type. */
+    private record Pair(JsonValue source, JsonValue target) {}
 
     private static void diffObject(String pointer, JsonObject source, JsonObject target,
                                    ChampollionJsonArrayBuilder ops) {

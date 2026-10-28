@@ -82,23 +82,32 @@ public final class ChampollionJsonPointer implements JsonPointer {
         int len = pointer.length();
         var sb = new StringBuilder();
         // Skip the initial '/'.
-        for (int i = 1; i < len; i++) {
+        int i = 1;
+        while (i < len) {
             char c = pointer.charAt(i);
             if (c == '/') {
                 out.add(sb.toString());
                 sb.setLength(0);
             } else if (c == '~') {
                 if (i + 1 >= len) throw new JsonException("Unfinished escape in JSON Pointer");
-                char next = pointer.charAt(++i);
-                if (next == '0') sb.append('~');
-                else if (next == '1') sb.append('/');
-                else throw new JsonException("Invalid escape '~" + next + "' in JSON Pointer");
+                i++;
+                sb.append(unescape(pointer.charAt(i)));
             } else {
                 sb.append(c);
             }
+            i++;
         }
         out.add(sb.toString());
         return List.copyOf(out);
+    }
+
+    /** RFC 6901 §4: {@code ~0} is {@code ~}, {@code ~1} is {@code /}, any other escape is invalid. */
+    private static char unescape(char escaped) {
+        return switch (escaped) {
+            case '0' -> '~';
+            case '1' -> '/';
+            default -> throw new JsonException("Invalid escape '~" + escaped + "' in JSON Pointer");
+        };
     }
 
     // ===== Lookup =====

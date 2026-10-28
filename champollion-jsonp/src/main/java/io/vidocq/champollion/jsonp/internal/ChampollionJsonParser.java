@@ -420,11 +420,11 @@ public final class ChampollionJsonParser implements JsonParser {
 
     private void skipUntilCloseOf(Event openEvent, Event closeEvent) {
         if (lastEvent != openEvent) return;
-        int depth = 1;
-        while (depth > 0 && hasNext()) {
+        int open = 1;
+        while (open > 0 && hasNext()) {
             Event e = next();
-            if (e == openEvent) depth++;
-            else if (e == closeEvent) depth--;
+            if (e == openEvent) open++;
+            else if (e == closeEvent) open--;
         }
     }
 
