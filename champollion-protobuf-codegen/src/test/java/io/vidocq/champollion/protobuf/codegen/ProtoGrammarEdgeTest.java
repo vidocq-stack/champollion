@@ -85,6 +85,13 @@ class ProtoGrammarEdgeTest {
     }
 
     @Test
+    void an_unterminated_block_comment_is_rejected() {
+        // protoc: "End-of-file inside block comment"; the last character must not leak out as a token
+        ProtoSyntaxException e = assertThrows(ProtoSyntaxException.class, () -> lex("message M {}\n/* tail }"));
+        assertTrue(e.getMessage().contains("2:1"), e.getMessage());
+    }
+
+    @Test
     void an_unexpected_character_is_reported_with_its_position() {
         ProtoSyntaxException e = assertThrows(ProtoSyntaxException.class, () -> lex("a\n  #"));
         assertTrue(e.getMessage().contains("'#' at 2:3"), e.getMessage());

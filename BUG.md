@@ -315,3 +315,17 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Fix** : the processor emits one decoder per enum type, a switch from the declared number (or the ordinal when
   none is declared) to the constant, computed at compile time; unknown numbers still read as `null`.
 - **Regression test** : `ProtobufStaticProcessorTest.generated_parser_decodes_enums_by_their_declared_number`.
+
+## BUG-20261028-15 — Protobuf codegen: an unterminated block comment leaks its last character as a token
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf-codegen` — `internal.ProtoLexer.skipWhitespaceAndComments`
+- **Symptôme** : a `.proto` file ending inside a `/* ...` comment is not rejected; the last character of the comment
+  is lexed as a token, so `/* tail }` closes the enclosing message and the file parses.
+- **Reproduction minimale** : `new ProtoLexer("message M {}\n/* tail }").tokenize()` yields an `RBRACE` token after the
+  message instead of an error.
+- **Cause** : the comment loop stops one character before the end of the input when no `*/` is found, and the
+  closing step is skipped without reporting anything, leaving that character to the tokenizer.
+- **Fix** : the block comment skip moves to its own method and reports an unterminated comment, as protoc does.
+- **Regression test** : `ProtoGrammarEdgeTest.an_unterminated_block_comment_is_rejected`.

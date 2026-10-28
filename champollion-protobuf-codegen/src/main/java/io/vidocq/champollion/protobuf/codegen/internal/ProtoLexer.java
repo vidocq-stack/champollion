@@ -97,18 +97,29 @@ public final class ProtoLexer {
             } else if (c == '/' && pos + 1 < src.length() && src.charAt(pos + 1) == '/') {
                 while (pos < src.length() && src.charAt(pos) != '\n') pos++;
             } else if (c == '/' && pos + 1 < src.length() && src.charAt(pos + 1) == '*') {
-                pos += 2;
-                col += 2;
-                while (pos + 1 < src.length() && !(src.charAt(pos) == '*' && src.charAt(pos + 1) == '/')) {
-                    if (src.charAt(pos) == '\n') { line++; col = 1; }
-                    else col++;
-                    pos++;
-                }
-                if (pos + 1 < src.length()) { pos += 2; col += 2; }
+                skipBlockComment();
             } else {
                 return;
             }
         }
+    }
+
+    /** Skips a block comment; one left open at the end of the file is an error, as for protoc. */
+    private void skipBlockComment() {
+        int startLine = line;
+        int startCol = col;
+        pos += 2;
+        col += 2;
+        while (pos + 1 < src.length() && !(src.charAt(pos) == '*' && src.charAt(pos + 1) == '/')) {
+            if (src.charAt(pos) == '\n') { line++; col = 1; }
+            else col++;
+            pos++;
+        }
+        if (pos + 1 >= src.length()) {
+            throw new ProtoSyntaxException("Unterminated block comment at " + startLine + ":" + startCol);
+        }
+        pos += 2;
+        col += 2;
     }
 
     private Token readIdent(int startLine, int startCol) {
