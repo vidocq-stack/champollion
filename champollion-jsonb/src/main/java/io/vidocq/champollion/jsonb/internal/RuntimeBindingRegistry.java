@@ -449,7 +449,7 @@ final class RuntimeBindingRegistry {
             // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
-                try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                accessor.trySetAccessible();
                 acc = new MethodAccessor(accessor);
             }
             props.add(new Property(name, acc, w, nillable));
@@ -851,7 +851,7 @@ final class RuntimeBindingRegistry {
         for (var e : getterByProp.entrySet()) {
             String propName = e.getKey();
             Method m = e.getValue();
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            m.trySetAccessible();
             String name = jsonbNameFromMethod(m, propName);
             Field underlying0 = findFieldByName(type, propName);
             boolean nillable = computeNillable(m, underlying0, type);
@@ -887,7 +887,7 @@ final class RuntimeBindingRegistry {
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
             if (hiddenProps.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            f.trySetAccessible();
             String name = jsonbName(f, f.getName());
             boolean nillable = computeNillable(null, f, type);
             BindingWriter w = customAdapterWriter(f, null)
@@ -1414,7 +1414,7 @@ final class RuntimeBindingRegistry {
                     acc = new MhAccessor(mh);
                 } catch (NoSuchMethodException | IllegalAccessException _) {
                     // Reflection fallback if publicLookup fails (non-exported record).
-                    try { accessor.setAccessible(true); } catch (Exception ignore) {}
+                    accessor.trySetAccessible();
                     acc = new MethodAccessor(accessor);
                 }
             }
@@ -1440,7 +1440,7 @@ final class RuntimeBindingRegistry {
             String propName = beanPropertyOf(m);
             if (propName == null) continue;
             if (m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
-            try { m.setAccessible(true); } catch (Exception ignore) {}
+            m.trySetAccessible();
             String name = jsonbNameFromMethod(m, propName);
             boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
@@ -1457,7 +1457,7 @@ final class RuntimeBindingRegistry {
             if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) continue;
             if (f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) continue;
             if (seen.contains(f.getName())) continue;
-            try { f.setAccessible(true); } catch (Exception ignore) {}
+            f.trySetAccessible();
             String name = jsonbName(f, f.getName());
             boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
             BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
