@@ -215,19 +215,6 @@ public final class RuntimeBinding {
         return Object.class;
     }
 
-    private static byte[] encodeTagBytes(int fieldNumber, int wireType) {
-        int tag = WireFormat.makeTag(fieldNumber, wireType);
-        int size = CodedOutputStream.computeRawVarint32Size(tag);
-        byte[] bytes = new byte[size];
-        int pos = 0;
-        while ((tag & ~0x7F) != 0) {
-            bytes[pos++] = (byte) ((tag & 0x7F) | 0x80);
-            tag >>>= 7;
-        }
-        bytes[pos] = (byte) tag;
-        return bytes;
-    }
-
     // ================================================================== Write
 
     private static void writeMessage(BindingPlan plan, Object message, CodedOutputStream out) throws IOException {
@@ -927,6 +914,19 @@ public final class RuntimeBinding {
                 this.mapKeyTag = null;
                 this.mapValueTag = null;
             }
+        }
+
+        private static byte[] encodeTagBytes(int fieldNumber, int wireType) {
+            int tag = WireFormat.makeTag(fieldNumber, wireType);
+            int size = CodedOutputStream.computeRawVarint32Size(tag);
+            byte[] bytes = new byte[size];
+            int pos = 0;
+            while ((tag & ~0x7F) != 0) {
+                bytes[pos++] = (byte) ((tag & 0x7F) | 0x80);
+                tag >>>= 7;
+            }
+            bytes[pos] = (byte) tag;
+            return bytes;
         }
     }
 }

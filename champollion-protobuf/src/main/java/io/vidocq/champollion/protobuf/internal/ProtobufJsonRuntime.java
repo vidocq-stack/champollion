@@ -1489,15 +1489,6 @@ public final class ProtobufJsonRuntime {
         return readMessage(planFor(messageClass), parser);
     }
 
-    private static Class<?> resolveMapValue(RecordComponent rc) {
-        Type generic = rc.getGenericType();
-        if (generic instanceof ParameterizedType pt) {
-            Type[] args = pt.getActualTypeArguments();
-            if (args.length >= 2 && args[1] instanceof Class<?> c) return c;
-        }
-        return Object.class;
-    }
-
     private static Class<?> resolveListElement(RecordComponent rc) {
         Type generic = rc.getGenericType();
         if (generic instanceof ParameterizedType pt && pt.getActualTypeArguments()[0] instanceof Class<?> c) {
@@ -1566,6 +1557,15 @@ public final class ProtobufJsonRuntime {
             this.mapKeyType = isMap ? pf.mapKey() : null;
             this.mapValueType = isMap ? pf.mapValue() : null;
             this.mapValueClass = isMap ? resolveMapValue(rc) : null;
+        }
+
+        private static Class<?> resolveMapValue(RecordComponent rc) {
+            Type generic = rc.getGenericType();
+            if (generic instanceof ParameterizedType pt) {
+                Type[] args = pt.getActualTypeArguments();
+                if (args.length >= 2 && args[1] instanceof Class<?> c) return c;
+            }
+            return Object.class;
         }
     }
 }
