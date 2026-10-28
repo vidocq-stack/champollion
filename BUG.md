@@ -195,3 +195,52 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-10-28 : fix = no date reader for `Duration` / `Period` (the built-in ISO reader applies), as on the writer
     side. The setter / getter / field lookup moved to `dateFormatMember` to keep `dateReaderFor` under Sonar's
     complexity threshold. Red then green on `DurationWithDateFormatRegressionTest`.
+
+## BUG-20261028-04 — JSON-B: a visibility strategy cannot make a private field without accessor visible
+
+- **Date** : 2026-10-28
+- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.resolvePojo` (and the bean reader)
+- **Symptôme** : with `JsonbConfig.withPropertyVisibilityStrategy(s)` where `s.isVisible(Field)` returns `true`, a
+  private field that has no getter is not written (and not read); only public fields and getters are candidates.
+- **Reproduction minimale** : a bean with `private String hidden = "h"` and no accessor, a strategy whose
+  `isVisible(Field)` is always `true`: `toJson` gives `{}` instead of `{"hidden":"h"}`
+  (`JsonbConfigVariantsTest.a_visibility_strategy_from_the_config` leaves that member unasserted).
+- **Hypothèse de cause** : the strategy only filters the properties found by the default discovery (public fields
+  and getters); JSON-B 3.0 §4.6.1 lets the strategy decide for every field and method.
+- **Investigations** :
+  - 2026-10-28 : not fixed with the coverage tests: the discovery lives in `resolvePojo`, a method well above Sonar's
+    complexity threshold, which must be split first.
+
+## BUG-20261028-05 — JSON-B: the properties after a member read by a `JsonbDeserializer` are dropped
+
+- **Date** : 2026-10-28
+- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.readObjectAndApply` (escape hatch of BUG-20260611-01)
+- **Symptôme** : in a bean, a property with `@JsonbTypeDeserializer` whose deserializer reads an object value exactly
+  (from its `START_OBJECT` to its own `END_OBJECT`, the usual pattern) ends the reading of the enclosing object: the
+  properties that follow it in the document are silently left at their defaults.
+- **Reproduction minimale** : `JsonbSerializersAndAdaptersTest.Annotated` read from
+  `{"publicShape":{"size":5},"shape":{"size":1}}`: `shape` stays `null`.
+- **Hypothèse de cause** : after a user deserializer, the bean reader stops when `currentEvent() == END_OBJECT`, to
+  accept the TCK deserializers that consume the parent's `END_OBJECT`; it cannot tell that case from a deserializer
+  that consumed only its own object. It needs depth tracking (count the starts and ends the deserializer consumes).
+- **Investigations** :
+  - 2026-10-28 : not fixed with the coverage tests: `readObjectAndApply` is above Sonar's complexity threshold and the
+    fix touches the TCK-sensitive escape hatch; the tests read such a property last.
+
+## BUG-20261028-06 — JSON-B: an `@JsonbSubtype` that is not a subtype is accepted on read
+
+- **Date** : 2026-10-28
+- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.polymorphicReader`
+- **Symptôme** : `@JsonbTypeInfo(key = "@t", value = @JsonbSubtype(alias = "z", type = NotAPet.class))` on
+  `interface Animal`, `NotAPet` not implementing it: `toJson(..., Animal.class)` is rejected (JSON-B 3.0 §4.8), but
+  `fromJson("{\"@t\":\"z\"}", Animal.class)` returns a `NotAPet`, which the caller then fails to cast.
+- **Reproduction minimale** : `JsonbGetterDiscoveryTest.an_alias_that_is_not_a_subtype_is_rejected` (write side only).
+- **Hypothèse de cause** : the reader validates each subtype with `validateTypeInfo(sub.type(), info)`; the bearer of
+  the annotation is looked up from the subtype, is not found when the subtype does not implement it, and the
+  assignability check is skipped. It should validate from the annotated type.
+- **Investigations** :
+  - 2026-10-28 : not fixed with the coverage tests: `polymorphicReader` and `validateTypeInfo` are both above Sonar's
+    complexity threshold.
