@@ -97,7 +97,15 @@ public final class ProtobufJsonRuntime {
         // Well-Known Types: specific canonical encoding (non-JSON object).
         if (writeWktTopLevel(message, gen)) return;
         gen.writeStartObject();
+        writeMessageBody(plan, message, gen);
+        gen.writeEnd();
+    }
 
+    /**
+     * Writes the fields of a message inside an object already open: the top-level message, a nested one, or the
+     * fields an {@code Any} flattens next to its {@code @type}.
+     */
+    private static void writeMessageBody(JsonBindingPlan plan, Object message, JsonGenerator gen) {
         // M6.9: retrieve the UnknownFieldSet to re-emit unknown enum values
         // (proto3 JSON §enum spec: preservation + re-emission as numeric).
         io.vidocq.champollion.protobuf.UnknownFieldSet unknownFields =
@@ -117,7 +125,6 @@ public final class ProtobufJsonRuntime {
 
             writeField(fb, value, unknownEnumVarints, gen);
         }
-        gen.writeEnd();
     }
 
     /**
@@ -803,63 +810,6 @@ public final class ProtobufJsonRuntime {
             out.add(buf.toString());
         }
         return new FieldMask(out);
-    }
-
-    private static void writeMessageBody(JsonBindingPlan plan, Object message, JsonGenerator gen) {
-        for (FieldBinding fb : plan.fields) {
-            Object value;
-            try {
-                value = fb.getter.invoke(message);
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
-            if (value == null) continue;
-            if (fb.repeated) {
-                List<?> list = (List<?>) value;
-                if (list.isEmpty()) continue;
-                gen.writeStartArray(fb.jsonName);
-                for (Object item : list) {
-                    if (item == null) continue;
-                    writeScalar(fb, item, gen, null);
-                }
-                gen.writeEnd();
-            } else if (isDefault(fb, value)) {
-                continue;
-            } else {
-                writeScalar(fb, value, gen, fb.jsonName);
-            }
-        }
-        // Emits the unknown enum values stored in UnknownFieldSet (proto3 JSON §enum spec:
-        // forward-compat numeric preservation).
-        if (plan.unknownFieldsIndex >= 0) {
-            try {
-                io.vidocq.champollion.protobuf.UnknownFieldSet ufs =
-                        (io.vidocq.champollion.protobuf.UnknownFieldSet)
-                                plan.unknownFieldsGetter.invoke(message);
-                if (ufs != null && !ufs.isEmpty()) {
-                    for (var entry : ufs.asMap().entrySet()) {
-                        int fn = entry.getKey();
-                        FieldBinding fb = null;
-                        for (FieldBinding f : plan.fields) {
-                            if (f.number == fn) { fb = f; break; }
-                        }
-                        if (fb == null || fb.type != FieldType.ENUM) continue;
-                        var varints = entry.getValue().varints();
-                        if (varints.isEmpty()) continue;
-                        if (fb.repeated) {
-                            gen.writeStartArray(fb.jsonName);
-                            for (long v : varints) gen.write((int) v);
-                            gen.writeEnd();
-                        } else {
-                            // last-wins pour singular ENUM
-                            gen.write(fb.jsonName, (int) (long) varints.get(varints.size() - 1));
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
-        }
     }
 
     // ============================================================ Read

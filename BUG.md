@@ -281,3 +281,21 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Cause** : the writer goes through the well-known type mapping for map values, the reader only accepted a JSON
   object and parsed it field by field.
 - **Regression test** : `MapJsonTest.well_known_type_values_are_read_from_their_json_form`.
+
+## BUG-20261028-13 — Protobuf JSON: a nested message loses its maps and writes its unknown enum numbers twice
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf` — `ProtobufJsonRuntime.writeMessageBody`
+- **Symptôme** : in the JSON of a message nested in another one (or flattened in an `Any`), (1) a map field is
+  silently dropped, (2) an explicit-presence field holding its default value is dropped, (3) the unknown enum
+  numbers kept in the nested `UnknownFieldSet` are written as a second member of the same name after the other
+  fields, `{"roles":["ADMIN"],"login":"x","role":7,"roles":[9]}`, instead of `{"role":7,"roles":["ADMIN",9],...}`.
+  The top-level message was written correctly in all three cases.
+- **Reproduction minimale** : `ProtobufJson.toJson(new Config(new Settings(Map.of("k", "v"), 0)))` gives
+  `{"settings":{}}`; see `NestedMessageJsonTest`.
+- **Cause** : nested messages went through a second field loop, `writeMessageBody`, that predates map fields,
+  explicit presence and the unknown-enum merge of the top-level writer (its scalar switch has no MAP case).
+- **Fix** : `writeMessage` opens the object and delegates to `writeMessageBody`, which now runs the top-level field
+  loop, so both levels share one writer.
+- **Regression test** : `NestedMessageJsonTest`.
