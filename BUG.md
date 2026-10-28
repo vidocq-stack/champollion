@@ -178,3 +178,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-10-28 : fix = compare the bit length of the `BigInteger` with `Integer.SIZE`: an `Integer` when it fits, a
     `BigInteger` of any size otherwise (same results as before inside the `long` range). Red then green on
     `UntypedBigIntegerRegressionTest`, including both `int` boundaries.
+
+## BUG-20261028-03 — JSON-B: a date pattern breaks reading a `Duration` or `Period` bean property
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (branch `test/jsonb-coverage`)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.dateReaderFor`
+- **Symptôme** : with `JsonbConfig.withDateFormat(...)`, or a `@JsonbDateFormat` on the property, a bean with a
+  `Duration` or `Period` setter fails to read with `Setter argument mismatch ... got java.lang.String`. The writer
+  leaves these types in their ISO 8601 form whatever the pattern, so the reader could not read back what it wrote.
+- **Reproduction minimale** : `DurationWithDateFormatRegressionTest` (config pattern, property pattern).
+- **Cause** : the bean reader built a pattern-based date reader for every "date-like" type, `Duration` and `Period`
+  included; that reader has no case for them and returned the raw string (or failed on a pattern that is not a
+  `DateTimeFormatter` one).
+- **Investigations** :
+  - 2026-10-28 : fix = no date reader for `Duration` / `Period` (the built-in ISO reader applies), as on the writer
+    side. The setter / getter / field lookup moved to `dateFormatMember` to keep `dateReaderFor` under Sonar's
+    complexity threshold. Red then green on `DurationWithDateFormatRegressionTest`.

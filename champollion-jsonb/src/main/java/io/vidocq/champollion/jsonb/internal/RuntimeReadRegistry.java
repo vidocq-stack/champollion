@@ -623,16 +623,9 @@ final class RuntimeReadRegistry {
      */
     private BindingReader dateReaderFor(Class<?> paramType, Method setter, Method getter, Class<?> declaringType) {
         if (!RuntimeBindingRegistry.isDateLikeType(paramType)) return null;
-        // Priority: setter > getter > underlying field > type > package > config
-        java.lang.reflect.AnnotatedElement member = setter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class) ? setter : null;
-        if (member == null && getter != null && getter.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)) member = getter;
-        if (member == null) {
-            String prop = RuntimeBindingRegistry.beanSetterOf(setter);
-            if (prop != null) {
-                Field f = findFieldByName(declaringType, prop);
-                if (f != null && f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbDateFormat.class)) member = f;
-            }
-        }
+        // Durations and periods are always ISO 8601, as the writer leaves them: a date pattern does not apply.
+        if (paramType == java.time.Duration.class || paramType == java.time.Period.class) return null;
+        var member = dateFormatMember(setter, getter, declaringType);
         var spec = RuntimeBindingRegistry.findDateFormatSpec(member, declaringType);
         if (spec == null && defaultDateFormat != null) {
             java.util.Locale loc = configLocale != null ? configLocale : java.util.Locale.getDefault();
@@ -640,6 +633,16 @@ final class RuntimeReadRegistry {
         }
         if (spec == null) return null;
         return makeDateReader(paramType, spec);
+    }
+
+    /** The member carrying {@code @JsonbDateFormat} for a property, by priority: setter, getter, underlying field. */
+    private static java.lang.reflect.AnnotatedElement dateFormatMember(Method setter, Method getter, Class<?> declaringType) {
+        var annotation = jakarta.json.bind.annotation.JsonbDateFormat.class;
+        if (setter.isAnnotationPresent(annotation)) return setter;
+        if (getter != null && getter.isAnnotationPresent(annotation)) return getter;
+        String prop = RuntimeBindingRegistry.beanSetterOf(setter);
+        Field f = prop == null ? null : findFieldByName(declaringType, prop);
+        return f != null && f.isAnnotationPresent(annotation) ? f : null;
     }
 
     private BindingReader makeDateReader(Class<?> rawType, RuntimeBindingRegistry.DateFormatSpec spec) {
