@@ -133,11 +133,10 @@ public final class JsonStringTokenizer extends JsonTokenizer {
             if (ch == '\n') {
                 line++;
                 column = 0;
-                continue;
+            } else {
+                column++;
+                if (ch != ' ' && ch != '\t' && ch != '\r') return ch;
             }
-            column++;
-            if (ch == ' ' || ch == '\t' || ch == '\r') continue;
-            return ch;
         }
         return -1;
     }
