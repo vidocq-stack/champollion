@@ -123,61 +123,61 @@ final class RuntimeReadRegistry {
     }
 
     /** Readers resolved by raw class. */
-    private final ClassValue<BindingReader> classCache = new ClassValue<>() {
-        @Override
-        protected BindingReader computeValue(Class<?> type) {
-            BindingReader b = Builtins.lookup(type);
-            if (b != null) return b;
-            if (type.isEnum()) return enumReader(type);
-            // M4.5: polymorphism — if @JsonbTypeInfo is present, dispatch through the cascade.
-            // To follow write order (most general ancestor first), reading starts with the
-            // TOP of the chain's @JsonbTypeInfo.
-            var chain = RuntimeBindingRegistry.typeInfoChain(type);
-            var info = chain.isEmpty() ? null : chain.get(0);
-            if (info != null) return polymorphicReader(type, info);
-            if (type.isRecord()) return resolveRecord(type);
-            if (type.isPrimitive()) return get(box(type));
-            if (java.util.Map.class.isAssignableFrom(type)) return mapReader(RuntimeReadRegistry.this::dynamicValue, type);
-            if (java.util.Collection.class.isAssignableFrom(type)) {
-                return collectionReader(RuntimeReadRegistry.this::dynamicValue, type);
-            }
-            if (type == Optional.class) return optionalReader(RuntimeReadRegistry.this::dynamicValue);
-            if (type == Object.class) return RuntimeReadRegistry.this::dynamicValue;
-            if (type == Number.class) return RuntimeReadRegistry::readNumber;
-            if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()) {
-                return RuntimeReadRegistry.this::dynamicValue;
-            }
-            return resolvePojo(type);
-        }
+    private final ClassValue<BindingReader> classCache = new ComputedClassValue<>(this::resolveClass);
 
-        /**
-         * Polymorphic reader: reads the discriminator key (first in the JSON,
-         * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
-         * restants directement dans le record/POJO concret via une variante de
-         * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
-         *
-         * <p>Note: Champollion always writes the discriminator key first.
-         * To interoperate with other implementations that place the key elsewhere, it
-         * would need to buffer the whole object — deferred.</p>
-         */
-        private BindingReader polymorphicReader(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
-            // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest). The subtypes are checked
-            // against the bearer of the annotation, found from the type read (BUG-20261028-06): a subtype that does
-            // not extend it would not find it.
-            RuntimeBindingRegistry.validateTypeInfo(type, info);
-            for (var sub : info.value()) {
-                RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
-            }
-            return parser -> {
-                JsonParser.Event e = parser.next();
-                if (e == JsonParser.Event.VALUE_NULL) return null;
-                if (e != JsonParser.Event.START_OBJECT) {
-                    throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
-                }
-                return readMembersOnly(parser, concreteType(parser, info));
-            };
+    /** The reader of the raw class {@code type}, computed once per class by {@link #classCache}. */
+    private BindingReader resolveClass(Class<?> type) {
+        BindingReader b = Builtins.lookup(type);
+        if (b != null) return b;
+        if (type.isEnum()) return enumReader(type);
+        // M4.5: polymorphism — if @JsonbTypeInfo is present, dispatch through the cascade.
+        // To follow write order (most general ancestor first), reading starts with the
+        // TOP of the chain's @JsonbTypeInfo.
+        var chain = RuntimeBindingRegistry.typeInfoChain(type);
+        var info = chain.isEmpty() ? null : chain.get(0);
+        if (info != null) return polymorphicReader(type, info);
+        if (type.isRecord()) return resolveRecord(type);
+        if (type.isPrimitive()) return classCache.get(box(type));
+        if (java.util.Map.class.isAssignableFrom(type)) return mapReader(this::dynamicValue, type);
+        if (java.util.Collection.class.isAssignableFrom(type)) {
+            return collectionReader(this::dynamicValue, type);
         }
-    };
+        if (type == Optional.class) return optionalReader(this::dynamicValue);
+        if (type == Object.class) return this::dynamicValue;
+        if (type == Number.class) return RuntimeReadRegistry::readNumber;
+        if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()) {
+            return this::dynamicValue;
+        }
+        return resolvePojo(type);
+    }
+
+    /**
+     * Polymorphic reader: reads the discriminator key (first in the JSON,
+     * MVP M4.5), finds the concrete class associated with the alias, then reads the remaining members
+     * directly into the concrete record or POJO through a variant of
+     * readObjectAndConstruct, which assumes START_OBJECT has already been consumed.
+     *
+     * <p>Note: Champollion always writes the discriminator key first.
+     * To interoperate with other implementations that place the key elsewhere, it
+     * would need to buffer the whole object — deferred.</p>
+     */
+    private BindingReader polymorphicReader(Class<?> type, jakarta.json.bind.annotation.JsonbTypeInfo info) {
+        // Validation : alias-not-subtype / key-collision (TypeInfoExceptionsTest). The subtypes are checked
+        // against the bearer of the annotation, found from the type read (BUG-20261028-06): a subtype that does
+        // not extend it would not find it.
+        RuntimeBindingRegistry.validateTypeInfo(type, info);
+        for (var sub : info.value()) {
+            RuntimeBindingRegistry.validateTypeInfo(sub.type(), info);
+        }
+        return parser -> {
+            JsonParser.Event e = parser.next();
+            if (e == JsonParser.Event.VALUE_NULL) return null;
+            if (e != JsonParser.Event.START_OBJECT) {
+                throw new JsonbException("Expected START_OBJECT for polymorphic value, got " + e);
+            }
+            return readMembersOnly(parser, concreteType(parser, info));
+        };
+    }
 
     private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
 

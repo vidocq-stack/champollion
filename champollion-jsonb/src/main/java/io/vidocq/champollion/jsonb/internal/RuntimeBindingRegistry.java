@@ -122,44 +122,45 @@ final class RuntimeBindingRegistry {
         this.configLocale = configLocale;
     }
 
-    private final ClassValue<BindingWriter> cache = new ClassValue<>() {
-        @Override protected BindingWriter computeValue(Class<?> type) {
-            // Static-first, as at the root: a generated binding replaces the introspective writer of its type.
-            @SuppressWarnings("rawtypes")
-            JsonbBinding staticBinding = staticBindings.get(type);
-            if (staticBinding != null) {
-                return staticBinding::write;
-            }
-            BindingWriter built = Builtins.lookup(type);
-            if (built != null) return built;
-            if (type.isEnum()) return Builtins.ENUM;
-            if (type == Number.class) return dynamicWriter();   // abstract → resolve by runtime value
-            if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()
-                    && !java.util.Map.class.isAssignableFrom(type)
-                    && !java.util.Collection.class.isAssignableFrom(type)) {
-                return dynamicWriter();
-            }
-            // M4.5: polymorphism — if @JsonbTypeInfo is present (on the class or a
-            // supertype), emit a discriminant member before the concrete type members.
-            var info = findTypeInfo(type);
-            if (info != null) return polymorphicWriter(info);
-            if (type.isRecord()) return resolveRecord(type);
-            if (type.isPrimitive()) {
-                // Boxed by the caller; we should not reach this path except in odd cases.
-                return cache.get(boxOf(type));
-            }
-            if (java.util.Map.class.isAssignableFrom(type)) {
-                return mapWriter(dynamicWriter());
-            }
-            if (java.util.Collection.class.isAssignableFrom(type)) {
-                return collectionWriter(dynamicWriter());
-            }
-            if (type == java.util.Optional.class) {
-                return optionalWriter(dynamicWriter());
-            }
-            return resolvePojo(type);
+    private final ClassValue<BindingWriter> cache = new ComputedClassValue<>(this::resolveClass);
+
+    /** The writer of the raw class {@code type}, computed once per class by {@link #cache}. */
+    private BindingWriter resolveClass(Class<?> type) {
+        // Static-first, as at the root: a generated binding replaces the introspective writer of its type.
+        @SuppressWarnings("rawtypes")
+        JsonbBinding staticBinding = staticBindings.get(type);
+        if (staticBinding != null) {
+            return staticBinding::write;
         }
-    };
+        BindingWriter built = Builtins.lookup(type);
+        if (built != null) return built;
+        if (type.isEnum()) return Builtins.ENUM;
+        if (type == Number.class) return dynamicWriter();   // abstract → resolve by runtime value
+        if (Modifier.isAbstract(type.getModifiers()) && !type.isInterface()
+                && !java.util.Map.class.isAssignableFrom(type)
+                && !java.util.Collection.class.isAssignableFrom(type)) {
+            return dynamicWriter();
+        }
+        // M4.5: polymorphism — if @JsonbTypeInfo is present (on the class or a
+        // supertype), emit a discriminant member before the concrete type members.
+        var info = findTypeInfo(type);
+        if (info != null) return polymorphicWriter(info);
+        if (type.isRecord()) return resolveRecord(type);
+        if (type.isPrimitive()) {
+            // Boxed by the caller; we should not reach this path except in odd cases.
+            return cache.get(boxOf(type));
+        }
+        if (java.util.Map.class.isAssignableFrom(type)) {
+            return mapWriter(dynamicWriter());
+        }
+        if (java.util.Collection.class.isAssignableFrom(type)) {
+            return collectionWriter(dynamicWriter());
+        }
+        if (type == java.util.Optional.class) {
+            return optionalWriter(dynamicWriter());
+        }
+        return resolvePojo(type);
+    }
 
     BindingWriter writerFor(Type t) {
         if (t == null) return dynamicWriter();
