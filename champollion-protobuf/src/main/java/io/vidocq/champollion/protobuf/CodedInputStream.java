@@ -133,32 +133,37 @@ public abstract sealed class CodedInputStream {
             tag |= (b & 0x7F) << shift;
             if ((b & 0x80) == 0) {
                 // Fin du varint avant 5 octets. Validation tag.
-                if (tag == 0) {
-                    throw new MalformedProtobufException(
-                            "Protocol message contained an invalid tag (zero).");
-                }
-                int fieldNumber = WireFormat.getTagFieldNumber(tag);
-                if (fieldNumber == 0) {
-                    throw new MalformedProtobufException(
-                            "Protocol message contained an invalid tag (zero field number).");
-                }
-                if (fieldNumber > WireFormat.MAX_FIELD_NUMBER) {
-                    throw new MalformedProtobufException(
-                            "Protocol message contained an invalid field number: " + fieldNumber
-                                    + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
-                }
-                int wireType = WireFormat.getTagWireType(tag);
-                // Wire types 6 and 7 are reserved, never emitted (spec encoding §wire-types).
-                if (wireType == 6 || wireType == 7) {
-                    throw MalformedProtobufException.invalidWireType(wireType);
-                }
-                lastTag = tag;
+                lastTag = checkTag(tag);
                 return tag;
             }
             shift += 7;
         }
         // 5 bytes read, MSB still 1 → overlong tag varint.
         throw MalformedProtobufException.malformedVarint();
+    }
+
+    /** Validates a decoded tag (field number and wire type); returns it unchanged. */
+    private static int checkTag(int tag) throws MalformedProtobufException {
+        if (tag == 0) {
+            throw new MalformedProtobufException(
+                    "Protocol message contained an invalid tag (zero).");
+        }
+        int fieldNumber = WireFormat.getTagFieldNumber(tag);
+        if (fieldNumber == 0) {
+            throw new MalformedProtobufException(
+                    "Protocol message contained an invalid tag (zero field number).");
+        }
+        if (fieldNumber > WireFormat.MAX_FIELD_NUMBER) {
+            throw new MalformedProtobufException(
+                    "Protocol message contained an invalid field number: " + fieldNumber
+                            + " (max " + WireFormat.MAX_FIELD_NUMBER + ").");
+        }
+        int wireType = WireFormat.getTagWireType(tag);
+        // Wire types 6 and 7 are reserved, never emitted (spec encoding §wire-types).
+        if (wireType == 6 || wireType == 7) {
+            throw MalformedProtobufException.invalidWireType(wireType);
+        }
+        return tag;
     }
 
     /**
@@ -338,28 +343,30 @@ public abstract sealed class CodedInputStream {
                 return true;
             }
             case WireFormat.WIRETYPE_START_GROUP -> {
-                // Skip jusqu'au END_GROUP correspondant.
-                int fieldNumber = WireFormat.getTagFieldNumber(tag);
-                while (true) {
-                    int nextTag = readTag();
-                    if (nextTag == 0) {
-                        throw new MalformedProtobufException(
-                                "Protocol message group is truncated.");
-                    }
-                    if (WireFormat.getTagWireType(nextTag) == WireFormat.WIRETYPE_END_GROUP) {
-                        if (WireFormat.getTagFieldNumber(nextTag) != fieldNumber) {
-                            throw new MalformedProtobufException(
-                                    "Protocol message END_GROUP tag did not match SGROUP tag.");
-                        }
-                        return true;
-                    }
-                    skipField(nextTag, unknownFields);
-                }
+                skipGroup(WireFormat.getTagFieldNumber(tag), unknownFields);
+                return true;
             }
             // Standalone END_GROUP (without a matching START_GROUP) = malformed wire.
             case WireFormat.WIRETYPE_END_GROUP -> throw new MalformedProtobufException(
                     "Protocol message contained an unexpected END_GROUP tag.");
             default -> throw MalformedProtobufException.invalidWireType(wireType);
+        }
+    }
+
+    /** Skips the fields of a group up to its matching END_GROUP tag. */
+    private void skipGroup(int fieldNumber, UnknownFieldRecorder unknownFields) throws IOException {
+        int nextTag = readTag();
+        while (WireFormat.getTagWireType(nextTag) != WireFormat.WIRETYPE_END_GROUP) {
+            if (nextTag == 0) {
+                throw new MalformedProtobufException(
+                        "Protocol message group is truncated.");
+            }
+            skipField(nextTag, unknownFields);
+            nextTag = readTag();
+        }
+        if (WireFormat.getTagFieldNumber(nextTag) != fieldNumber) {
+            throw new MalformedProtobufException(
+                    "Protocol message END_GROUP tag did not match SGROUP tag.");
         }
     }
 

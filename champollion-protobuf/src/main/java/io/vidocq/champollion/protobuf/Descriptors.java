@@ -73,24 +73,27 @@ public final class Descriptors {
         List<FieldDescriptor> fields = new ArrayList<>();
         for (RecordComponent rc : recordClass.getRecordComponents()) {
             ProtobufField pf = rc.getAnnotation(ProtobufField.class);
-            if (pf == null) continue;
-            boolean repeated = List.class.isAssignableFrom(rc.getType());
-            Cardinality card = repeated ? Cardinality.REPEATED : Cardinality.IMPLICIT;
-            Class<?> element = repeated ? resolveListElement(rc) : rc.getType();
-            String messageTypeName = pf.type() == FieldType.MESSAGE ? element.getName() : null;
-            String enumTypeName = pf.type() == FieldType.ENUM ? element.getName() : null;
-            fields.add(new FieldDescriptor(
-                    rc.getName(),
-                    toJsonName(rc.getName()),
-                    pf.number(),
-                    pf.type(),
-                    card,
-                    pf.packed() && pf.type().packable(),
-                    messageTypeName,
-                    enumTypeName));
+            if (pf != null) fields.add(fieldDescriptor(rc, pf));
         }
         fields.sort((a, b) -> Integer.compare(a.number(), b.number()));
         return new Descriptor(simpleName, fullName, List.copyOf(fields), List.of(), List.of());
+    }
+
+    private static FieldDescriptor fieldDescriptor(RecordComponent rc, ProtobufField pf) {
+        boolean repeated = List.class.isAssignableFrom(rc.getType());
+        Cardinality card = repeated ? Cardinality.REPEATED : Cardinality.IMPLICIT;
+        Class<?> element = repeated ? resolveListElement(rc) : rc.getType();
+        String messageTypeName = pf.type() == FieldType.MESSAGE ? element.getName() : null;
+        String enumTypeName = pf.type() == FieldType.ENUM ? element.getName() : null;
+        return new FieldDescriptor(
+                rc.getName(),
+                toJsonName(rc.getName()),
+                pf.number(),
+                pf.type(),
+                card,
+                pf.packed() && pf.type().packable(),
+                messageTypeName,
+                enumTypeName);
     }
 
     private static Class<?> resolveListElement(RecordComponent rc) {

@@ -228,7 +228,7 @@ public final class UnknownFieldSet {
 
         public UnknownFieldSet build() {
             if (fields.isEmpty()) return EMPTY;
-            Map<Integer, Field> snapshot = new LinkedHashMap<>(fields.size());
+            Map<Integer, Field> snapshot = LinkedHashMap.newLinkedHashMap(fields.size());
             for (Map.Entry<Integer, FieldBuilder> e : fields.entrySet()) {
                 snapshot.put(e.getKey(), e.getValue().toField());
             }
