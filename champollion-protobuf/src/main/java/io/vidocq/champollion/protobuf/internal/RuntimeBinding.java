@@ -29,6 +29,7 @@ import io.vidocq.champollion.protobuf.ProtobufMessage;
 import io.vidocq.champollion.protobuf.UnknownFieldSet;
 import io.vidocq.champollion.protobuf.WireFormat;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -99,88 +100,18 @@ public final class RuntimeBinding {
         RecordComponent[] components = type.getRecordComponents();
         List<FieldBinding> fields = new ArrayList<>(components.length);
         Class<?>[] componentTypes = new Class<?>[components.length];
-        MethodHandles.Lookup lookup;
-        try {
-            lookup = MethodHandles.privateLookupIn(type, MethodHandles.lookup());
-        } catch (IllegalAccessException e) {
-            // Fallback: a public record in an openless module (for
-            // example loaded dynamically in the unnamed module) remains
-            // usable via publicLookup — its canonical ctor and accessors are
-            // public by construction.
-            lookup = MethodHandles.publicLookup();
-        }
+        MethodHandles.Lookup lookup = lookupFor(type);
         int unknownFieldsIndex = -1;
         MethodHandle unknownFieldsGetter = null;
         for (int i = 0; i < components.length; i++) {
             RecordComponent rc = components[i];
             componentTypes[i] = rc.getType();
-            // Detect the UnknownFieldSet component: it must be called "unknownFields"
-            // (by convention) and have the UnknownFieldSet type. Not annotated
-            // @ProtobufField.
-            if (rc.getType() == UnknownFieldSet.class
-                    && "unknownFields".equals(rc.getName())) {
+            if (isUnknownFieldsComponent(rc)) {
                 unknownFieldsIndex = i;
-                try {
-                    unknownFieldsGetter = lookup.unreflect(rc.getAccessor());
-                } catch (IllegalAccessException e) {
-                    throw new IllegalStateException(e);
-                }
-                continue;
-            }
-            ProtobufField pf = rc.getAnnotation(ProtobufField.class);
-            if (pf == null) {
-                throw new IllegalArgumentException(
-                        "Record component " + type.getSimpleName() + "." + rc.getName()
-                                + " is missing @ProtobufField");
-            }
-            boolean isMap = pf.type() == FieldType.MAP;
-            boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
-            Class<?> elementType;
-            FieldType mapKeyType = null;
-            FieldType mapValueType = null;
-            Class<?> mapValueClass = null;
-            byte[] mapKeyTag = null;
-            byte[] mapValueTag = null;
-            if (isMap) {
-                if (!Map.class.isAssignableFrom(rc.getType())) {
-                    throw new IllegalArgumentException(
-                            "@ProtobufField(type=MAP) requires Java type Map<K,V> for "
-                                    + rc.getName());
-                }
-                mapKeyType = pf.mapKey();
-                mapValueType = pf.mapValue();
-                mapValueClass = resolveMapValueClass(rc);
-                mapKeyTag = encodeTagBytes(1, mapKeyType.wireType());
-                mapValueTag = encodeTagBytes(2, mapValueType.wireType());
-                elementType = Map.class;
-            } else if (repeated) {
-                elementType = resolveListElementType(rc);
+                unknownFieldsGetter = unknownFieldsGetter(lookup, rc);
             } else {
-                elementType = rc.getType();
+                fields.add(fieldBinding(type, rc, i, lookup));
             }
-            boolean packed = repeated && pf.packed() && pf.type().packable();
-            MethodHandle getter;
-            try {
-                getter = lookup.unreflect(rc.getAccessor());
-            } catch (IllegalAccessException e) {
-                throw new IllegalStateException(
-                        "Cannot access record component " + rc.getName()
-                                + ". Add 'opens " + type.getPackageName()
-                                + " to io.vidocq.champollion.protobuf' in the consumer module-info.", e);
-            }
-            fields.add(new FieldBinding(
-                    pf.number(),
-                    pf.type(),
-                    repeated,
-                    packed,
-                    pf.explicitPresence(),
-                    pf.oneofGroup(),
-                    elementType,
-                    i,
-                    getter,
-                    encodeTagBytes(pf.number(), pf.type().wireType()),
-                    encodeTagBytes(pf.number(), WireFormat.WIRETYPE_LENGTH_DELIMITED),
-                    mapKeyType, mapValueType, mapValueClass, mapKeyTag, mapValueTag));
         }
         fields.sort(Comparator.comparingInt(f -> f.number));
         MethodHandle constructor;
@@ -190,10 +121,75 @@ public final class RuntimeBinding {
             throw new IllegalStateException(
                     "Cannot find canonical constructor for record " + type, e);
         }
-        Map<Integer, FieldBinding> byNumber = new HashMap<>(fields.size() * 2);
+        Map<Integer, FieldBinding> byNumber = HashMap.newHashMap(fields.size());
         for (FieldBinding fb : fields) byNumber.put(fb.number, fb);
         return new BindingPlan(type, fields, byNumber, constructor, componentTypes,
                 unknownFieldsIndex, unknownFieldsGetter);
+    }
+
+    private static MethodHandles.Lookup lookupFor(Class<?> type) {
+        try {
+            return MethodHandles.privateLookupIn(type, MethodHandles.lookup());
+        } catch (IllegalAccessException _) {
+            // Fallback: a public record in an openless module (for
+            // example loaded dynamically in the unnamed module) remains
+            // usable via publicLookup — its canonical ctor and accessors are
+            // public by construction.
+            return MethodHandles.publicLookup();
+        }
+    }
+
+    /**
+     * The UnknownFieldSet component: it must be called "unknownFields" (by convention) and have the
+     * UnknownFieldSet type. It is not annotated @ProtobufField.
+     */
+    private static boolean isUnknownFieldsComponent(RecordComponent rc) {
+        return rc.getType() == UnknownFieldSet.class && "unknownFields".equals(rc.getName());
+    }
+
+    private static MethodHandle unknownFieldsGetter(MethodHandles.Lookup lookup, RecordComponent rc) {
+        try {
+            return lookup.unreflect(rc.getAccessor());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static FieldBinding fieldBinding(Class<?> type, RecordComponent rc, int componentIndex,
+                                             MethodHandles.Lookup lookup) {
+        ProtobufField pf = rc.getAnnotation(ProtobufField.class);
+        if (pf == null) {
+            throw new IllegalArgumentException(
+                    "Record component " + type.getSimpleName() + "." + rc.getName()
+                            + " is missing @ProtobufField");
+        }
+        boolean isMap = pf.type() == FieldType.MAP;
+        boolean repeated = !isMap && List.class.isAssignableFrom(rc.getType());
+        Class<?> elementType;
+        Class<?> mapValueClass = null;
+        if (isMap) {
+            if (!Map.class.isAssignableFrom(rc.getType())) {
+                throw new IllegalArgumentException(
+                        "@ProtobufField(type=MAP) requires Java type Map<K,V> for "
+                                + rc.getName());
+            }
+            mapValueClass = resolveMapValueClass(rc);
+            elementType = Map.class;
+        } else if (repeated) {
+            elementType = resolveListElementType(rc);
+        } else {
+            elementType = rc.getType();
+        }
+        MethodHandle getter;
+        try {
+            getter = lookup.unreflect(rc.getAccessor());
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Cannot access record component " + rc.getName()
+                            + ". Add 'opens " + type.getPackageName()
+                            + " to io.vidocq.champollion.protobuf' in the consumer module-info.", e);
+        }
+        return new FieldBinding(pf, repeated, elementType, mapValueClass, componentIndex, getter);
     }
 
     private static Class<?> resolveListElementType(RecordComponent rc) {
@@ -243,30 +239,33 @@ public final class RuntimeBinding {
                 throw new IOException("Failed to read " + plan.recordType.getSimpleName()
                         + "#" + fb.number, t);
             }
-            if (value == null) continue;
-            if (fb.type == FieldType.MAP) {
-                writeMap(fb, (Map<?, ?>) value, out);
-            } else if (fb.repeated) {
-                writeRepeated(fb, (List<?>) value, out);
-            } else if (!fb.explicitPresence && isDefault(fb, value)) {
-                // Proto3 implicit presence: omit default values on the wire.
-                // In EXPLICIT (proto2 / Edition 2023 override), always write it.
-                continue;
-            } else {
-                out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
-                writeScalar(fb, value, out);
-            }
+            if (value != null) writeField(fb, value, out);
         }
         // Re-emits unknown fields at the end of the message (forward compat).
         if (plan.unknownFieldsIndex >= 0) {
-            try {
-                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
-                if (ufs != null && !ufs.isEmpty()) ufs.writeTo(out);
-            } catch (IOException e) {
-                throw e;
-            } catch (Throwable t) {
-                throw new IOException("Failed to read unknownFields", t);
-            }
+            UnknownFieldSet ufs = unknownFields(plan, message);
+            if (ufs != null && !ufs.isEmpty()) ufs.writeTo(out);
+        }
+    }
+
+    private static void writeField(FieldBinding fb, Object value, CodedOutputStream out) throws IOException {
+        if (fb.type == FieldType.MAP) {
+            writeMap(fb, (Map<?, ?>) value, out);
+        } else if (fb.repeated) {
+            writeRepeated(fb, (List<?>) value, out);
+        } else if (fb.explicitPresence || !isDefault(fb, value)) {
+            // Proto3 implicit presence omits default values on the wire;
+            // EXPLICIT presence (proto2 / Edition 2023 override) always writes them.
+            out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
+            writeScalar(fb, value, out);
+        }
+    }
+
+    private static UnknownFieldSet unknownFields(BindingPlan plan, Object message) throws IOException {
+        try {
+            return (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
+        } catch (Throwable t) {
+            throw new IOException("Failed to read unknownFields", t);
         }
     }
 
@@ -275,25 +274,33 @@ public final class RuntimeBinding {
         // Filters nulls (unknown enum values stored as null by the lenient parser).
         // Proto3 forward compat: omit these values when re-serializing.
         if (fb.packed) {
-            int payloadSize = 0;
-            for (Object item : list) {
-                if (item == null) continue;
-                payloadSize += scalarSize(fb, item);
-            }
-            if (payloadSize == 0) return;
-            out.writeRawBytes(fb.packedTagBytes, 0, fb.packedTagBytes.length);
-            out.writeRawVarint32(payloadSize);
-            for (Object item : list) {
-                if (item == null) continue;
-                writeScalarNoTag(fb, item, out);
-            }
+            writePacked(fb, list, out);
         } else {
             for (Object item : list) {
-                if (item == null) continue;
-                out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
-                writeScalar(fb, item, out);
+                if (item != null) {
+                    out.writeRawBytes(fb.tagBytes, 0, fb.tagBytes.length);
+                    writeScalar(fb, item, out);
+                }
             }
         }
+    }
+
+    private static void writePacked(FieldBinding fb, List<?> list, CodedOutputStream out) throws IOException {
+        int payloadSize = packedPayloadSize(fb, list);
+        if (payloadSize == 0) return;
+        out.writeRawBytes(fb.packedTagBytes, 0, fb.packedTagBytes.length);
+        out.writeRawVarint32(payloadSize);
+        for (Object item : list) {
+            if (item != null) writeScalarNoTag(fb, item, out);
+        }
+    }
+
+    private static int packedPayloadSize(FieldBinding fb, List<?> list) {
+        int payload = 0;
+        for (Object item : list) {
+            if (item != null) payload += scalarSize(fb, item);
+        }
+        return payload;
     }
 
     private static void writeScalar(FieldBinding fb, Object value, CodedOutputStream out) throws IOException {
@@ -430,10 +437,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int number = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield number < 0 ? CodedOutputStream.computeRawVarint64Size(number)
+                             : CodedOutputStream.computeRawVarint32Size(number);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
@@ -463,67 +470,53 @@ public final class RuntimeBinding {
             try {
                 value = fb.getter.invoke(message);
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw new IllegalStateException("Failed to read " + plan.recordType.getSimpleName()
+                        + "#" + fb.number, t);
             }
-            if (value == null) continue;
-            if (fb.type == FieldType.MAP) {
-                Map<?, ?> map = (Map<?, ?>) value;
-                if (map.isEmpty()) continue;
-                for (Map.Entry<?, ?> e : map.entrySet()) {
-                    Object k = e.getKey();
-                    Object v = e.getValue();
-                    if (k == null) k = defaultForMapType(fb.mapKeyType, null);
-                    int entrySize;
-                    if (v == null) {
-                        Object dflt = defaultForMapType(fb.mapValueType, fb.mapValueClass);
-                        if (dflt == null) {
-                            entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k);
-                        } else {
-                            entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
-                                      + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, dflt);
-                        }
-                    } else {
-                        entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k)
-                                  + fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
-                    }
-                    total += fb.tagBytes.length
-                           + CodedOutputStream.computeRawVarint32Size(entrySize) + entrySize;
-                }
-                continue;
-            }
-            if (fb.repeated) {
-                List<?> list = (List<?>) value;
-                if (list.isEmpty()) continue;
-                if (fb.packed) {
-                    int payload = 0;
-                    for (Object item : list) {
-                        if (item == null) continue;
-                        payload += scalarSize(fb, item);
-                    }
-                    if (payload == 0) continue;
-                    total += fb.packedTagBytes.length
-                            + CodedOutputStream.computeRawVarint32Size(payload)
-                            + payload;
-                } else {
-                    for (Object item : list) {
-                        if (item == null) continue;
-                        total += fb.tagBytes.length + scalarSize(fb, item);
-                    }
-                }
-            } else if (!fb.explicitPresence && isDefault(fb, value)) {
-                continue;
-            } else {
-                total += fb.tagBytes.length + scalarSize(fb, value);
-            }
+            if (value != null) total += fieldSize(fb, value);
         }
-        // UnknownFieldSet : ajouter sa taille pour le buffer de sortie.
+        // UnknownFieldSet: its size counts in the output buffer.
         if (plan.unknownFieldsIndex >= 0) {
+            UnknownFieldSet ufs;
             try {
-                UnknownFieldSet ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
-                if (ufs != null) total += ufs.getSerializedSize();
+                ufs = (UnknownFieldSet) plan.unknownFieldsGetter.invoke(message);
             } catch (Throwable t) {
-                throw new RuntimeException(t);
+                throw new IllegalStateException("Failed to read unknownFields", t);
             }
+            if (ufs != null) total += ufs.getSerializedSize();
+        }
+        return total;
+    }
+
+    private static int fieldSize(FieldBinding fb, Object value) {
+        if (fb.type == FieldType.MAP) return mapSize(fb, (Map<?, ?>) value);
+        if (fb.repeated) return repeatedSize(fb, (List<?>) value);
+        if (fb.explicitPresence || !isDefault(fb, value)) return fb.tagBytes.length + scalarSize(fb, value);
+        return 0;
+    }
+
+    private static int mapSize(FieldBinding fb, Map<?, ?> map) {
+        int total = 0;
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            Object k = e.getKey() != null ? e.getKey() : defaultForMapType(fb.mapKeyType, null);
+            Object v = e.getValue() != null ? e.getValue() : defaultForMapType(fb.mapValueType, fb.mapValueClass);
+            // A null value without default (ENUM unknown / MESSAGE null) is encoded with the key alone.
+            int entrySize = fb.mapKeyTag.length + scalarSizeTyped(fb.mapKeyType, k);
+            if (v != null) entrySize += fb.mapValueTag.length + scalarSizeTyped(fb.mapValueType, v);
+            total += fb.tagBytes.length + CodedOutputStream.computeRawVarint32Size(entrySize) + entrySize;
+        }
+        return total;
+    }
+
+    private static int repeatedSize(FieldBinding fb, List<?> list) {
+        if (fb.packed) {
+            int payload = packedPayloadSize(fb, list);
+            return payload == 0 ? 0
+                    : fb.packedTagBytes.length + CodedOutputStream.computeRawVarint32Size(payload) + payload;
+        }
+        int total = 0;
+        for (Object item : list) {
+            if (item != null) total += fb.tagBytes.length + scalarSize(fb, item);
         }
         return total;
     }
@@ -540,10 +533,10 @@ public final class RuntimeBinding {
             case SINT64 -> CodedOutputStream.computeRawVarint64Size(CodedOutputStream.encodeZigZag64((long) value));
             case BOOL -> 1;
             case ENUM -> {
-                int _v = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
+                int number = EnumValueMap.forClass(value.getClass()).valueOf((Enum<?>) value);
                 // Negative ENUM (NEG=-1) → writeInt32NoTag sign-extends to 10 bytes.
-                yield _v < 0 ? CodedOutputStream.computeRawVarint64Size(_v)
-                             : CodedOutputStream.computeRawVarint32Size(_v);
+                yield number < 0 ? CodedOutputStream.computeRawVarint64Size(number)
+                             : CodedOutputStream.computeRawVarint32Size(number);
             }
             case FIXED32, SFIXED32, FLOAT -> 4;
             case FIXED64, SFIXED64, DOUBLE -> 8;
@@ -587,82 +580,22 @@ public final class RuntimeBinding {
     private static Object readMessage(BindingPlan plan, CodedInputStream in) throws IOException {
         Object[] slots = new Object[plan.componentTypes.length];
         boolean[] hasValue = new boolean[plan.componentTypes.length];
-        // Accumulation des sub-messages pour le merge spec proto3 §field-message-merge.
-        java.util.Map<Integer, java.io.ByteArrayOutputStream> messageBuffers = null;
         // UnknownFieldSet: if the record has an `unknownFields` component, collect
         // unknown fields so they can be re-emitted during serialization (forward compat).
         UnknownFieldSet.Builder unknownFieldsBuilder =
                 plan.unknownFieldsIndex >= 0 ? UnknownFieldSet.newBuilder() : null;
 
-        while (true) {
-            int tag = in.readTag();
-            if (tag == 0) break;
-            int fieldNumber = WireFormat.getTagFieldNumber(tag);
-            int wireType = WireFormat.getTagWireType(tag);
-            FieldBinding fb = plan.byNumber.get(fieldNumber);
-            if (fb == null) {
-                in.skipField(tag, unknownFieldsBuilder);
-                continue;
-            }
-            // Proto3 §oneof spec: if multiple fields from the same oneof arrive on
-            // the wire, only the last one is kept. We clear the other slots in the
-            // same oneofGroup before writing the new one.
-            if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
-                for (FieldBinding other : plan.fields) {
-                    if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
-                        slots[other.componentIndex] = null;
-                        hasValue[other.componentIndex] = false;
-                        if (messageBuffers != null) messageBuffers.remove(other.componentIndex);
-                    }
-                }
-            }
-            // Proto3 §field-message-merge spec: if a singular MESSAGE has already been seen,
-            // accumulate bytes to reparse only once at the end of the message.
-            if (fb.type == FieldType.MESSAGE && !fb.repeated
-                    && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                if (messageBuffers == null) messageBuffers = new java.util.HashMap<>();
-                int size = in.readRawVarint32();
-                byte[] payload = in.readRawBytes(size);
-                java.io.ByteArrayOutputStream buf = messageBuffers.get(fb.componentIndex);
-                if (buf == null) {
-                    buf = new java.io.ByteArrayOutputStream();
-                    messageBuffers.put(fb.componentIndex, buf);
-                }
-                buf.write(payload, 0, payload.length);
-                hasValue[fb.componentIndex] = true;
-                continue;
-            }
-            readInto(fb, wireType, slots, hasValue, in);
-        }
+        Map<Integer, ByteArrayOutputStream> messageBuffers =
+                readFields(plan, in, slots, hasValue, unknownFieldsBuilder);
+        if (messageBuffers != null) parseMergedMessages(plan, messageBuffers, slots);
 
-        // Parse les sub-messages merged (proto3 §field-message-merge).
-        if (messageBuffers != null) {
-            for (var entry : messageBuffers.entrySet()) {
-                FieldBinding fb = plan.fields.stream()
-                        .filter(f -> f.componentIndex == entry.getKey())
-                        .findFirst().orElseThrow();
-                byte[] merged = entry.getValue().toByteArray();
-                CodedInputStream nestedIn = CodedInputStream.newInstance(merged);
-                Object nested = readMessage(planFor(fb.elementType), nestedIn);
-                slots[fb.componentIndex] = nested;
-            }
+        // Fill empty slots with the record defaults.
+        for (FieldBinding fb : plan.fields) {
+            if (!hasValue[fb.componentIndex]) slots[fb.componentIndex] = defaultFor(fb);
         }
-
-        // Fill empty slots with the record defaults. The
-        // unknownFields component (if it exists) receives UnknownFieldSet.EMPTY or the Builder build result.
-        for (int i = 0; i < slots.length; i++) {
-            if (hasValue[i]) continue;
-            if (i == plan.unknownFieldsIndex) {
-                slots[i] = unknownFieldsBuilder != null
-                        ? unknownFieldsBuilder.build()
-                        : UnknownFieldSet.EMPTY;
-                continue;
-            }
-            FieldBinding fb = plan.fields.get(indexOfComponent(plan, i));
-            slots[i] = defaultFor(fb);
-        }
-        // The unknownFields slot must always be set (the record expects it non-null).
-        if (plan.unknownFieldsIndex >= 0 && slots[plan.unknownFieldsIndex] == null) {
+        // The unknownFields slot must always be set (the record expects it non-null):
+        // UnknownFieldSet.EMPTY or the Builder build result.
+        if (plan.unknownFieldsIndex >= 0) {
             slots[plan.unknownFieldsIndex] = unknownFieldsBuilder != null
                     ? unknownFieldsBuilder.build()
                     : UnknownFieldSet.EMPTY;
@@ -676,81 +609,144 @@ public final class RuntimeBinding {
         }
     }
 
-    private static int indexOfComponent(BindingPlan plan, int componentIndex) {
-        for (int j = 0; j < plan.fields.size(); j++) {
-            if (plan.fields.get(j).componentIndex == componentIndex) return j;
+    /**
+     * Reads the fields of a message into {@code slots}; returns the payloads of the singular
+     * MESSAGE fields, accumulated for the proto3 §field-message-merge (null when there is none).
+     */
+    private static Map<Integer, ByteArrayOutputStream> readFields(
+            BindingPlan plan, CodedInputStream in, Object[] slots, boolean[] hasValue,
+            UnknownFieldSet.Builder unknownFieldsBuilder) throws IOException {
+        Map<Integer, ByteArrayOutputStream> messageBuffers = null;
+        for (int tag = in.readTag(); tag != 0; tag = in.readTag()) {
+            FieldBinding fb = plan.byNumber.get(WireFormat.getTagFieldNumber(tag));
+            if (fb == null) {
+                in.skipField(tag, unknownFieldsBuilder);
+            } else {
+                if (fb.oneofGroup != null && !fb.oneofGroup.isEmpty()) {
+                    clearOneofSiblings(plan, fb, slots, hasValue, messageBuffers);
+                }
+                int wireType = WireFormat.getTagWireType(tag);
+                // Proto3 §field-message-merge spec: if a singular MESSAGE has already been seen,
+                // accumulate bytes to reparse only once at the end of the message.
+                if (fb.type == FieldType.MESSAGE && !fb.repeated
+                        && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+                    messageBuffers = bufferMessage(messageBuffers, fb, in);
+                    hasValue[fb.componentIndex] = true;
+                } else {
+                    readInto(fb, wireType, slots, hasValue, in);
+                }
+            }
         }
-        throw new IllegalStateException("No field binding for component " + componentIndex);
+        return messageBuffers;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    /** Appends the payload of a singular MESSAGE field to its buffer; returns the buffers, created when needed. */
+    private static Map<Integer, ByteArrayOutputStream> bufferMessage(
+            Map<Integer, ByteArrayOutputStream> messageBuffers, FieldBinding fb, CodedInputStream in)
+            throws IOException {
+        Map<Integer, ByteArrayOutputStream> buffers = messageBuffers != null ? messageBuffers : new HashMap<>();
+        byte[] payload = in.readRawBytes(in.readRawVarint32());
+        buffers.computeIfAbsent(fb.componentIndex, _ -> new ByteArrayOutputStream())
+                .write(payload, 0, payload.length);
+        return buffers;
+    }
+
+    /**
+     * Proto3 §oneof spec: if multiple fields from the same oneof arrive on the wire, only the last
+     * one is kept. Clears the other slots in the same oneofGroup before writing the new one.
+     */
+    private static void clearOneofSiblings(BindingPlan plan, FieldBinding fb, Object[] slots, boolean[] hasValue,
+                                           Map<Integer, ByteArrayOutputStream> messageBuffers) {
+        for (FieldBinding other : plan.fields) {
+            if (other != fb && fb.oneofGroup.equals(other.oneofGroup)) {
+                slots[other.componentIndex] = null;
+                hasValue[other.componentIndex] = false;
+                if (messageBuffers != null) messageBuffers.remove(other.componentIndex);
+            }
+        }
+    }
+
+    /** Parses the merged sub-messages (proto3 §field-message-merge). */
+    private static void parseMergedMessages(BindingPlan plan, Map<Integer, ByteArrayOutputStream> messageBuffers,
+                                            Object[] slots) throws IOException {
+        for (var entry : messageBuffers.entrySet()) {
+            FieldBinding fb = plan.fields.stream()
+                    .filter(f -> f.componentIndex == entry.getKey())
+                    .findFirst().orElseThrow();
+            byte[] merged = entry.getValue().toByteArray();
+            CodedInputStream nestedIn = CodedInputStream.newInstance(merged);
+            slots[fb.componentIndex] = readMessage(planFor(fb.elementType), nestedIn);
+        }
+    }
+
     private static void readInto(FieldBinding fb, int wireType, Object[] slots, boolean[] hasValue,
                                  CodedInputStream in) throws IOException {
-        int idx = fb.componentIndex;
         if (fb.type == FieldType.MAP) {
-            if (wireType != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                throw MalformedProtobufException.invalidWireType(wireType);
-            }
-            @SuppressWarnings("unchecked")
-            Map<Object, Object> map = (Map<Object, Object>) slots[idx];
-            if (map == null) {
-                map = new java.util.LinkedHashMap<>();
-                slots[idx] = map;
-                hasValue[idx] = true;
-            }
-            int sz = in.readRawVarint32();
-            int ol = in.pushLimit(sz);
-            Object k = defaultForMapType(fb.mapKeyType, null);
-            Object v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
-            while (!in.isAtEnd()) {
-                int t = in.readTag();
-                int fn = WireFormat.getTagFieldNumber(t);
-                if (fn == 1) {
-                    k = readScalarTyped(fb.mapKeyType, fb.mapValueClass, in);
-                } else if (fn == 2) {
-                    v = readScalarTyped(fb.mapValueType, fb.mapValueClass, in);
-                } else {
-                    in.skipField(t);
-                }
-            }
-            in.popLimit(ol);
-            map.put(k, v);
-            return;
-        }
-        if (fb.repeated) {
-            List list = (List) slots[idx];
-            if (list == null) {
-                list = new ArrayList<>();
-                slots[idx] = list;
-                hasValue[idx] = true;
-            }
-            // The reader must accept PACKED and UNPACKED for the same field
-            // (proto3 / Edition 2023 spec), regardless of the value of fb.packed
-            // on the binding side — it is only a write hint.
-            if (wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED && fb.type.packable()) {
-                int size = in.readRawVarint32();
-                int oldLimit = in.pushLimit(size);
-                while (!in.isAtEnd()) {
-                    list.add(readScalar(fb, in));
-                }
-                in.popLimit(oldLimit);
-            } else if (wireType == fb.type.wireType()) {
-                list.add(readScalar(fb, in));
-            } else if (fb.type == FieldType.MESSAGE && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                list.add(readScalar(fb, in));
-            } else {
-                throw MalformedProtobufException.invalidWireType(wireType);
-            }
+            readMapEntry(fb, wireType, slots, hasValue, in);
+        } else if (fb.repeated) {
+            readRepeated(fb, wireType, slots, hasValue, in);
         } else {
-            if (fb.type == FieldType.MESSAGE) {
-                if (wireType != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
-                    throw MalformedProtobufException.invalidWireType(wireType);
-                }
-            } else if (wireType != fb.type.wireType()) {
-                throw MalformedProtobufException.invalidWireType(wireType);
-            }
-            slots[idx] = readScalar(fb, in);
+            boolean expected = fb.type == FieldType.MESSAGE
+                    ? wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED
+                    : wireType == fb.type.wireType();
+            if (!expected) throw MalformedProtobufException.invalidWireType(wireType);
+            slots[fb.componentIndex] = readScalar(fb, in);
+            hasValue[fb.componentIndex] = true;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void readMapEntry(FieldBinding fb, int wireType, Object[] slots, boolean[] hasValue,
+                                     CodedInputStream in) throws IOException {
+        if (wireType != WireFormat.WIRETYPE_LENGTH_DELIMITED) {
+            throw MalformedProtobufException.invalidWireType(wireType);
+        }
+        int idx = fb.componentIndex;
+        Map<Object, Object> map = (Map<Object, Object>) slots[idx];
+        if (map == null) {
+            map = new java.util.LinkedHashMap<>();
+            slots[idx] = map;
             hasValue[idx] = true;
+        }
+        int oldLimit = in.pushLimit(in.readRawVarint32());
+        Object k = defaultForMapType(fb.mapKeyType, null);
+        Object v = defaultForMapType(fb.mapValueType, fb.mapValueClass);
+        while (!in.isAtEnd()) {
+            int t = in.readTag();
+            switch (WireFormat.getTagFieldNumber(t)) {
+                case 1 -> k = readScalarTyped(fb.mapKeyType, fb.mapValueClass, in);
+                case 2 -> v = readScalarTyped(fb.mapValueType, fb.mapValueClass, in);
+                default -> in.skipField(t);
+            }
+        }
+        in.popLimit(oldLimit);
+        map.put(k, v);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void readRepeated(FieldBinding fb, int wireType, Object[] slots, boolean[] hasValue,
+                                     CodedInputStream in) throws IOException {
+        int idx = fb.componentIndex;
+        List<Object> list = (List<Object>) slots[idx];
+        if (list == null) {
+            list = new ArrayList<>();
+            slots[idx] = list;
+            hasValue[idx] = true;
+        }
+        // The reader must accept PACKED and UNPACKED for the same field
+        // (proto3 / Edition 2023 spec), regardless of the value of fb.packed
+        // on the binding side — it is only a write hint.
+        if (wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED && fb.type.packable()) {
+            int oldLimit = in.pushLimit(in.readRawVarint32());
+            while (!in.isAtEnd()) {
+                list.add(readScalar(fb, in));
+            }
+            in.popLimit(oldLimit);
+        } else if (wireType == fb.type.wireType()
+                || (fb.type == FieldType.MESSAGE && wireType == WireFormat.WIRETYPE_LENGTH_DELIMITED)) {
+            list.add(readScalar(fb, in));
+        } else {
+            throw MalformedProtobufException.invalidWireType(wireType);
         }
     }
 
@@ -901,37 +897,36 @@ public final class RuntimeBinding {
         final byte[] mapKeyTag;
         final byte[] mapValueTag;
 
-        FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
-                     boolean explicitPresence,
-                     Class<?> elementType, int componentIndex, MethodHandle getter,
-                     byte[] tagBytes, byte[] packedTagBytes) {
-            this(number, type, repeated, packed, explicitPresence, "", elementType,
-                 componentIndex, getter, tagBytes, packedTagBytes,
-                 null, null, null, null, null);
-        }
-
-        FieldBinding(int number, FieldType type, boolean repeated, boolean packed,
-                     boolean explicitPresence, String oneofGroup,
-                     Class<?> elementType, int componentIndex, MethodHandle getter,
-                     byte[] tagBytes, byte[] packedTagBytes,
-                     FieldType mapKeyType, FieldType mapValueType,
-                     Class<?> mapValueClass, byte[] mapKeyTag, byte[] mapValueTag) {
-            this.number = number;
-            this.type = type;
+        /**
+         * Binds a record component from its {@code @ProtobufField}; {@code mapValueClass} is the
+         * value class of a MAP field (null for the other types).
+         */
+        FieldBinding(ProtobufField pf, boolean repeated, Class<?> elementType, Class<?> mapValueClass,
+                     int componentIndex, MethodHandle getter) {
+            this.number = pf.number();
+            this.type = pf.type();
             this.repeated = repeated;
-            this.packed = packed;
-            this.explicitPresence = explicitPresence;
-            this.oneofGroup = oneofGroup;
+            this.packed = repeated && pf.packed() && pf.type().packable();
+            this.explicitPresence = pf.explicitPresence();
+            this.oneofGroup = pf.oneofGroup();
             this.elementType = elementType;
             this.componentIndex = componentIndex;
             this.getter = getter;
-            this.tagBytes = tagBytes;
-            this.packedTagBytes = packedTagBytes;
-            this.mapKeyType = mapKeyType;
-            this.mapValueType = mapValueType;
-            this.mapValueClass = mapValueClass;
-            this.mapKeyTag = mapKeyTag;
-            this.mapValueTag = mapValueTag;
+            this.tagBytes = encodeTagBytes(pf.number(), pf.type().wireType());
+            this.packedTagBytes = encodeTagBytes(pf.number(), WireFormat.WIRETYPE_LENGTH_DELIMITED);
+            if (pf.type() == FieldType.MAP) {
+                this.mapKeyType = pf.mapKey();
+                this.mapValueType = pf.mapValue();
+                this.mapValueClass = mapValueClass;
+                this.mapKeyTag = encodeTagBytes(1, pf.mapKey().wireType());
+                this.mapValueTag = encodeTagBytes(2, pf.mapValue().wireType());
+            } else {
+                this.mapKeyType = null;
+                this.mapValueType = null;
+                this.mapValueClass = null;
+                this.mapKeyTag = null;
+                this.mapValueTag = null;
+            }
         }
     }
 }
