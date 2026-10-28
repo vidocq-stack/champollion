@@ -1030,14 +1030,96 @@ final class RuntimeReadRegistry {
             skipUnknown(p, key, declaring);
             return true;
         }
-        w.apply(inst, p);
-        // Escape hatch for user JsonbDeserializers only (TCK pattern:
-        // the deserializer consumed up to the parent's END_OBJECT).
-        // Internal readers consume exactly their value: checking them
-        // too was BUG-20260611-01 — a nested-POJO member's own
-        // END_OBJECT aborted the enclosing object read.
-        return !(w.reader() instanceof BindingReader.UserDeserializer
-                && p.currentEvent() == JsonParser.Event.END_OBJECT);
+        if (!(w.reader() instanceof BindingReader.UserDeserializer)) {
+            // Internal readers consume exactly their value.
+            w.apply(inst, p);
+            return true;
+        }
+        // Escape hatch for user JsonbDeserializers only (TCK pattern: the deserializer
+        // consumed up to the parent's END_OBJECT). Its own END_OBJECT must not end the
+        // bean (BUG-20260611-01 for internal readers, BUG-20261028-05 for deserializers):
+        // the parser counts the structures the deserializer opens and closes.
+        var tracked = new DepthTrackingParser(p);
+        w.apply(inst, tracked);
+        return !tracked.closedEnclosingObject();
+    }
+
+    /**
+     * Parser handed to the user deserializer of a bean member. It counts the structures that the deserializer
+     * opens and closes, so that the bean reader can tell the end of the member's own value from the end of the
+     * bean, which some deserializers consume too. Structures read through a stream are not counted: a
+     * deserializer that reads its value that way stays inside the bean.
+     */
+    private static final class DepthTrackingParser implements JsonParser {
+        private final JsonParser delegate;
+        private int depth;
+
+        DepthTrackingParser(JsonParser delegate) { this.delegate = delegate; }
+
+        /** Whether the deserializer consumed the {@code END_OBJECT} of the enclosing bean. */
+        boolean closedEnclosingObject() { return depth < 0; }
+
+        @Override
+        public Event next() {
+            Event e = delegate.next();
+            if (e == Event.START_OBJECT || e == Event.START_ARRAY) depth++;
+            else if (e == Event.END_OBJECT || e == Event.END_ARRAY) depth--;
+            return e;
+        }
+
+        @Override
+        public jakarta.json.JsonObject getObject() {
+            var value = delegate.getObject();
+            depth--;
+            return value;
+        }
+
+        @Override
+        public jakarta.json.JsonArray getArray() {
+            var value = delegate.getArray();
+            depth--;
+            return value;
+        }
+
+        @Override
+        public jakarta.json.JsonValue getValue() {
+            Event current = delegate.currentEvent();
+            var value = delegate.getValue();
+            if (current == Event.START_OBJECT || current == Event.START_ARRAY) depth--;
+            return value;
+        }
+
+        @Override
+        public void skipObject() {
+            skip(Event.END_OBJECT, delegate::skipObject);
+        }
+
+        @Override
+        public void skipArray() {
+            skip(Event.END_ARRAY, delegate::skipArray);
+        }
+
+        /** A skip closes the innermost structure when it moves the parser to its end. */
+        private void skip(Event end, Runnable skip) {
+            Event before = delegate.currentEvent();
+            skip.run();
+            if (before != end && delegate.currentEvent() == end) depth--;
+        }
+
+        @Override public boolean hasNext() { return delegate.hasNext(); }
+        @Override public Event currentEvent() { return delegate.currentEvent(); }
+        @Override public String getString() { return delegate.getString(); }
+        @Override public boolean isIntegralNumber() { return delegate.isIntegralNumber(); }
+        @Override public int getInt() { return delegate.getInt(); }
+        @Override public long getLong() { return delegate.getLong(); }
+        @Override public BigDecimal getBigDecimal() { return delegate.getBigDecimal(); }
+        @Override public jakarta.json.stream.JsonLocation getLocation() { return delegate.getLocation(); }
+        @Override public java.util.stream.Stream<jakarta.json.JsonValue> getArrayStream() { return delegate.getArrayStream(); }
+        @Override public java.util.stream.Stream<Map.Entry<String, jakarta.json.JsonValue>> getObjectStream() {
+            return delegate.getObjectStream();
+        }
+        @Override public java.util.stream.Stream<jakarta.json.JsonValue> getValueStream() { return delegate.getValueStream(); }
+        @Override public void close() { delegate.close(); }
     }
 
     /** Skips the value of an unknown member, unless the configuration rejects unknown properties. */

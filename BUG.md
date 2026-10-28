@@ -234,7 +234,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-05 — JSON-B: the properties after a member read by a `JsonbDeserializer` are dropped
 
 - **Date** : 2026-10-28
-- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Statut** : FIXED (quality/sonar-zero)
 - **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.readObjectAndApply` (escape hatch of BUG-20260611-01)
 - **Symptôme** : in a bean, a property with `@JsonbTypeDeserializer` whose deserializer reads an object value exactly
   (from its `START_OBJECT` to its own `END_OBJECT`, the usual pattern) ends the reading of the enclosing object: the
@@ -247,6 +247,12 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: `readObjectAndApply` is above Sonar's complexity threshold and the
     fix touches the TCK-sensitive escape hatch; the tests read such a property last.
+  - 2026-10-28 : once `readObjectAndApply` was split, fix = depth tracking. The deserializer of a bean member gets
+    a `DepthTrackingParser` that counts the structures it opens and closes (`next()`, `getObject()`, `getArray()`,
+    `getValue()`, `skipObject()`, `skipArray()`); the bean stops only when that count goes below zero, i.e. when the
+    deserializer consumed the bean's own `END_OBJECT` (the TCK `AnimalListDeserializer` pattern). Red then green.
+- **Regression test** : `UserDeserializerMemberRegressionTest`, and
+  `JsonbSerializersAndAdaptersTest.per_property_serializer_deserializer_and_adapter` (the repro above).
 
 ## BUG-20261028-06 — JSON-B: an `@JsonbSubtype` that is not a subtype is accepted on read
 

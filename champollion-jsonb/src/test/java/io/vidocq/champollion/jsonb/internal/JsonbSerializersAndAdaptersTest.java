@@ -206,13 +206,12 @@ class JsonbSerializersAndAdaptersTest {
             String json = jsonb.toJson(in);
             assertEquals("{\"corner\":\"7,8\",\"publicShape\":{\"size\":5.0,\"missing\":null,\"tags\":[\"t\"],"
                     + "\"none\":null},\"shape\":{\"size\":1.0,\"missing\":null,\"tags\":[\"t\"],\"none\":null}}", json);
-            // A property read by a user deserializer must come last here: BUG-20261028-05 (still open) drops the
-            // properties that follow it.
-            var viaSetter = jsonb.fromJson("{\"corner\":\"7,8\",\"shape\":{\"size\":1}}", Annotated.class);
-            assertEquals(new Point(7, 8), viaSetter.getCorner());
-            assertEquals(new Square(1), viaSetter.getShape());
-            var viaField = jsonb.fromJson("{\"publicShape\":{\"size\":5}}", Annotated.class);
-            assertEquals(new Square(5), viaField.publicShape);
+            // The properties after one read by a user deserializer are read too (BUG-20261028-05).
+            var out = jsonb.fromJson("{\"publicShape\":{\"size\":5},\"shape\":{\"size\":1},\"corner\":\"7,8\"}",
+                    Annotated.class);
+            assertEquals(new Square(5), out.publicShape);
+            assertEquals(new Square(1), out.getShape());
+            assertEquals(new Point(7, 8), out.getCorner());
         }
     }
 
