@@ -352,3 +352,22 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   closing step is skipped without reporting anything, leaving that character to the tokenizer.
 - **Fix** : the block comment skip moves to its own method and reports an unterminated comment, as protoc does.
 - **Regression test** : `ProtoGrammarEdgeTest.an_unterminated_block_comment_is_rejected`.
+
+## BUG-20261028-16 — JSON-P: `skipObject()` / `skipArray()` do nothing inside a container
+
+- **Date** : 2026-10-28
+- **Statut** : OPEN (found while writing the BUG-20261028-05 regression tests)
+- **Module touché** : `champollion-jsonp` — `ChampollionJsonParser.skipUntilCloseOf`, `JsonValueParser.skipObject` /
+  `skipArray`
+- **Symptôme** : both parsers skip only when the current event is `START_OBJECT` / `START_ARRAY`. The JSON-P 2.1
+  javadoc says the parser is advanced to the `END_OBJECT` (`END_ARRAY`) of the enclosing container whenever it is in
+  object (array) context, i.e. anywhere between the container's start and its end.
+- **Reproduction minimale** : parser over `{"a":1,"b":{"c":2},"d":3}`, `next()` twice (`START_OBJECT`, `KEY_NAME`),
+  `skipObject()`, `next()` returns `VALUE_NUMBER` instead of the spec's position after the skip (`END_OBJECT` is the
+  current event, `hasNext()` is false).
+- **Hypothèse de cause** : `skipUntilCloseOf` returns at once unless `lastEvent` is the opening event; it should
+  use the parser's nesting state (`nestBits` / `depth`), taking the look-ahead of a previous `hasNext()` into
+  account. The in-memory `JsonValueParser` has the same shortcut.
+- **Investigations** :
+  - 2026-10-28 : reproduced with `ChampollionJsonParser` (jshell). Not fixed in the Sonar clean-up branch: it changes
+    parser behaviour checked by the JSON-P TCK and the JSON-B deserializer escape hatch, so it wants its own change.
