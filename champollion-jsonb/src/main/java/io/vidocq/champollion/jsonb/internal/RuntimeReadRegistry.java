@@ -2012,8 +2012,12 @@ final class RuntimeReadRegistry {
         private static BindingReader jsonpReader(Class<?> type) {
             if (type == jakarta.json.JsonObject.class) return Builtins::readJsonObject;
             if (type == jakarta.json.JsonArray.class) return Builtins::readJsonArray;
-            if (type == jakarta.json.JsonString.class || type == jakarta.json.JsonNumber.class) return Builtins::readJsonScalar;
-            if (type == jakarta.json.JsonStructure.class || type == jakarta.json.JsonValue.class) return Builtins::readJsonValue;
+            // JSON null is JsonValue.NULL only for a JsonValue: the other JSON-P types cannot hold it.
+            if (type == jakarta.json.JsonString.class || type == jakarta.json.JsonNumber.class
+                    || type == jakarta.json.JsonStructure.class) {
+                return Builtins::readJsonValueOrNull;
+            }
+            if (type == jakarta.json.JsonValue.class) return Builtins::readJsonValue;
             return null;
         }
 
@@ -2089,7 +2093,7 @@ final class RuntimeReadRegistry {
             return p.getArray();
         }
 
-        private static Object readJsonScalar(JsonParser p) {
+        private static Object readJsonValueOrNull(JsonParser p) {
             return nextIsNull(p) ? null : p.getValue();
         }
 

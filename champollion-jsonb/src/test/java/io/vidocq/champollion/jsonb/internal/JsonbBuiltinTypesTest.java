@@ -289,8 +289,9 @@ class JsonbBuiltinTypesTest {
 
     @Test
     void jsonp_values_read_explicit_nulls() {
-        // A null JsonStructure member is BUG-20261028-01 (still open), hence absent from this document.
-        String json = "{\"object\":null,\"array\":null,\"string\":null,\"number\":null,\"value\":null}";
+        // JSON null is JsonValue.NULL for a JsonValue, null for the other JSON-P types (BUG-20261028-01).
+        String json = "{\"object\":null,\"array\":null,\"string\":null,\"number\":null,\"value\":null,"
+                + "\"structure\":null}";
         var out = jsonb.fromJson(json, JsonpValues.class);
         assertNull(out.object());
         assertNull(out.array());

@@ -160,7 +160,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-01 — JSON-B: a null `JsonStructure` member cannot be read
 
 - **Date** : 2026-10-28
-- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Statut** : FIXED (quality/sonar-zero)
 - **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.Builtins.lookup` (JSON-P types)
 - **Symptôme** : a JSON `null` read into a member of type `JsonStructure` fails with
   `JsonbException: Failed to instantiate record ...: argument type mismatch` (cause: `ClassCastException`,
@@ -172,6 +172,9 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: `Builtins.lookup` has a cognitive complexity of 188, so touching
     it brings Sonar's S3776 back as a new issue; the fix wants that method split by family of types first.
+  - 2026-10-28 : once `Builtins.lookup` was split by family, fix = `JsonStructure` shares the reader of `JsonString`
+    and `JsonNumber` (null for a JSON `null`); only `JsonValue` reads it as `JsonValue.NULL`. Red then green.
+- **Regression test** : `JsonbBuiltinTypesTest.jsonp_values_read_explicit_nulls`.
 
 ## BUG-20261028-02 — JSON-B: an untyped integer beyond the `long` range throws `ArithmeticException`
 
