@@ -209,7 +209,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-04 — JSON-B: a visibility strategy cannot make a private field without accessor visible
 
 - **Date** : 2026-10-28
-- **Statut** : OPEN (found while covering the JSON-B registries with unit tests)
+- **Statut** : write side FIXED (branch `quality/sonar-zero-jsonb-binding`), read side pending
 - **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.resolvePojo` (and the bean reader)
 - **Symptôme** : with `JsonbConfig.withPropertyVisibilityStrategy(s)` where `s.isVisible(Field)` returns `true`, a
   private field that has no getter is not written (and not read); only public fields and getters are candidates.
@@ -221,6 +221,15 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: the discovery lives in `resolvePojo`, a method well above Sonar's
     complexity threshold, which must be split first.
+  - 2026-10-28 : write side fixed once `resolvePojo` was split: when a strategy applies, the non-public instance
+    fields of the hierarchy that no getter or public field covers (most specific declaration first, not static,
+    transient, `@JsonbTransient` nor hidden by a non-public getter, and only if they can be made accessible) are
+    offered to the strategy with the public members. Red then green on
+    `VisibilityStrategyPrivateFieldRegressionTest`; `JsonbConfigVariantsTest.a_visibility_strategy_from_the_config`
+    now asserts the private member on write.
+  - Read side still to do, in `RuntimeReadRegistry` (bean reader, the "public fields not covered by a setter" loop):
+    when `effectiveVisibility(type)` is not null, add the same non-public, non-final fields of the hierarchy as
+    `FieldSetter`s before the visibility filter.
 
 ## BUG-20261028-05 — JSON-B: the properties after a member read by a `JsonbDeserializer` are dropped
 

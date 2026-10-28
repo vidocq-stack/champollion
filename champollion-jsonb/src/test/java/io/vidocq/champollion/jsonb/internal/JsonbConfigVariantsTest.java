@@ -212,8 +212,9 @@ class JsonbConfigVariantsTest {
     void a_visibility_strategy_from_the_config() throws Exception {
         try (var jsonb = with(new JsonbConfig().withPropertyVisibilityStrategy(new FieldsOnly()))) {
             String json = jsonb.toJson(new Mixed());
-            // The private field without accessor ("hidden") is BUG-20261028-04 (still open): not asserted here.
-            assertTrue(json.contains("\"open\":\"o\"") && json.contains("\"viaGetter\":\"g\""), json);
+            // The private field without accessor is written too (BUG-20261028-04, write side).
+            assertTrue(json.contains("\"open\":\"o\"") && json.contains("\"viaGetter\":\"g\"")
+                    && json.contains("\"hidden\":\"h\""), json);
             assertFalse(json.contains("computed"), json);
             var out = jsonb.fromJson("{\"viaGetter\":\"x\",\"open\":\"y\",\"computed\":\"z\"}", Mixed.class);
             assertEquals("x", out.getViaGetter());

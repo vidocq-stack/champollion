@@ -825,11 +825,7 @@ final class RuntimeBindingRegistry {
             if (isFieldCandidate(f, getterByProp.keySet(), hiddenProps)) props.add(fieldProperty(type, f));
         }
 
-        // Apply PropertyVisibilityStrategy if configured (config or @JsonbVisibility).
-        var visibility = effectiveVisibility(type);
-        if (visibility != null) {
-            props.removeIf(pr -> !isVisibleByStrategy(visibility, type, pr));
-        }
+        applyVisibilityStrategy(type, getterByProp.keySet(), hiddenProps, props);
         rejectDuplicateNames(type, props);
 
         // Tri selon @JsonbPropertyOrder + JsonbConfig.PROPERTY_ORDER_STRATEGY.
@@ -949,6 +945,39 @@ final class RuntimeBindingRegistry {
         return !Modifier.isStatic(mods) && !Modifier.isTransient(mods)
                 && !f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)
                 && !getterProps.contains(f.getName()) && !hiddenProps.contains(f.getName());
+    }
+
+    /**
+     * Applies the PropertyVisibilityStrategy if one is configured (config or {@code @JsonbVisibility}). §4.6.1: the
+     * strategy decides for every field, so the non-public ones are candidates too.
+     */
+    private void applyVisibilityStrategy(Class<?> type, java.util.Set<String> getterProps,
+                                         java.util.Set<String> hiddenProps, List<Property> props) {
+        var visibility = effectiveVisibility(type);
+        if (visibility == null) return;
+        var covered = new java.util.HashSet<>(getterProps);
+        for (Property pr : props) {
+            if (pr.accessor instanceof FieldAccessor(Field field)) covered.add(field.getName());
+        }
+        addNonPublicFields(type, covered, hiddenProps, props);
+        props.removeIf(pr -> !isVisibleByStrategy(visibility, type, pr));
+    }
+
+    /**
+     * Adds the non-public instance fields of the hierarchy that no getter nor public field already covers, the
+     * most specific declaration of a name first; a field that cannot be made accessible is left out.
+     */
+    private void addNonPublicFields(Class<?> type, java.util.Set<String> covered, java.util.Set<String> hiddenProps,
+                                    List<Property> props) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (!Modifier.isPublic(f.getModifiers()) && !f.isSynthetic()
+                        && isFieldCandidate(f, covered, hiddenProps) && f.trySetAccessible()) {
+                    props.add(fieldProperty(type, f));
+                    covered.add(f.getName());
+                }
+            }
+        }
     }
 
     private Property fieldProperty(Class<?> type, Field f) {
