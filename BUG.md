@@ -162,3 +162,19 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : not fixed with the coverage tests: `Builtins.lookup` has a cognitive complexity of 188, so touching
     it brings Sonar's S3776 back as a new issue; the fix wants that method split by family of types first.
+
+## BUG-20261028-02 — JSON-B: an untyped integer beyond the `long` range throws `ArithmeticException`
+
+- **Date** : 2026-10-28
+- **Statut** : FIXED (branch `test/jsonb-coverage`)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.dynamicValue`
+- **Symptôme** : `jsonb.fromJson("123456789012345678901234567890", Object.class)` (or such a number inside a raw
+  `List`/`Map`) fails with `java.lang.ArithmeticException: BigInteger out of long range`, not even a
+  `JsonbException`. Integers outside the `int` range but inside the `long` one already read as a `BigInteger`.
+- **Reproduction minimale** : `UntypedBigIntegerRegressionTest`.
+- **Cause** : to decide between `Integer` and `BigInteger`, the reader converted the value with `longValueExact()`,
+  which throws for anything wider than 64 bits.
+- **Investigations** :
+  - 2026-10-28 : fix = compare the bit length of the `BigInteger` with `Integer.SIZE`: an `Integer` when it fits, a
+    `BigInteger` of any size otherwise (same results as before inside the `long` range). Red then green on
+    `UntypedBigIntegerRegressionTest`, including both `int` boundaries.

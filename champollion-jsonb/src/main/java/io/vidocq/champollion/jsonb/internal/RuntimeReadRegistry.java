@@ -1453,8 +1453,11 @@ final class RuntimeReadRegistry {
             case VALUE_STRING -> p.getString();
             case VALUE_NUMBER -> {
                 BigDecimal bd = p.getBigDecimal();
-                if (p.isIntegralNumber()) yield bd.toBigIntegerExact().longValueExact() <= Integer.MAX_VALUE && bd.toBigIntegerExact().longValueExact() >= Integer.MIN_VALUE
-                        ? bd.intValueExact() : bd.toBigIntegerExact();
+                if (p.isIntegralNumber()) {
+                    // An int when it fits (bit length below 32), otherwise a BigInteger of any size.
+                    BigInteger bi = bd.toBigIntegerExact();
+                    yield bi.bitLength() < Integer.SIZE ? Integer.valueOf(bi.intValue()) : bi;
+                }
                 yield bd;
             }
             case VALUE_TRUE -> Boolean.TRUE;
