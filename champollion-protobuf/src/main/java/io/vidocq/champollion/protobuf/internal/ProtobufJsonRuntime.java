@@ -587,57 +587,42 @@ public final class ProtobufJsonRuntime {
     }
 
     private static boolean writeWrapperTopLevel(Object v, JsonGenerator gen) {
-        return switch (v) {
-            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, null); yield true; }
-            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, null); yield true; }
-            case Wrappers.Int64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
-            case Wrappers.UInt64Value(var value) -> { gen.write(Long.toString(value)); yield true; }
-            case Wrappers.Int32Value(var value) -> { gen.write(value); yield true; }
-            case Wrappers.UInt32Value(var value) -> { gen.write(value); yield true; }
-            case Wrappers.BoolValue(var value) -> { gen.write(value); yield true; }
-            case Wrappers.StringValue(var value) -> { gen.write(value); yield true; }
-            case Wrappers.BytesValue(var value) -> { gen.write(java.util.Base64.getEncoder().encodeToString(value)); yield true; }
-            default -> false;
-        };
+        return writeWrapperAsValue(v, gen, null);
     }
 
+    /**
+     * Writes a wrapper well-known type as the bare JSON form of its value, under {@code key} or, when it is
+     * {@code null}, as an array element or the whole document. The unsigned wrappers are written unsigned.
+     */
     private static boolean writeWrapperAsValue(Object v, JsonGenerator gen, String key) {
-        return switch (v) {
-            case Wrappers.DoubleValue(var value) -> { writeWrapperDouble(value, gen, key); yield true; }
-            case Wrappers.FloatValue(var value) -> { writeWrapperFloat(value, gen, key); yield true; }
-            case Wrappers.Int64Value(var value) -> {
-                String s = Long.toString(value);
-                if (key != null) gen.write(key, s); else gen.write(s);
-                yield true;
+        switch (v) {
+            case Wrappers.DoubleValue(var value) -> writeWrapperDouble(value, gen, key);
+            case Wrappers.FloatValue(var value) -> writeWrapperFloat(value, gen, key);
+            case Wrappers.Int64Value(var value) -> writeJsonString(gen, key, Long.toString(value));
+            case Wrappers.UInt64Value(var value) -> writeJsonString(gen, key, Long.toUnsignedString(value));
+            case Wrappers.Int32Value(var value) -> writeJsonNumber(gen, key, value);
+            case Wrappers.UInt32Value(var value) -> writeJsonNumber(gen, key, Integer.toUnsignedLong(value));
+            case Wrappers.BoolValue(var value) -> writeJsonBoolean(gen, key, value);
+            case Wrappers.StringValue(var value) -> writeJsonString(gen, key, value);
+            case Wrappers.BytesValue(var value) ->
+                    writeJsonString(gen, key, java.util.Base64.getEncoder().encodeToString(value));
+            default -> {
+                return false;
             }
-            case Wrappers.UInt64Value(var value) -> {
-                String s = Long.toString(value);
-                if (key != null) gen.write(key, s); else gen.write(s);
-                yield true;
-            }
-            case Wrappers.Int32Value(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
-                yield true;
-            }
-            case Wrappers.UInt32Value(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
-                yield true;
-            }
-            case Wrappers.BoolValue(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
-                yield true;
-            }
-            case Wrappers.StringValue(var value) -> {
-                if (key != null) gen.write(key, value); else gen.write(value);
-                yield true;
-            }
-            case Wrappers.BytesValue(var value) -> {
-                String s = java.util.Base64.getEncoder().encodeToString(value);
-                if (key != null) gen.write(key, s); else gen.write(s);
-                yield true;
-            }
-            default -> false;
-        };
+        }
+        return true;
+    }
+
+    private static void writeJsonString(JsonGenerator gen, String key, String value) {
+        if (key != null) gen.write(key, value); else gen.write(value);
+    }
+
+    private static void writeJsonNumber(JsonGenerator gen, String key, long value) {
+        if (key != null) gen.write(key, value); else gen.write(value);
+    }
+
+    private static void writeJsonBoolean(JsonGenerator gen, String key, boolean value) {
+        if (key != null) gen.write(key, value); else gen.write(value);
     }
 
     private static void writeWrapperDouble(double v, JsonGenerator gen, String key) {
@@ -997,6 +982,12 @@ public final class ProtobufJsonRuntime {
         if (type == io.vidocq.champollion.protobuf.wkt.Value.class) {
             return readValueDynamic(parser, v);
         }
+        return readScalarWktValue(type, parser, v);
+    }
+
+    /** {@code NullValue} and the wrapper well-known types, read from the bare JSON form of their value. */
+    private static Object readScalarWktValue(Class<?> type, JsonParser parser, JsonParser.Event v)
+            throws IOException {
         if (type == io.vidocq.champollion.protobuf.wkt.NullValue.class) {
             // Accept any JSON value (the spec says NullValue maps to JSON null, but
             // the other values are also mapped to NULL_VALUE in case of invariant).
@@ -1015,18 +1006,16 @@ public final class ProtobufJsonRuntime {
             return new Wrappers.Int64Value(readInt64(parser, v));
         }
         if (type == Wrappers.UInt64Value.class) {
-            return new Wrappers.UInt64Value(readInt64(parser, v));
+            return new Wrappers.UInt64Value(readUInt64Range(parser, v));
         }
         if (type == Wrappers.Int32Value.class) {
             return new Wrappers.Int32Value(readInt32(parser, v));
         }
         if (type == Wrappers.UInt32Value.class) {
-            return new Wrappers.UInt32Value(readInt32(parser, v));
+            return new Wrappers.UInt32Value((int) readUInt32Range(parser, v));
         }
         if (type == Wrappers.BoolValue.class) {
-            if (v == JsonParser.Event.VALUE_TRUE) return new Wrappers.BoolValue(true);
-            if (v == JsonParser.Event.VALUE_FALSE) return new Wrappers.BoolValue(false);
-            throw new IOException("Expected boolean for BoolValue, got " + v);
+            return readBoolValue(v);
         }
         if (type == Wrappers.StringValue.class) {
             requireString(v, "StringValue");
@@ -1037,6 +1026,27 @@ public final class ProtobufJsonRuntime {
             return new Wrappers.BytesValue(java.util.Base64.getDecoder().decode(parser.getString()));
         }
         throw new IOException("Not a WKT class: " + type);
+    }
+
+    private static Wrappers.BoolValue readBoolValue(JsonParser.Event v) throws IOException {
+        if (v == JsonParser.Event.VALUE_TRUE) return new Wrappers.BoolValue(true);
+        if (v == JsonParser.Event.VALUE_FALSE) return new Wrappers.BoolValue(false);
+        throw new IOException("Expected boolean for BoolValue, got " + v);
+    }
+
+    /** An unsigned 64-bit value, as a JSON number or string, kept bit for bit in a {@code long}. */
+    private static long readUInt64Range(JsonParser parser, JsonParser.Event v) throws IOException {
+        java.math.BigDecimal bd = readBigDecimal(parser, v, "uint64");
+        java.math.BigInteger bi;
+        try {
+            bi = bd.toBigIntegerExact();
+        } catch (ArithmeticException _) {
+            throw new IOException("uint64 expects integer-valued JSON, got " + bd);
+        }
+        if (bi.signum() < 0 || bi.bitLength() > Long.SIZE) {
+            throw new IOException("uint64 out of range: " + bd);
+        }
+        return bi.longValue();
     }
 
     private static void requireString(JsonParser.Event v, String wkt) throws IOException {

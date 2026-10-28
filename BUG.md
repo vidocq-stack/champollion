@@ -132,11 +132,17 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261027-04 — Protobuf JSON: `UInt64Value` is written signed
 
 - **Date** : 2026-10-27
-- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
-- **Module touché** : `champollion-protobuf` — the JSON writer of `Wrappers.UInt64Value`, at top level and as a field
+- **Statut** : FIXED (test/protobuf-coverage)
+- **Module touché** : `champollion-protobuf` — `ProtobufJsonRuntime`, the JSON writer and reader of `Wrappers.UInt64Value` and `Wrappers.UInt32Value`, at top level and as a field
 - **Symptôme** : a value above `Long.MAX_VALUE` is written as a negative number.
 - **Reproduction minimale** : write a `UInt64Value` holding `-1L` (2^64 - 1 unsigned): the JSON says `"-1"`, the proto3 JSON mapping expects `"18446744073709551615"`.
 - **Hypothèse de cause** : the writer uses `Long.toString` instead of `Long.toUnsignedString`.
+- **Investigations** :
+  - 2026-10-28 : confirmed by `WrapperJsonMappingTest`, and the same holds for `UInt32Value` (`-1` instead of
+    `4294967295`). The reader had the mirror defect: `"18446744073709551615"` and `4294967295` were rejected
+    (signed parsing), and a negative value was accepted. Fix: the wrapper writers share one switch that writes
+    `Long.toUnsignedString` / `Integer.toUnsignedLong`, and the readers use the unsigned range checks of the
+    `uint64` / `uint32` fields. Regression tests: `WrapperJsonMappingTest.uint64_*` and `uint32_*`.
 
 ## BUG-20261027-05 — Protobuf: `BytesValue` compares and prints the array, not the bytes
 
