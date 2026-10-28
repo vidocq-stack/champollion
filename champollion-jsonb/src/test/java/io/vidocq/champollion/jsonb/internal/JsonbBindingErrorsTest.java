@@ -104,7 +104,9 @@ class JsonbBindingErrorsTest {
     /** A bean with overloaded setters: the most specific parameter type wins. */
     public static class Overloaded {
         private Object value;
-        public Overloaded() {}
+        public Overloaded() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
         public Object getValue() { return value; }
         public void setValue(Object value) { this.value = value; }
         public void setValue(String value) { this.value = "string:" + value; }
@@ -112,7 +114,9 @@ class JsonbBindingErrorsTest {
 
     /** A bean whose setter throws. */
     public static class ThrowingSetter {
-        public ThrowingSetter() {}
+        public ThrowingSetter() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
         public String getName() { return "n"; }
         public void setName(String name) { throw new IllegalStateException("refused " + name); }
     }
@@ -122,7 +126,9 @@ class JsonbBindingErrorsTest {
         private String a = "a";
         private String b = "b";
         private transient String c = "c";
-        public HiddenSetters() {}
+        public HiddenSetters() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
         public String getA() { return a; }
         void setA(String a) { this.a = a; }
         public String getB() { return b; }
@@ -140,7 +146,9 @@ class JsonbBindingErrorsTest {
 
     public static class Dog implements Pet {
         private String name;
-        public Dog() {}
+        public Dog() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
     }

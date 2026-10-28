@@ -129,7 +129,9 @@ class JsonbSerializersAndAdaptersTest {
         @JsonbTypeDeserializer(ShapeDeserializer.class)
         public Shape publicShape;
 
-        public Annotated() {}
+        public Annotated() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public Point getCorner() { return corner; }
         public void setCorner(Point corner) { this.corner = corner; }
@@ -173,7 +175,7 @@ class JsonbSerializersAndAdaptersTest {
             assertEquals(new PointHolder(new Point(3, 4)), jsonb.fromJson(json, PointHolder.class));
             assertNull(jsonb.fromJson("{\"point\":null}", PointHolder.class).point());
             assertEquals(Map.of("p", new Point(5, 6)), jsonb.fromJson("{\"p\":\"5,6\"}",
-                    new java.util.HashMap<String, Point>() {}.getClass().getGenericSuperclass()));
+                    TypeTokens.parameterized(java.util.HashMap.class, String.class, Point.class)));
         }
     }
 
@@ -181,7 +183,7 @@ class JsonbSerializersAndAdaptersTest {
     void a_global_adapter_returning_null_writes_null() throws Exception {
         try (Jsonb jsonb = JsonbBuilder.create(new JsonbConfig().withAdapters(new NullAdapter()))) {
             assertEquals("[null]", jsonb.toJson(List.of(new Point(1, 1)),
-                    new java.util.ArrayList<Point>() {}.getClass().getGenericSuperclass()));
+                    TypeTokens.parameterized(java.util.ArrayList.class, Point.class)));
         }
     }
 

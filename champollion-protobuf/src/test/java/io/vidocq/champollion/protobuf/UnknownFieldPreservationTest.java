@@ -76,7 +76,8 @@ class UnknownFieldPreservationTest {
         assertEquals(List.of(7), set.get(4).fixed32s());
         assertArrayEquals(new byte[] {9}, set.get(5).lengthDelimited().get(0));
         assertNull(set.get(6));
-        assertThrows(UnsupportedOperationException.class, () -> set.asMap().clear());
+        var view = set.asMap();
+        assertThrows(UnsupportedOperationException.class, view::clear);
     }
 
     @Test

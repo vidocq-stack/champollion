@@ -46,7 +46,9 @@ class DurationWithDateFormatRegressionTest {
         private Duration duration;
         private Period period;
 
-        public Spans() {}
+        public Spans() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public Duration getDuration() { return duration; }
         public void setDuration(Duration duration) { this.duration = duration; }
@@ -58,7 +60,9 @@ class DurationWithDateFormatRegressionTest {
         private Duration duration;
         private Period period;
 
-        public AnnotatedSpans() {}
+        public AnnotatedSpans() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         @JsonbDateFormat(PATTERN)
         public Duration getDuration() { return duration; }

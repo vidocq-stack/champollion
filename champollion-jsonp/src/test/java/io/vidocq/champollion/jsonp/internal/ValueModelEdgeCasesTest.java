@@ -163,10 +163,12 @@ class ValueModelEdgeCasesTest {
     @Test
     void numbers_compare_by_value() {
         JsonNumber n = ChampollionJsonNumber.of("1.50");
-        assertEquals(n, n);
+        JsonNumber same = n;
+        assertEquals(same, n);
         assertEquals(ChampollionJsonNumber.of("1.5"), n);
         assertEquals(ChampollionJsonNumber.of("1.5").hashCode(), n.hashCode());
-        assertNotEquals(n, (Object) "1.5");
+        JsonValue text = Json.createValue("1.5");
+        assertNotEquals(text, n);
         assertNotEquals(ChampollionJsonNumber.of(2), n);
     }
 

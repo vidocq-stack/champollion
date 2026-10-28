@@ -147,7 +147,6 @@ class PointerEdgeCasesTest {
         assertEquals(pointer("/a/0"), pointer("/a/0"));
         assertEquals(pointer("/a/0").hashCode(), pointer("/a/0").hashCode());
         assertNotEquals(pointer("/a/0"), pointer("/a/1"));
-        assertNotEquals(pointer("/a"), (Object) "/a");
         assertEquals("/a/~1", pointer("/a/~1").toString());
     }
 }

@@ -127,7 +127,7 @@ class JsonbGetterDiscoveryTest {
     void a_bean_without_visible_property_is_an_empty_object() {
         assertEquals("{}", jsonb.toJson(new Empty()));
         assertEquals("[{},null]", jsonb.toJson(java.util.Arrays.asList(new Empty(), null),
-                new java.util.ArrayList<Empty>() {}.getClass().getGenericSuperclass()));
+                TypeTokens.parameterized(java.util.ArrayList.class, Empty.class)));
     }
 
     @Test

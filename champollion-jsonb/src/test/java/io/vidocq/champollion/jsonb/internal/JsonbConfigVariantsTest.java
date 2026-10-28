@@ -62,7 +62,9 @@ class JsonbConfigVariantsTest {
         private String firstName;
         public int itemCount;
 
-        public BeanNames() {}
+        public BeanNames() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public String getFirstName() { return firstName; }
         public void setFirstName(String firstName) { this.firstName = firstName; }
@@ -108,7 +110,9 @@ class JsonbConfigVariantsTest {
         private String viaGetter = "g";
         public String open = "o";
 
-        public Mixed() {}
+        public Mixed() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public String getViaGetter() { return viaGetter; }
         public void setViaGetter(String viaGetter) { this.viaGetter = viaGetter; }
@@ -223,7 +227,8 @@ class JsonbConfigVariantsTest {
         try (var jsonb = with(new JsonbConfig().withStrictIJSON(true))) {
             assertThrows(JsonbException.class, () -> jsonb.toJson("text"));
             assertThrows(JsonbException.class, () -> jsonb.toJson(1));
-            assertThrows(JsonbException.class, () -> jsonb.toJson(java.time.LocalDate.of(2020, 1, 2)));
+            var date = java.time.LocalDate.of(2020, 1, 2);
+            assertThrows(JsonbException.class, () -> jsonb.toJson(date));
             assertEquals("[1]", jsonb.toJson(List.of(1)));
             assertEquals("{\"a\":1}", jsonb.toJson(Map.of("a", 1)));
             assertEquals("[\"AQI=\"]", jsonb.toJson(new byte[][]{{1, 2}}));

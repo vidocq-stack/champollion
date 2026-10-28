@@ -366,20 +366,32 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
     private static void emitEnumDecoders(PrintWriter pw, List<? extends RecordComponentElement> comps) {
         Set<String> emitted = new LinkedHashSet<>();
         for (RecordComponentElement rc : comps) {
-            ProtobufField pf = rc.getAnnotation(ProtobufField.class);
-            if (pf == null || pf.type() != FieldType.ENUM) continue;
-            TypeMirror tm = rc.asType();
-            TypeMirror enumType = isListType(tm) ? ((DeclaredType) tm).getTypeArguments().get(0) : tm;
-            TypeElement enumElement = (TypeElement) ((DeclaredType) enumType).asElement();
-            String fqn = enumElement.getQualifiedName().toString();
-            if (!emitted.add(fqn)) continue;
-            pw.println();
-            pw.println("    private static " + fqn + " " + enumDecoderName(fqn) + "(int number) {");
-            pw.println("        return switch (number) {");
-            Set<Integer> numbers = new LinkedHashSet<>();
-            int ordinal = 0;
-            for (Element constant : enumElement.getEnclosedElements()) {
-                if (constant.getKind() != ElementKind.ENUM_CONSTANT) continue;
+            TypeElement enumElement = enumElementOf(rc);
+            if (enumElement != null && emitted.add(enumElement.getQualifiedName().toString())) {
+                emitEnumDecoder(pw, enumElement);
+            }
+        }
+    }
+
+    /** The enum type an {@code ENUM} component reads (the element type of a list), or null for another field type. */
+    private static TypeElement enumElementOf(RecordComponentElement rc) {
+        ProtobufField pf = rc.getAnnotation(ProtobufField.class);
+        if (pf == null || pf.type() != FieldType.ENUM) return null;
+        TypeMirror tm = rc.asType();
+        TypeMirror enumType = isListType(tm) ? ((DeclaredType) tm).getTypeArguments().get(0) : tm;
+        return (TypeElement) ((DeclaredType) enumType).asElement();
+    }
+
+    /** The decoder of one enum type: a switch from the wire number to the constant. */
+    private static void emitEnumDecoder(PrintWriter pw, TypeElement enumElement) {
+        String fqn = enumElement.getQualifiedName().toString();
+        pw.println();
+        pw.println("    private static " + fqn + " " + enumDecoderName(fqn) + "(int number) {");
+        pw.println("        return switch (number) {");
+        Set<Integer> numbers = new LinkedHashSet<>();
+        int ordinal = 0;
+        for (Element constant : enumElement.getEnclosedElements()) {
+            if (constant.getKind() == ElementKind.ENUM_CONSTANT) {
                 ProtoEnumValue declared = constant.getAnnotation(ProtoEnumValue.class);
                 int number = declared != null ? declared.value() : ordinal;
                 ordinal++;
@@ -387,10 +399,10 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
                     pw.println("            case " + number + " -> " + fqn + "." + constant.getSimpleName() + ";");
                 }
             }
-            pw.println("            default -> null;");
-            pw.println("        };");
-            pw.println(END_METHOD);
         }
+        pw.println("            default -> null;");
+        pw.println("        };");
+        pw.println(END_METHOD);
     }
 
     private static String enumDecoderName(String enumFqn) {

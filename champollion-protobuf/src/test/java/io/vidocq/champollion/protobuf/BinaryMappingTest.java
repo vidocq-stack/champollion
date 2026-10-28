@@ -391,7 +391,7 @@ class BinaryMappingTest {
     }
 
     @Test
-    void an_enum_field_must_be_bound_to_an_enum() throws IOException {
+    void an_enum_field_must_be_bound_to_an_enum() {
         Parser<EnumOnInt> parser = Protobuf.runtimeParser(EnumOnInt.class);
         byte[] one = {0x08, 0x01};
         assertThrows(IOException.class, () -> parser.parseFrom(one));

@@ -96,7 +96,9 @@ class JsonbBeanFormatsTest {
         private Duration duration;
         private Period period;
 
-        public Dates() {}
+        public Dates() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         @JsonbDateFormat(STAMP_PATTERN)
         public Date getDate() { return date; }
@@ -166,7 +168,9 @@ class JsonbBeanFormatsTest {
         private Duration duration;
         private Period period;
 
-        public DefaultPatternDates() {}
+        public DefaultPatternDates() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         @JsonbDateFormat
         public Date getDate() { return date; }
@@ -212,7 +216,9 @@ class JsonbBeanFormatsTest {
         @JsonbDateFormat(value = "yyyy-MM-dd'T'HH:mmx", locale = "fr-FR")
         private Date stamp;
 
-        public FieldFormats() {}
+        public FieldFormats() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public LocalDate getDay() { return day; }
         public void setDay(LocalDate day) { this.day = day; }
@@ -233,7 +239,9 @@ class JsonbBeanFormatsTest {
         private BigDecimal bd;
         private BigInteger bi;
 
-        public Numbers() {}
+        public Numbers() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public int getI() { return i; }
         @JsonbNumberFormat("#,##0")
@@ -267,7 +275,9 @@ class JsonbBeanFormatsTest {
     public static class ClassNumberFormat {
         private int code;
 
-        public ClassNumberFormat() {}
+        public ClassNumberFormat() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public int getCode() { return code; }
         public void setCode(int code) { this.code = code; }
@@ -278,7 +288,9 @@ class JsonbBeanFormatsTest {
         private LocalDate day;
         private Date date;
 
-        public Plain() {}
+        public Plain() {
+            // JSON-B instantiates the bean through its public no-argument constructor
+        }
 
         public LocalDate getDay() { return day; }
         public void setDay(LocalDate day) { this.day = day; }
