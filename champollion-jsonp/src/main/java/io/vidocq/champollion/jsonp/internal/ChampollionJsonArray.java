@@ -91,6 +91,18 @@ public final class ChampollionJsonArray extends AbstractList<JsonValue> implemen
         return typed;
     }
 
+    /**
+     * {@link List#equals} contract (JSON-P §4.2: a {@code JsonArray} equals any list holding equal
+     * values in the same order); compares the backing lists directly when both sides are ours.
+     */
+    @Override public boolean equals(Object o) {
+        if (o instanceof ChampollionJsonArray other) return values.equals(other.values);
+        return super.equals(o);
+    }
+
+    /** {@link List#hashCode} contract, computed by the backing list. */
+    @Override public int hashCode() { return values.hashCode(); }
+
     @Override public String toString() {
         var sb = new StringBuilder().append('[');
         for (int i = 0; i < values.size(); i++) {
