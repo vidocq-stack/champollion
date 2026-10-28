@@ -49,6 +49,8 @@ import java.util.Map;
  */
 public final class ProtoParser {
 
+    private static final String OPTION = "option";
+
     private static final Map<String, Scalar> SCALARS = Map.ofEntries(
             Map.entry("double", Scalar.DOUBLE), Map.entry("float", Scalar.FLOAT),
             Map.entry("int32", Scalar.INT32), Map.entry("int64", Scalar.INT64),
@@ -87,7 +89,7 @@ public final class ProtoParser {
                 switch (t.text()) {
                     case "package" -> packageName = parsePackage();
                     case "import" -> imports.add(parseImport());
-                    case "option" -> options.add(parseOption());
+                    case OPTION -> options.add(parseOption());
                     case "message" -> messages.add(parseMessage());
                     case "enum" -> enums.add(parseEnum());
                     case "service" -> services.add(parseService());
@@ -113,7 +115,7 @@ public final class ProtoParser {
             if (t.kind() == TokenKind.IDENT) {
                 if (t.text().equals("rpc")) {
                     methods.add(parseRpcMethod());
-                } else if (t.text().equals("option")) {
+                } else if (t.text().equals(OPTION)) {
                     parseOption();
                 } else {
                     throw err("Unexpected token inside service body", t);
@@ -251,20 +253,19 @@ public final class ProtoParser {
         List<OptionEntry> options = new ArrayList<>();
         while (peek().kind() != TokenKind.RBRACE && peek().kind() != TokenKind.EOF) {
             Token t = peek();
-            if (t.kind() == TokenKind.SEMI) { consume(); continue; }
-            if (t.kind() == TokenKind.DOT) {
+            if (t.kind() == TokenKind.SEMI) {
+                consume();
+            } else if (t.kind() == TokenKind.DOT) {
                 // Champ dont le type est fully-qualified (.pkg.Type).
                 fields.add(parseField());
-                continue;
-            }
-            if (t.kind() == TokenKind.IDENT) {
+            } else if (t.kind() == TokenKind.IDENT) {
                 switch (t.text()) {
                     case "message" -> nested.add(parseMessage());
                     case "enum" -> nestedEnums.add(parseEnum());
                     case "reserved" -> skipUntilSemi();
                     case "extensions" -> skipUntilSemi();
-                    case "option" -> options.add(parseOption());
-                    case "oneof" -> skipBlock("oneof"); // M2.1 : ignore oneof
+                    case OPTION -> options.add(parseOption());
+                    case "oneof" -> skipBlock(); // M2.1 : ignore oneof
                     case "map" -> skipUntilSemi();      // M2.1 : ignore map
                     default -> fields.add(parseField());
                 }
@@ -282,7 +283,7 @@ public final class ProtoParser {
         if (first.kind() == TokenKind.IDENT) {
             if (first.text().equals("repeated")) { kind = FieldKind.REPEATED; consume(); }
             else if (first.text().equals("optional")) { kind = FieldKind.OPTIONAL; consume(); }
-            else if (first.text().equals("required")) { /* proto2 legacy */ kind = FieldKind.SINGULAR; consume(); }
+            else if (first.text().equals("required")) { /* proto2 legacy: read as singular */ consume(); }
         }
         FieldTypeRef type = parseType();
         Token name = expect(TokenKind.IDENT);
@@ -324,22 +325,29 @@ public final class ProtoParser {
         List<EnumValueDecl> values = new ArrayList<>();
         while (peek().kind() != TokenKind.RBRACE && peek().kind() != TokenKind.EOF) {
             Token t = peek();
-            if (t.kind() == TokenKind.SEMI) { consume(); continue; }
-            if (t.kind() == TokenKind.IDENT) {
-                if (t.text().equals("option")) { parseOption(); continue; }
-                if (t.text().equals("reserved")) { skipUntilSemi(); continue; }
-                Token vname = consume();
-                expect(TokenKind.EQ);
-                int num = parseInt();
-                if (peek().kind() == TokenKind.LBRACK) skipBalanced(TokenKind.LBRACK, TokenKind.RBRACK);
-                expect(TokenKind.SEMI);
-                values.add(new EnumValueDecl(vname.text(), num));
-            } else {
+            if (t.kind() == TokenKind.SEMI) {
+                consume();
+            } else if (t.kind() != TokenKind.IDENT) {
                 throw err("Unexpected token inside enum", t);
+            } else if (t.text().equals(OPTION)) {
+                parseOption();
+            } else if (t.text().equals("reserved")) {
+                skipUntilSemi();
+            } else {
+                values.add(parseEnumValue());
             }
         }
         expect(TokenKind.RBRACE);
         return new EnumDecl(name.text(), values);
+    }
+
+    private EnumValueDecl parseEnumValue() {
+        Token vname = consume();
+        expect(TokenKind.EQ);
+        int num = parseInt();
+        if (peek().kind() == TokenKind.LBRACK) skipBalanced(TokenKind.LBRACK, TokenKind.RBRACK);
+        expect(TokenKind.SEMI);
+        return new EnumValueDecl(vname.text(), num);
     }
 
     private int parseInt() {
@@ -371,7 +379,7 @@ public final class ProtoParser {
         if (peek().kind() == TokenKind.SEMI) consume();
     }
 
-    private void skipBlock(String label) {
+    private void skipBlock() {
         consume(); // keyword
         // Optionally consume name
         if (peek().kind() == TokenKind.IDENT) consume();

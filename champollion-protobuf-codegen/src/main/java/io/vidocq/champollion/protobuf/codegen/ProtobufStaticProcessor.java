@@ -90,6 +90,17 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
     private static final String LIST_ADD = ".add(";
     private final Set<String> providers = new LinkedHashSet<>();
 
+    private void emitStaticParser(TypeElement type, Filer filer, Messager messager) {
+        try {
+            emitParser(type, filer);
+            String providerFqn = emitParserProvider(type, filer);
+            providers.add(providerFqn);
+        } catch (IOException ex) {
+            messager.printMessage(Diagnostic.Kind.ERROR,
+                    "Failed to emit static parser for " + type + ": " + ex, type);
+        }
+    }
+
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         Filer filer = processingEnv.getFiler();
@@ -98,21 +109,11 @@ public final class ProtobufStaticProcessor extends AbstractProcessor {
             if (e.getKind() != ElementKind.RECORD) {
                 messager.printMessage(Diagnostic.Kind.ERROR,
                         "@ProtobufStatic only supports records.", e);
-                continue;
-            }
-            if (e.getAnnotation(ProtobufMessage.class) == null) {
+            } else if (e.getAnnotation(ProtobufMessage.class) == null) {
                 messager.printMessage(Diagnostic.Kind.ERROR,
                         "@ProtobufStatic record must also be @ProtobufMessage.", e);
-                continue;
-            }
-            TypeElement type = (TypeElement) e;
-            try {
-                emitParser(type, filer);
-                String providerFqn = emitParserProvider(type, filer);
-                providers.add(providerFqn);
-            } catch (IOException ex) {
-                messager.printMessage(Diagnostic.Kind.ERROR,
-                        "Failed to emit static parser for " + type + ": " + ex, e);
+            } else {
+                emitStaticParser((TypeElement) e, filer, messager);
             }
         }
         if (roundEnv.processingOver() && !providers.isEmpty()) {

@@ -69,7 +69,7 @@ public final class ProtoToJavaCli {
                                     sourceDir.relativize(p).toString(),
                                     Files.readString(p));
                         } catch (IOException e) {
-                            throw new RuntimeException("Cannot read " + p, e);
+                            throw new java.io.UncheckedIOException("Cannot read " + p, e);
                         }
                     })
                     .toList();
