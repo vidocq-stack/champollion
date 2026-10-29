@@ -62,6 +62,33 @@ abstract sealed class GeneratorSink<T extends Closeable & Flushable> permits Wri
         append(s, 0, s.length());
     }
 
+    /** Appends the decimal form of {@code v}, as {@link Long#toString(long)} writes it, without building that string. */
+    abstract void appendLong(long v);
+
+    /** The longest decimal form of a {@code long}: a minus sign and 19 digits. */
+    static final int MAX_LONG_CHARS = 20;
+
+    /** Number of characters of the decimal form of {@code v}, which is not {@link Long#MIN_VALUE}. */
+    static int decimalLength(long v) {
+        int n = 1;
+        if (v < 0) {
+            n = 2;
+            v = -v;
+        }
+        long p = 10;
+        for (int i = 1; i < 19; i++) {
+            if (v < p) return n;
+            p *= 10;
+            n++;
+        }
+        return n;
+    }
+
+    /** Makes room for {@code n} more units, {@code n} at most the smallest buffer. */
+    final void ensureRoom(int n) {
+        while (capacity() - pos < n) makeRoom();
+    }
+
     /** Capacity of the buffer, in units. */
     abstract int capacity();
 
@@ -90,6 +117,11 @@ abstract sealed class GeneratorSink<T extends Closeable & Flushable> permits Wri
         } else {
             drain();
         }
+    }
+
+    /** Called once the generator is closed: a sink that borrowed a buffer gives it back. */
+    void release() {
+        // Nothing borrowed by default.
     }
 
     /** Hands the target what the buffer holds, in one write; an I/O error becomes a {@link JsonException}. */

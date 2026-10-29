@@ -74,6 +74,24 @@ public final class ChampollionJsonb implements Jsonb {
     private final java.util.concurrent.atomic.AtomicReference<io.vidocq.champollion.jsonp.internal.ChampollionJsonParser>
             parserSlot = new java.util.concurrent.atomic.AtomicReference<>();
 
+    /**
+     * The generator buffer kept between two writes to a stream. A document that outgrows the small buffer a
+     * generator starts with borrows it, and gives it back when the generator is closed: a list of a hundred
+     * records no longer grows a buffer from 128 bytes to 4 KB, copying it at each step.
+     */
+    private final java.util.concurrent.atomic.AtomicReference<byte[]> writeBufferSlot =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    /**
+     * The bytes of a request body kept between two reads of a stream. A body that fits is read whole, decoded
+     * to a string and parsed in place, with the kept parser: no decoder, no reader, no character buffer.
+     */
+    private final java.util.concurrent.atomic.AtomicReference<byte[]> readBufferSlot =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    /** Largest body read whole; a longer one is streamed. */
+    private static final int READ_BUFFER_SIZE = 8192;
+
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.jsonProvider = jsonProvider;
         this.prettyPrinting = booleanProp(config, JsonbConfig.FORMATTING);
@@ -312,7 +330,13 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     @Override public void toJson(Object object, Type runtimeType, OutputStream stream) {
-        try (JsonGenerator g = createGenerator(stream)) {
+        if (prettyPrinting || !(jsonProvider instanceof io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider)) {
+            try (JsonGenerator g = createGenerator(stream)) {
+                writeValue(g, object, runtimeType);
+            }
+            return;
+        }
+        try (JsonGenerator g = new io.vidocq.champollion.jsonp.internal.ChampollionJsonGenerator(stream, false, writeBufferSlot)) {
             writeValue(g, object, runtimeType);
         }
     }
@@ -396,8 +420,87 @@ public final class ChampollionJsonb implements Jsonb {
 
     @SuppressWarnings("unchecked")
     @Override public <T> T fromJson(InputStream stream, Type runtimeType) {
+        if (jsonProvider instanceof io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider) {
+            return (T) readValueFromStream(stream, runtimeType);
+        }
         try (JsonParser p = jsonProvider.createParser(stream)) {
             return (T) readValue(p, runtimeType);
+        }
+    }
+
+    /**
+     * Reads a body of at most {@link #READ_BUFFER_SIZE} bytes whole, and parses it as a string when it is
+     * UTF-8, with or without a byte order mark: {@code new String} replaces malformed input as the decoder of
+     * the streaming path does. Any other encoding (RFC 8259 §8.1, told by the zero bytes of the head), and a
+     * longer body, take the streaming path with the bytes already read put back in front. The stream is
+     * closed in every case, as the streaming parser closes it.
+     */
+    private Object readValueFromStream(InputStream stream, Type runtimeType) {
+        byte[] buffer = readBufferSlot.getAndSet(null);
+        if (buffer == null) buffer = new byte[READ_BUFFER_SIZE];
+        String text = null;
+        InputStream streamed;
+        try {
+            int length = readUpTo(stream, buffer);
+            int next = length == buffer.length ? stream.read() : -1;
+            if (next >= 0) {
+                // Longer than the buffer: stream it all, the bytes already read first.
+                byte[] head = java.util.Arrays.copyOf(buffer, length + 1);
+                head[length] = (byte) next;
+                streamed = new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(head), stream);
+            } else {
+                text = utf8Text(buffer, length);
+                streamed = text == null ? new java.io.ByteArrayInputStream(java.util.Arrays.copyOf(buffer, length)) : null;
+                closeQuietly(stream);
+            }
+        } catch (java.io.IOException e) {
+            closeQuietly(stream);
+            throw new JsonbException("I/O error while reading JSON", e);
+        } finally {
+            readBufferSlot.setRelease(buffer);
+        }
+        if (streamed != null) {
+            try (JsonParser p = jsonProvider.createParser(streamed)) {
+                return readValue(p, runtimeType);
+            }
+        }
+        return readValuePooledFromString(text, runtimeType);
+    }
+
+    /** Reads {@code in} into {@code buffer} until the end of the stream or a full buffer; returns how many bytes. */
+    private static int readUpTo(InputStream in, byte[] buffer) throws java.io.IOException {
+        int length = 0;
+        while (length < buffer.length) {
+            int n = in.read(buffer, length, buffer.length - length);
+            if (n < 0) break;
+            length += n;
+        }
+        return length;
+    }
+
+    /**
+     * The text of {@code bytes[0, length)} when it is UTF-8: no zero among the first two bytes (a zero there
+     * means UTF-16 or UTF-32, RFC 8259 §8.1) and no UTF-16 byte order mark. A UTF-8 byte order mark is skipped.
+     * {@code null} otherwise, and for an empty body, which the streaming path reports.
+     */
+    private static String utf8Text(byte[] bytes, int length) {
+        if (length == 0) return null;
+        if (length >= 2) {
+            int b0 = bytes[0] & 0xff;
+            int b1 = bytes[1] & 0xff;
+            if (b0 == 0 || b1 == 0 || (b0 == 0xFE && b1 == 0xFF) || (b0 == 0xFF && b1 == 0xFE)) return null;
+        } else if (bytes[0] == 0) {
+            return null;
+        }
+        int start = length >= 3 && (bytes[0] & 0xff) == 0xEF && (bytes[1] & 0xff) == 0xBB && (bytes[2] & 0xff) == 0xBF ? 3 : 0;
+        return new String(bytes, start, length - start, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void closeQuietly(InputStream in) {
+        try {
+            in.close();
+        } catch (java.io.IOException ignored) {
+            // the value is read; a failure to close the stream does not change it
         }
     }
 

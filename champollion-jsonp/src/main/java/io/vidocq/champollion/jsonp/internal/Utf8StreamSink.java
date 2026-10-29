@@ -22,6 +22,7 @@ package io.vidocq.champollion.jsonp.internal;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Encodes UTF-8 (RFC 3629) straight into a byte buffer handed to an {@link OutputStream}: the
@@ -41,18 +42,61 @@ final class Utf8StreamSink extends GeneratorSink<OutputStream> {
     private static final int MAX_SEQUENCE = 4;
     private static final byte REPLACEMENT = '?';
 
-    private byte[] buf = new byte[INITIAL];
+    private byte[] buf;
+
+    /** Where a buffer of the ceiling's size is kept between two generators; {@code null} when none is. */
+    private final AtomicReference<byte[]> kept;
+    private boolean borrowed;
 
     Utf8StreamSink(OutputStream out) {
+        this(out, null);
+    }
+
+    /** A sink that borrows the buffer kept in {@code kept} once its own small one is full, and gives it back on release. */
+    Utf8StreamSink(OutputStream out, AtomicReference<byte[]> kept) {
         super(out, CEILING);
+        this.buf = new byte[INITIAL];
+        this.kept = kept;
+    }
+
+    @Override void resize(int capacity) {
+        if (kept != null && !borrowed) {
+            byte[] large = kept.getAndSet(null);
+            if (large == null) large = new byte[CEILING];
+            System.arraycopy(buf, 0, large, 0, pos);
+            buf = large;
+            borrowed = true;
+            return;
+        }
+        buf = Arrays.copyOf(buf, capacity);
+    }
+
+    @Override void release() {
+        if (borrowed) {
+            borrowed = false;
+            kept.setRelease(buf);
+        }
+    }
+
+    @Override void appendLong(long v) {
+        if (v == Long.MIN_VALUE) {
+            append(Long.toString(v));
+            return;
+        }
+        ensureRoom(MAX_LONG_CHARS);
+        int end = pos + decimalLength(v);
+        int i = end;
+        long u = v < 0 ? -v : v;
+        do {
+            buf[--i] = (byte) ('0' + (int) (u % 10));
+            u /= 10;
+        } while (u != 0);
+        if (v < 0) buf[--i] = '-';
+        pos = end;
     }
 
     @Override int capacity() {
         return buf.length;
-    }
-
-    @Override void resize(int capacity) {
-        buf = Arrays.copyOf(buf, capacity);
     }
 
     @Override void write(char c) {

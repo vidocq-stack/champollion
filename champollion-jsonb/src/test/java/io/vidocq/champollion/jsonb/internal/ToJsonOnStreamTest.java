@@ -82,6 +82,76 @@ class ToJsonOnStreamTest {
         }
     }
 
+    /** {@code List<Todo>}, as a REST layer builds it from the generic return type of a resource method. */
+    private record ListOf(java.lang.reflect.Type element) implements java.lang.reflect.ParameterizedType {
+        @Override public java.lang.reflect.Type[] getActualTypeArguments() { return new java.lang.reflect.Type[] {element}; }
+        @Override public java.lang.reflect.Type getRawType() { return List.class; }
+        @Override public java.lang.reflect.Type getOwnerType() { return null; }
+    }
+
+    private static List<Todo> todos(int n) {
+        List<Todo> todos = new ArrayList<>();
+        for (int i = 1; i <= n; i++) todos.add(new Todo(i, "Todo " + i, false));
+        return List.copyOf(todos);
+    }
+
+    @Test
+    void aListOfAHundredTodosOnAStreamAllocatesNoBufferPerCall() throws Exception {
+        // BENCH-20261029-01: 21 640 bytes per call, of which ~8 KB of generator buffer grown from 128 bytes
+        // to 4 KB, and one string per id.
+        try (Jsonb jsonb = JsonbBuilder.create()) {
+            List<Todo> todos = todos(100);
+            var type = new ListOf(Todo.class);
+            var out = new ByteArrayOutputStream(8_192);
+            Runnable call = () -> {
+                out.reset();
+                jsonb.toJson(todos, type, out);
+            };
+            call.run();
+            assertEquals(jsonb.toJson(todos, type), out.toString(StandardCharsets.UTF_8));
+            long perCall = bytesPerCall(call);
+            assertTrue(perCall < 1_024, "toJson of 100 todos on a stream allocates " + perCall + " bytes per call");
+        }
+    }
+
+    @Test
+    void successiveWritesOfDifferentSizesEachGetTheirOwnBytes() throws Exception {
+        try (Jsonb jsonb = JsonbBuilder.create()) {
+            for (int n : new int[] {1_000, 1, 0, 300, 2}) {
+                List<Todo> todos = todos(n);
+                var out = new ByteArrayOutputStream();
+                jsonb.toJson(todos, out);
+                assertEquals(jsonb.toJson(todos), out.toString(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    /** Writes the todo, then the same todo again with the {@link Jsonb} it was given, to a stream of its own. */
+    public static class EchoingSerializer implements jakarta.json.bind.serializer.JsonbSerializer<Todo> {
+        static Jsonb jsonb;
+        static final ByteArrayOutputStream echoes = new ByteArrayOutputStream();
+
+        @Override
+        public void serialize(Todo todo, jakarta.json.stream.JsonGenerator generator,
+                              jakarta.json.bind.serializer.SerializationContext ctx) {
+            jsonb.toJson(List.of(todo.id(), todo.title()), echoes);
+            generator.writeStartObject().write("id", todo.id()).write("title", todo.title()).writeEnd();
+        }
+    }
+
+    @Test
+    void aSerializerMayWriteToAnotherStreamWithTheSameJsonb() throws Exception {
+        try (Jsonb jsonb = JsonbBuilder.create(new JsonbConfig().withSerializers(new EchoingSerializer()))) {
+            EchoingSerializer.jsonb = jsonb;
+            EchoingSerializer.echoes.reset();
+            var out = new ByteArrayOutputStream();
+            jsonb.toJson(todos(2), new ListOf(Todo.class), out);
+            assertEquals("[{\"id\":1,\"title\":\"Todo 1\"},{\"id\":2,\"title\":\"Todo 2\"}]",
+                    out.toString(StandardCharsets.UTF_8));
+            assertEquals("[1,\"Todo 1\"][2,\"Todo 2\"]", EchoingSerializer.echoes.toString(StandardCharsets.UTF_8));
+        }
+    }
+
     /** Mean bytes the current thread allocates per call, after a warm-up. HotSpot accounts them
      *  exactly; {@code com.sun.management} is reached through reflection because the module
      *  under test reads neither {@code java.management} nor {@code jdk.management}. */

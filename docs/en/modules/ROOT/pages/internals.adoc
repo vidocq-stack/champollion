@@ -65,6 +65,10 @@ Key components (package `io.vidocq.champollion.jsonp.internal`):
 
 The symmetric `JsonGenerator` buffers its own output [.tag-new]#NEW#: every value, key, comma and escape goes into a `char[1024]` of the generator, and the target `Writer` receives one write per full buffer and one at the end, whatever the `Writer` (`OutputStreamWriter`, `StringWriter`, a user `Writer`). Until 0.4.0-RC1 the target was wrapped in a `BufferedWriter` of 256 characters, whose every call takes a lock: about a dozen locked calls per small object. RFC 8259 §7 escapes are written from a switch per special character.
 
+On an `OutputStream` the generator encodes UTF-8 itself into a byte buffer that starts at 128 bytes [.tag-new]#NEW#. Integral numbers are written digit by digit into that buffer, with no `Long.toString` string per value, and the context stack is a plain array whose top changes in place. A `Jsonb` keeps one 4 KB buffer between two writes: a document that outgrows the 128 bytes borrows it, instead of growing its own buffer by doubling and copying, and gives it back when the generator closes. A small document never touches it. A list of 100 records written to a stream dropped from 21.6 KB to 8.8 KB allocated per call, and from 5.7 µs to 4.1 µs (BENCH-20261029-02).
+
+`Jsonb.fromJson(InputStream, ...)` reads a body of up to 8 KB whole into a buffer the `Jsonb` keeps, decodes it to a `String` when it is UTF-8 (with or without a byte order mark), and parses that string with the kept parser [.tag-new]#NEW#. There is no pushback stream, no charset decoder and no reader per call: a 50-byte body costs 496 bytes instead of 2,848. A body in UTF-16 or UTF-32, or longer than 8 KB, takes the streaming path described above, with the bytes already read put back in front. In every case the stream is closed, as before.
+
 == JSON-B pipeline — runtime introspection (default mode)
 
 [mermaid]
@@ -123,7 +127,7 @@ Key traits:
 
 * **No `synchronized`** anywhere on the hot paths — caches are `ClassValue` / `ConcurrentHashMap`, safe under `Executors.newVirtualThreadPerTaskExecutor()`.
 * Per-call state (current config, serialization / deserialization contexts) lives in explicit per-operation objects (`ChampollionSerializationContext` / `ChampollionDeserializationContext`) passed down the call chain — no application-visible thread-local state, no ambient context mechanism.
-* The one piece of thread-local state is internal: `ChampollionJsonb` keeps a per-thread `ChampollionJsonParser` (P9) so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
+* The one piece of state kept between calls is internal: `ChampollionJsonb` keeps a `ChampollionJsonParser` (P9), and, since 0.4.0-SNAPSHOT, a 4 KB generator buffer and an 8 KB read buffer [.tag-new]#NEW#. Each sits in an atomic slot: a call takes it out and puts it back, and a call that finds the slot empty, on another thread or reentrant, uses one of its own. None of them is a `ThreadLocal`. The parser is kept so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
 
 == AOT compatibility
 

@@ -281,6 +281,144 @@ class Utf8StreamGeneratorTest {
         assertThrows(JsonException.class, g::close);
     }
 
+    private static final long[] INTEGRALS = {
+            0, 1, -1, 9, 10, -10, 99, 100, 12_345, Integer.MAX_VALUE, Integer.MIN_VALUE,
+            999_999_999_999_999_999L, 1_000_000_000_000_000_000L, -1_000_000_000_000_000_000L,
+            Long.MAX_VALUE, Long.MIN_VALUE, Long.MIN_VALUE + 1};
+
+    @Test
+    void integralNumbersAreWrittenAsLongToStringWritesThem() {
+        Consumer<JsonGenerator> body = g -> {
+            g.writeStartObject();
+            for (long v : INTEGRALS) {
+                g.write("l" + v, v);
+                if (v == (int) v) g.write("i" + v, (int) v);
+            }
+            g.writeStartArray("values");
+            for (long v : INTEGRALS) {
+                g.write(v);
+                if (v == (int) v) g.write((int) v);
+            }
+            g.writeEnd();
+            g.writeEnd();
+        };
+        var expected = new StringBuilder("{");
+        var array = new StringBuilder();
+        for (long v : INTEGRALS) {
+            expected.append("\"l").append(v).append("\":").append(v).append(',');
+            array.append(v).append(',');
+            if (v == (int) v) {
+                expected.append("\"i").append(v).append("\":").append(v).append(',');
+                array.append(v).append(',');
+            }
+        }
+        array.setLength(array.length() - 1);
+        expected.append("\"values\":[").append(array).append("]}");
+        assertEquals(expected.toString(), new String(toStream(body), StandardCharsets.UTF_8));
+        assertSameAsWriter(body);
+    }
+
+    @Test
+    void integralNumbersAreNeverSplitAtTheEndOfTheBuffer() {
+        // Each length of number lands on every offset of the buffer, while it grows and once it is drained.
+        Consumer<JsonGenerator> body = g -> {
+            g.writeStartArray();
+            for (int i = 0; i < 3_000; i++) g.write(i % 7 == 0 ? Long.MIN_VALUE : -((long) i * 7_919));
+            g.writeEnd();
+        };
+        var expected = new StringBuilder("[");
+        for (int i = 0; i < 3_000; i++) expected.append(i % 7 == 0 ? Long.MIN_VALUE : -((long) i * 7_919)).append(',');
+        expected.setCharAt(expected.length() - 1, ']');
+        assertEquals(expected.toString(), new String(toStream(body), StandardCharsets.UTF_8));
+        assertSameAsWriter(body);
+    }
+
+    /** One hundred todos, as a REST list endpoint returns them: about 4 KB. */
+    private static void hundredTodos(JsonGenerator g) {
+        var raw = (RawJsonKeyWriter) g;
+        g.writeStartArray();
+        for (int i = 1; i <= 100; i++) {
+            g.writeStartObject();
+            raw.writeKeyRawWithColon("\"id\":");
+            g.write((long) i);
+            raw.writeKeyRawWithColon("\"title\":");
+            g.write("Todo " + i);
+            raw.writeKeyRawWithColon("\"done\":");
+            g.write(false);
+            g.writeEnd();
+        }
+        g.writeEnd();
+    }
+
+    @Test
+    void aGeneratorOnAKeptBufferWritesTheSameBytes() {
+        var kept = new java.util.concurrent.atomic.AtomicReference<byte[]>();
+        for (Consumer<JsonGenerator> body : java.util.List.<Consumer<JsonGenerator>>of(
+                Utf8StreamGeneratorTest::hundredTodos, Utf8StreamGeneratorTest::smallTodo,
+                g -> { g.writeStartArray(); for (int i = 0; i < 2_000; i++) g.write("tâche 😀 " + i); g.writeEnd(); })) {
+            var out = new ByteArrayOutputStream();
+            try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
+                body.accept(g);
+            }
+            assertArrayEquals(reference(body), out.toByteArray());
+        }
+    }
+
+    @Test
+    void onlyADocumentLargerThanTheSmallBufferBorrowsTheKeptOne() {
+        var kept = new java.util.concurrent.atomic.AtomicReference<byte[]>();
+        var out = new ByteArrayOutputStream();
+        try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
+            smallTodo(g);
+        }
+        assertEquals(null, kept.get(), "a 47-byte document borrowed the kept buffer");
+        try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
+            hundredTodos(g);
+        }
+        byte[] buffer = kept.get();
+        assertTrue(buffer != null, "a 4 KB document left no buffer to keep");
+        try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
+            g.writeStartArray();
+            for (int i = 0; i < 1_000; i++) g.write(i);
+            assertEquals(null, kept.get(), "the kept buffer is not lent while it is borrowed");
+            g.writeEnd();
+        }
+        assertTrue(buffer == kept.get(), "the same buffer is given back");
+        assertThrows(IllegalArgumentException.class, () -> new ChampollionJsonGenerator(out, false,
+                (java.util.concurrent.atomic.AtomicReference<byte[]>) null));
+    }
+
+    @Test
+    void aListOfAHundredTodosOnAKeptBufferAllocatesNeitherBuffersNorNumberStrings() {
+        var kept = new java.util.concurrent.atomic.AtomicReference<byte[]>();
+        var out = new ByteArrayOutputStream(8_192);
+        String[] titles = new String[101];
+        for (int i = 1; i <= 100; i++) titles[i] = "Todo " + i;
+        Runnable call = () -> {
+            out.reset();
+            try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
+                var raw = (RawJsonKeyWriter) g;
+                g.writeStartArray();
+                for (int i = 1; i <= 100; i++) {
+                    g.writeStartObject();
+                    raw.writeKeyRawWithColon("\"id\":");
+                    g.write((long) i);
+                    raw.writeKeyRawWithColon("\"title\":");
+                    g.write(titles[i]);
+                    raw.writeKeyRawWithColon("\"done\":");
+                    g.write(false);
+                    g.writeEnd();
+                }
+                g.writeEnd();
+            }
+        };
+        call.run();
+        assertEquals(4_085, out.size());
+        long perCall = bytesPerCall(call);
+        // A fixed cost per generator (its small buffer, sink and context stack), nothing per element.
+        assertTrue(perCall < 512, "generating 100 todos on a kept buffer allocates " + perCall + " bytes per call");
+    }
+
     /** Mean bytes the current thread allocates per call, after a warm-up. HotSpot accounts them
      *  exactly; {@code com.sun.management} is reached through reflection because the module
      *  under test reads neither {@code java.management} nor {@code jdk.management}. */

@@ -15,6 +15,65 @@ as baselines.
 
 ---
 
+## BENCH-20261029-02 — Jsonb on byte streams: writing a list and reading a small body (BENCH-20261029-01 leads)
+
+- **Date** : 2026-10-29
+- **Commit** : branch `perf/json-write-list-read-record` (base `e682d2a`)
+- **JVM** : Temurin 25+36 LTS
+- **Hardware** : Apple M5 Max / 128 GB RAM, not pinned, desktop load (indicative; the official numbers are those
+  of the vidocq-benchmarks bench window)
+- **OS** : macOS 27.0.1
+- **Origin** : the bench-json microbenchmark of VidocqTools/vidocq-benchmarks (BENCH-20261029-01, commit
+  `97b683f`) found Champollion 31 % slower than Jackson 2 writing a list of 100 todos through a
+  `ParameterizedType`, with 2.4× the allocation, and 55 % slower reading a 50-byte creation body, with 3× the
+  allocation. `TodoBench` reproduces its three cases (same records, same payloads, a fresh
+  `ByteArrayOutputStream(256)` and `toByteArray()`, a `ByteArrayInputStream` per read).
+- **Commande exacte** :
+  ```bash
+  ./mvnw -ntp install -DskipTests -pl champollion-jsonp,champollion-jsonb
+  ./mvnw -ntp clean package -DskipTests -pl champollion-bench   # clean: the shaded jar otherwise keeps stale classes
+  java -jar champollion-bench/target/benchmarks.jar TodoBench -prof gc   # 2 forks, 3×2 s warm-up, 5×2 s measurement
+  ```
+
+**Where the bytes went** (main, per call):
+
+- *Write list, 21 640 B*: the generator buffer grows from 128 bytes to 4 KB by doubling, about 8 KB of copies;
+  one `Long.toString` string per id; the `ByteArrayOutputStream` and `toByteArray()`, about 8 KB, which Jackson
+  pays too.
+- *Read, 2 848 B*: per call a `PushbackInputStream`, a 4-byte head, a UTF-8 decoder with its 1 KB byte buffer
+  and a reader, then a new parser with its `char[512]` and `StringBuilder`: the kept parser served only `String`
+  and `Reader` input.
+
+**Changes**:
+
+1. `Jsonb.fromJson(InputStream, ...)` reads a body of up to 8 KB whole into a buffer the `Jsonb` keeps, decodes
+   it with `new String(..., UTF_8)` when the head says UTF-8 (BOM skipped), and parses it with the kept parser.
+   UTF-16/32 and longer bodies take the streaming path, the bytes already read put back in front.
+2. The generator writes `int` and `long` values digit by digit into its buffer (`GeneratorSink.appendLong`).
+3. The generator context stack is a `Ctx[]` whose top is replaced in place, instead of an `ArrayDeque` popped and
+   pushed for each value.
+4. `Jsonb.toJson(..., OutputStream)` gives the generator a slot holding a 4 KB buffer. A document that outgrows
+   the 128-byte starting buffer borrows it instead of doubling, and gives it back on `close()`.
+
+Tried and changed on measurement: handing the kept 4 KB buffer to every generator from the start cost
+`writeOne` 10 ns (25.5 → 35.5 ns, two atomic operations per call on a 38-byte document); borrowing it only
+when a document outgrows 128 bytes brings `writeOne` back to 25.3 ns.
+
+- **Résultats** (`avgt`, ns/op, and `gc.alloc.rate.norm`, B/op):
+  ```
+  Benchmark                            main (e682d2a)          branch                  Jackson 2 (same run as main)
+  TodoBench.champollion_writeOne        25.466 ± 0.332  496 B   25.306 ±  0.226  496 B  104.794 ±   2.471  832 B
+  TodoBench.champollion_writeList     5657.540 ± 17.079 21640 B 4058.374 ± 46.838 8768 B 3950.282 ± 104.976 9088 B
+  TodoBench.champollion_readCreation   295.697 ± 4.290  2848 B  177.987 ± 33.493  496 B  127.384 ±   4.440  892 B
+  ```
+- **Delta vs main** : writeList −28 % time, −59 % allocation (on par with Jackson 2, which allocates more);
+  readCreation −40 % time, −83 % allocation (less than Jackson 2, still ~40 % slower); writeOne unchanged.
+  What reading still pays: the body as a `String`, the keys `title` and `done` materialised by
+  `getString()` in the generated binding, and four atomic operations on the kept parser and buffer.
+- **Conformance** : JSON-P 2.1 TCK 179/179 + pluggability 18/18; JSON-B 3.0 TCK 295 run, 290 pass, 5 skipped (as on main).
+
+---
+
 ## BENCH-20260612-02 — P13: single-pass numbers + bit-stack state machine (Parsson overtaken on MEDIUM/LARGE)
 
 - **Date** : 2026-06-12

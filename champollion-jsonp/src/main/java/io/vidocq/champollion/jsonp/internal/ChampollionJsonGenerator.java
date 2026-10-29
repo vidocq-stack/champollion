@@ -30,8 +30,8 @@ import java.io.OutputStream;
 import java.io.Writer;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Generator JSON-P 2.1 push-based, RFC 8259 strict.
@@ -78,14 +78,16 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     /** The generator's own buffer: every value, key, comma and escape goes to it. */
     private final GeneratorSink<?> out;
     private final boolean pretty;
-    private final Deque<Ctx> stack = new ArrayDeque<>();
+    /** The contexts, root first: a plain array, as a value changes the top in place rather than popping and pushing it. */
+    private Ctx[] stack = new Ctx[8];
+    private int size;
     private int depth = 0;
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
         if (out == null) throw new IllegalArgumentException("writer is null");
         this.out = new WriterSink(out);
         this.pretty = pretty;
-        this.stack.push(Ctx.ROOT_BEFORE);
+        push(Ctx.ROOT_BEFORE);
     }
 
     /**
@@ -96,7 +98,22 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         if (out == null) throw new IllegalArgumentException("output stream is null");
         this.out = new Utf8StreamSink(out);
         this.pretty = pretty;
-        this.stack.push(Ctx.ROOT_BEFORE);
+        push(Ctx.ROOT_BEFORE);
+    }
+
+    /**
+     * As {@link #ChampollionJsonGenerator(OutputStream, boolean)}, with a place where the caller keeps a buffer
+     * from one document to the next. A small document stays in the small buffer the generator starts with; a
+     * document that outgrows it borrows the kept buffer, of the size at which the generator hands its bytes to
+     * {@code out}, instead of growing its own, and gives it back on {@link #close()}. Several generators may
+     * share the place: one that finds it empty allocates a buffer, which it leaves there when it is closed.
+     */
+    public ChampollionJsonGenerator(OutputStream out, boolean pretty, AtomicReference<byte[]> keptBuffer) {
+        if (out == null) throw new IllegalArgumentException("output stream is null");
+        if (keptBuffer == null) throw new IllegalArgumentException("kept buffer place is null");
+        this.out = new Utf8StreamSink(out, keptBuffer);
+        this.pretty = pretty;
+        push(Ctx.ROOT_BEFORE);
     }
 
     // ===== writeStart* / writeEnd =====
@@ -104,7 +121,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     @Override public JsonGenerator writeStartObject() {
         beforeValue();
         write('{');
-        stack.push(Ctx.OBJECT_FIRST);
+        push(Ctx.OBJECT_FIRST);
         depth++;
         return this;
     }
@@ -112,7 +129,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     @Override public JsonGenerator writeStartObject(String name) {
         beforeKey(name);
         write('{');
-        stack.push(Ctx.OBJECT_FIRST);
+        push(Ctx.OBJECT_FIRST);
         depth++;
         return this;
     }
@@ -120,7 +137,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     @Override public JsonGenerator writeStartArray() {
         beforeValue();
         write('[');
-        stack.push(Ctx.ARRAY_FIRST);
+        push(Ctx.ARRAY_FIRST);
         depth++;
         return this;
     }
@@ -128,13 +145,13 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     @Override public JsonGenerator writeStartArray(String name) {
         beforeKey(name);
         write('[');
-        stack.push(Ctx.ARRAY_FIRST);
+        push(Ctx.ARRAY_FIRST);
         depth++;
         return this;
     }
 
     @Override public JsonGenerator writeEnd() {
-        Ctx top = stack.peek();
+        Ctx top = peek();
         if (top == null || top == Ctx.ROOT_BEFORE || top == Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("writeEnd() called without matching start");
         }
@@ -149,7 +166,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
             indent();
         }
         write(isObject ? '}' : ']');
-        stack.pop();
+        pop();
         afterValue();
         return this;
     }
@@ -186,14 +203,14 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     @Override public JsonGenerator write(String name, int value) {
         beforeKey(name);
-        writeRaw(Integer.toString(value));
+        out.appendLong(value);
         afterValue();
         return this;
     }
 
     @Override public JsonGenerator write(String name, long value) {
         beforeKey(name);
-        writeRaw(Long.toString(value));
+        out.appendLong(value);
         afterValue();
         return this;
     }
@@ -285,14 +302,14 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     @Override public JsonGenerator write(int value) {
         beforeValue();
-        writeRaw(Integer.toString(value));
+        out.appendLong(value);
         afterValue();
         return this;
     }
 
     @Override public JsonGenerator write(long value) {
         beforeValue();
-        writeRaw(Long.toString(value));
+        out.appendLong(value);
         afterValue();
         return this;
     }
@@ -337,16 +354,16 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      */
     @Override
     public void writeKeyRaw(String preQuotedKey) {
-        Ctx top = stack.peek();
+        Ctx top = peek();
         switch (top) {
             case OBJECT_FIRST -> {
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             case OBJECT_AFTER_VALUE -> {
                 write(',');
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
         }
@@ -361,16 +378,16 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      */
     @Override
     public void writeKeyRawWithColon(String preQuotedKeyWithColon) {
-        Ctx top = stack.peek();
+        Ctx top = peek();
         switch (top) {
             case OBJECT_FIRST -> {
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             case OBJECT_AFTER_VALUE -> {
                 write(',');
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
         }
@@ -379,7 +396,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     }
 
     @Override public void close() {
-        if (stack.peek() != Ctx.ROOT_AFTER) {
+        if (peek() != Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("close() called with open containers or empty document");
         }
         // Spec §3.5: close() closes the underlying Writer/OutputStream and
@@ -389,6 +406,8 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
             out.closeTarget();
         } catch (IOException e) {
             throw new JsonException("I/O error closing generator", e);
+        } finally {
+            out.release();
         }
     }
 
@@ -404,38 +423,38 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     // ===== state machine helpers =====
 
     private void beforeValue() {
-        Ctx top = stack.peek();
+        Ctx top = peek();
         switch (top) {
-            case ROOT_BEFORE -> { stack.pop(); stack.push(Ctx.ROOT_AFTER); }
+            case ROOT_BEFORE -> { replaceTop(Ctx.ROOT_AFTER); }
             case ARRAY_FIRST -> {
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.ARRAY_AFTER);
+                replaceTop(Ctx.ARRAY_AFTER);
             }
             case ARRAY_AFTER -> {
                 write(',');
                 if (pretty) { write('\n'); indent(); }
             }
             case OBJECT_VALUE -> {
-                stack.pop(); stack.push(Ctx.OBJECT_AFTER_VALUE);
+                replaceTop(Ctx.OBJECT_AFTER_VALUE);
             }
             default -> throw new JsonGenerationException("Unexpected value at this position (state=" + top + ")");
         }
     }
 
     private void beforeKey(String name) {
-        Ctx top = stack.peek();
+        Ctx top = peek();
         switch (top) {
             case OBJECT_FIRST -> {
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             case OBJECT_AFTER_VALUE -> {
                 write(',');
                 if (pretty) { write('\n'); indent(); }
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             case OBJECT_KEY -> {
-                stack.pop(); stack.push(Ctx.OBJECT_VALUE);
+                replaceTop(Ctx.OBJECT_VALUE);
             }
             default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
         }
@@ -446,10 +465,10 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     private void afterValue() {
         // For *named* values in an object, we are in OBJECT_VALUE → switch to OBJECT_AFTER_VALUE.
-        Ctx top = stack.peek();
+        Ctx top = peek();
         if (top == Ctx.OBJECT_VALUE) {
-            stack.pop();
-            stack.push(Ctx.OBJECT_AFTER_VALUE);
+            pop();
+            push(Ctx.OBJECT_AFTER_VALUE);
         }
     }
 
@@ -496,6 +515,23 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
             return null;
         }
         return CONTROL_ESCAPES[c];
+    }
+
+    private Ctx peek() {
+        return size == 0 ? null : stack[size - 1];
+    }
+
+    private void push(Ctx ctx) {
+        if (size == stack.length) stack = Arrays.copyOf(stack, size << 1);
+        stack[size++] = ctx;
+    }
+
+    private void pop() {
+        stack[--size] = null;
+    }
+
+    private void replaceTop(Ctx ctx) {
+        stack[size - 1] = ctx;
     }
 
     private void indent() {
