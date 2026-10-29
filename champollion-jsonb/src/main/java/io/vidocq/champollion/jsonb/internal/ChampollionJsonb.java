@@ -27,6 +27,8 @@ import jakarta.json.spi.JsonProvider;
 import jakarta.json.stream.JsonGenerator;
 import jakarta.json.stream.JsonParser;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import java.io.InputStream;
@@ -47,6 +49,8 @@ import java.lang.reflect.Type;
  * <p>No {@code synchronized} — caches use {@link ClassValue}.</p>
  */
 public final class ChampollionJsonb implements Jsonb {
+
+    private static final System.Logger LOG = System.getLogger(ChampollionJsonb.class.getName());
 
     private final JsonProvider jsonProvider;
     private final RuntimeBindingRegistry writeRegistry;
@@ -94,9 +98,39 @@ public final class ChampollionJsonb implements Jsonb {
         this.writeRegistry.setGlobalAdapters(adapterMap);
         this.readRegistry = new RuntimeReadRegistry(defaultDateFormat, binaryStrategy, namingStrategy, visibilityStrategy, configLocale, failOnUnknown, creatorParametersRequired);
         this.readRegistry.setGlobalAdapters(adapterMap);
-        this.writeRegistry.setGlobalSerializers(collectSerializers(config));
-        this.readRegistry.setGlobalDeserializers(collectDeserializers(config));
-        this.staticBindings = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
+        var serializers = collectSerializers(config);
+        var deserializers = collectDeserializers(config);
+        this.writeRegistry.setGlobalSerializers(serializers);
+        this.readRegistry.setGlobalDeserializers(deserializers);
+        // A generated binding implements the default mapping of its type: under a configuration that changes the
+        // mapping, the runtime registries serve every type, the generated bindings are not consulted.
+        List<String> customised = new ArrayList<>();
+        if (this.writeNullValues) customised.add(JsonbConfig.NULL_VALUES);
+        if (this.strictIJson) customised.add(JsonbConfig.STRICT_IJSON);
+        if (defaultDateFormat != null) customised.add(JsonbConfig.DATE_FORMAT);
+        if (binaryStrategy != null) customised.add(JsonbConfig.BINARY_DATA_STRATEGY);
+        if (namingStrategy != null
+                && !jakarta.json.bind.config.PropertyNamingStrategy.IDENTITY.equals(namingStrategy)) {
+            customised.add(JsonbConfig.PROPERTY_NAMING_STRATEGY);
+        }
+        if (orderStrategy != null
+                && !jakarta.json.bind.config.PropertyOrderStrategy.LEXICOGRAPHICAL.equals(orderStrategy)) {
+            customised.add(JsonbConfig.PROPERTY_ORDER_STRATEGY);
+        }
+        if (visibilityStrategy != null) customised.add(JsonbConfig.PROPERTY_VISIBILITY_STRATEGY);
+        if (configLocale != null) customised.add(JsonbConfig.LOCALE);
+        if (failOnUnknown) customised.add("jsonb.fail-on-unknown-properties");
+        if (creatorParametersRequired) customised.add(JsonbConfig.CREATOR_PARAMETERS_REQUIRED);
+        if (!adapterMap.isEmpty()) customised.add(JsonbConfig.ADAPTERS);
+        if (!serializers.isEmpty()) customised.add(JsonbConfig.SERIALIZERS);
+        if (!deserializers.isEmpty()) customised.add(JsonbConfig.DESERIALIZERS);
+        StaticBindings generated = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
+        if (!customised.isEmpty() && !generated.view().isEmpty()) {
+            LOG.log(System.Logger.Level.DEBUG, () -> "Generated JSON-B bindings not used: the configuration sets "
+                    + customised + ", which they do not implement; the runtime mapping serves every type.");
+            generated = StaticBindings.EMPTY;
+        }
+        this.staticBindings = generated;
         this.writeRegistry.setStaticBindings(this.staticBindings);
     }
 

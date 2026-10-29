@@ -371,3 +371,22 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : reproduced with `ChampollionJsonParser` (jshell). Not fixed in the Sonar clean-up branch: it changes
     parser behaviour checked by the JSON-P TCK and the JSON-B deserializer escape hatch, so it wants its own change.
+
+## BUG-20261029-01 — JSON-B: a generated binding ignored the `JsonbConfig`
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED 2026-10-29 (branch `fix/static-binding-config`, generated-code audit)
+- **Module touché** : `champollion-jsonb` — `ChampollionJsonb` (static-first lookup at the root, and below it through
+  `RuntimeBindingRegistry.resolveClass`)
+- **Symptôme** : a type with a generated `$$Binding` (`@JsonbStatic`) was always written and read by it, whatever the
+  `JsonbConfig`. With `withNullValues(true)`, `new Person(null, "Hugo")` gave `{"lastName":"Hugo"}` instead of
+  `{"firstName":null,"lastName":"Hugo"}`; with `LOWER_CASE_WITH_UNDERSCORES`, `firstName` instead of `first_name`.
+  The same type without a generated binding honoured both.
+- **Reproduction minimale** : `JsonbStaticBindingTest.ConfigurationAware` (`champollion-jsonb`).
+- **Hypothèse de cause** : the generated code implements the default mapping, and the lookup consulted it before any
+  configuration.
+- **Investigations** :
+  - 2026-10-29 : found by the generated-code audit. Fix: `ChampollionJsonb` drops the generated bindings when the
+    configuration sets anything they do not implement (null values, naming/order/visibility strategy, date format,
+    locale, binary strategy, adapters, serializers, deserializers, strict I-JSON, required creator parameters,
+    `jsonb.fail-on-unknown-properties`); formatting and encoding keep them. Documented in `concepts.adoc`.

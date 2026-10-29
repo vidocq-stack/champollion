@@ -234,4 +234,66 @@ class JsonbStaticBindingTest {
             assertEquals(0, CoordStaticBinding.writeCalls);
         }
     }
+
+    /**
+     * A generated binding implements the default mapping of its type (JSON-B 3.0 §3): it knows nothing of a
+     * {@link JsonbConfig} that changes the output, so such a configuration is served by the runtime mapping.
+     */
+    @Nested
+    @DisplayName("A configuration the bindings were not generated for")
+    class ConfigurationAware {
+
+        public record Person(String firstName, String lastName) {}
+
+        static class PersonStaticBinding implements JsonbBinding<Person> {
+            static volatile int calls = 0;
+
+            @Override public Class<Person> type() { return Person.class; }
+
+            @Override public void write(JsonGenerator g, Person value) {
+                calls++;
+                g.writeStartObject();
+                if (value.firstName() != null) g.write("firstName", value.firstName());
+                if (value.lastName() != null) g.write("lastName", value.lastName());
+                g.writeEnd();
+            }
+
+            @Override public Person read(JsonParser p) {
+                calls++;
+                throw new UnsupportedOperationException("not used by these tests");
+            }
+        }
+
+        private ChampollionJsonb jsonbWith(JsonbConfig config) {
+            var builder = new ChampollionJsonbBuilder();
+            builder.withConfig(config);
+            builder.withStaticBindings(List.of(new PersonStaticBinding()));
+            return builder.buildChampollion();
+        }
+
+        @Test
+        void null_values_are_written_by_the_runtime_mapping() {
+            PersonStaticBinding.calls = 0;
+            String json = jsonbWith(new JsonbConfig().withNullValues(true)).toJson(new Person(null, "Hugo"));
+            assertEquals("{\"firstName\":null,\"lastName\":\"Hugo\"}", json);
+            assertEquals(0, PersonStaticBinding.calls);
+        }
+
+        @Test
+        void a_naming_strategy_is_applied_by_the_runtime_mapping() {
+            PersonStaticBinding.calls = 0;
+            String json = jsonbWith(new JsonbConfig().withPropertyNamingStrategy(
+                    jakarta.json.bind.config.PropertyNamingStrategy.LOWER_CASE_WITH_UNDERSCORES))
+                    .toJson(new Person("Victor", "Hugo"));
+            assertEquals("{\"first_name\":\"Victor\",\"last_name\":\"Hugo\"}", json);
+            assertEquals(0, PersonStaticBinding.calls);
+        }
+
+        @Test
+        void formatting_keeps_the_static_binding() {
+            PersonStaticBinding.calls = 0;
+            jsonbWith(new JsonbConfig().withFormatting(true)).toJson(new Person("Victor", "Hugo"));
+            assertEquals(1, PersonStaticBinding.calls);
+        }
+    }
 }

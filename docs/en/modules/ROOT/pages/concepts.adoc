@@ -121,7 +121,7 @@ JSON-B builds on JSON-P: `Jsonb.toJson(obj)` ultimately pushes into a `JsonGener
 | JSON-B binding by `MethodHandles` introspection on first encounter, `ClassValue` cache. Cost amortized after warmup. Uses `MethodHandles.publicLookup()` on public record accessors and bean getters/setters — no `setAccessible`, no `opens` required from the consumer.
 
 | **Static mode** (or "codegen")
-| JSON-B binding generated at compile time by `champollion-codegen-apt`. `<Type>$$Binding`: zero reflection, no `MethodHandles` at all. AOT-friendly (GraalVM, Leyden).
+| JSON-B binding generated at compile time by `champollion-codegen-apt`. `<Type>$$Binding`: zero reflection, no `MethodHandles` at all. AOT-friendly (GraalVM, Leyden). A generated binding implements the default mapping: a `Jsonb` whose `JsonbConfig` changes the mapping (null values, naming, order or visibility strategy, date format, locale, binary strategy, adapters, serializers, deserializers, strict I-JSON, required creator parameters, `jsonb.fail-on-unknown-properties`) does not use it and maps every type at run time. Formatting and encoding keep it.
 
 | **Differential testing**
 | Automated suite: for each tested type, verify `runtime.toJson(o).equals(static.toJson(o))` and the symmetric for reads. Guardrail against codegen regressions.
