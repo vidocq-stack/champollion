@@ -15,6 +15,65 @@ as baselines.
 
 ---
 
+## BENCH-20261029-03 — Jsonb reads: the kept parser reuses its tokenizer and remembers member names
+
+- **Date** : 2026-10-29
+- **Commit** : branch `perf/json-read-keys` (base `a408722`)
+- **JVM** : Temurin 25+36 LTS
+- **Hardware** : Apple M5 Max / 128 GB RAM, not pinned, desktop load (indicative)
+- **OS** : macOS 27.0.1
+- **Origin** : follow-up of BENCH-20261029-02. After it, reading the 50-byte creation body still allocated 496 B
+  and was bimodal across forks (about 138 or 195 ns).
+- **Commande exacte** :
+  ```bash
+  ./mvnw -ntp install -Dmaven.test.skip=true -pl champollion-jsonp,champollion-jsonb
+  ./mvnw -ntp clean package -DskipTests -pl champollion-bench
+  java -jar champollion-bench/target/benchmarks.jar TodoBench.champollion_readCreation -f 6 -wi 3 -i 3
+  java -jar champollion-bench/target/benchmarks.jar 'JsonbReadBenchStatic.champollion_(static|runtime)|JsonpParseBench.champollion' \
+      -bm avgt -tu us -f 2 -wi 3 -i 4 -w 2s -r 2s -prof gc
+  ```
+  main is measured from the same worktree with the `src/main` changes stashed.
+
+**Where the bytes went** (main, 496 B per read): a new `JsonStringTokenizer` per `reset(String)` with its
+`StringBuilder(64)` (about 150 B), the strings of the two member names `title` and `done` (about 100 B), then the
+body string, the title value, the record and the benchmark's `ByteArrayInputStream`.
+
+**Changes**:
+
+1. `ChampollionJsonParser.reset(String)` reuses its `JsonStringTokenizer` (`JsonStringTokenizer.reset`).
+2. A parser made with `keepingKeys()`, as `Jsonb` makes the one it keeps, remembers the member names it reads in
+   64 slots: a name read again comes back as the same `String`, with its hash already computed for the `switch`
+   of the generated binding. Unescaped names of at most 32 characters only; a name replaces the one in its slot.
+   Parsers from `JsonProvider` do not keep names.
+
+Tried and REJECTED on measurement: one slot for the kept parser and the read buffer (2 atomic operations per
+read instead of 4): 150.4 ± 9.3 ns against 138.5 ± 5.2 ns for two slots, same machine, back to back.
+
+- **Résultats** (`avgt`; TodoBench 6 forks × 3 iterations, the others 2 forks × 4 iterations):
+  ```
+  Benchmark                                    main                      branch
+  TodoBench.champollion_readCreation           ~186 ns (bimodal), 496 B  134.3 ± 6.5 ns, 224 B   (Jackson 2: 130.5 ns, 920 B)
+  JsonbReadBenchStatic.champollion_static  S   0.187 µs,    408 B        0.143 µs,     88 B
+  JsonbReadBenchStatic.champollion_static  M   1.615 µs,  3 144 B        1.503 µs,  1 832 B
+  JsonbReadBenchStatic.champollion_static  L   216 ± 18 µs, 498 963 B    225 ± 5 µs, 397 401 B
+  JsonbReadBenchStatic.champollion_runtime S   0.262 µs,    678 B        0.212 µs,    338 B
+  JsonbReadBenchStatic.champollion_runtime M   2.358 µs,  5 248 B        1.884 µs,  3 936 B
+  JsonbReadBenchStatic.champollion_runtime L   233 ± 4 µs,  511 177 B    212 ± 15 µs, 397 401 B
+  JsonpParseBench.champollion              S   0.168 µs,  1 352 B        0.168 µs,  1 360 B
+  JsonpParseBench.champollion              M   0.602 µs,  1 352 B        0.603 µs,  1 360 B
+  JsonpParseBench.champollion              L   56.6 µs,   1 352 B        54.6 µs,   1 360 B
+  ```
+- **Delta vs main** : readCreation −28 % time, −55 % allocation, and no longer bimodal (126 to 147 ns per fork);
+  Jsonb reads of SMALL and MEDIUM −7 to −24 % time and −25 to −78 % allocation; LARGE −20 % allocation, time
+  within noise. A JSON-P parser from `JsonProvider` costs 8 B more (the reference to the name table, unused).
+  What a read still allocates is the body as a `String`, the values and the result; going below needs a tokenizer
+  over the UTF-8 bytes.
+- **Official protocol** : the vidocq-benchmarks bench-json run of the BENCH-20261029-02 changes (Champollion at
+  `3dca8e8d`) put Champollion ahead of Jackson 2 and 3 on all three cases: read 644 → 393 ns (Jackson 2 414 ns).
+- **Conformance** : JSON-P 2.1 TCK 179/179 + pluggability 18/18; JSON-B 3.0 TCK 295 run, 290 pass, 5 skipped.
+
+---
+
 ## BENCH-20261029-02 — Jsonb on byte streams: writing a list and reading a small body (BENCH-20261029-01 leads)
 
 - **Date** : 2026-10-29

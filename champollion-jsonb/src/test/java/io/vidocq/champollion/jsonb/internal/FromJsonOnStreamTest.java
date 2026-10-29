@@ -68,7 +68,8 @@ class FromJsonOnStreamTest {
         byte[] body = "{\"title\":\"Write the benchmark report\",\"done\":false}".getBytes(StandardCharsets.UTF_8);
         assertEquals(new TodoInput("Write the benchmark report", false), read(body));
         long perCall = bytesPerCall(() -> read(body));
-        assertTrue(perCall < 1_024, "fromJson of a 50-byte body allocates " + perCall + " bytes per call");
+        // The body as a string, the title, the record and the test's own stream: no parser, tokenizer nor key.
+        assertTrue(perCall < 320, "fromJson of a 50-byte body allocates " + perCall + " bytes per call");
     }
 
     @Test

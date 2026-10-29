@@ -367,7 +367,7 @@ public final class ChampollionJsonb implements Jsonb {
     private Object readValuePooledFromString(String src, Type runtimeType) {
         var parser = parserSlot.getAndSet(null);
         if (parser == null) {
-            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(src);
+            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(src).keepingKeys();
         } else {
             parser.reset(src);
         }
@@ -403,7 +403,7 @@ public final class ChampollionJsonb implements Jsonb {
     private Object readValuePooled(Reader reader, Type runtimeType) {
         var parser = parserSlot.getAndSet(null);
         if (parser == null) {
-            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(reader);
+            parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(reader).keepingKeys();
         } else {
             parser.reset(reader);
         }

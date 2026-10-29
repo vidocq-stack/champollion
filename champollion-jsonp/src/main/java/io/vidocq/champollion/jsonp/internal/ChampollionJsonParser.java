@@ -66,6 +66,12 @@ public final class ChampollionJsonParser implements JsonParser {
     private boolean nextReady;
     private Event lastEvent;
 
+    /** Number of member names a parser that keeps keys remembers. */
+    private static final int KEPT_KEYS = 64;
+
+    /** The member names read before, when this parser keeps them; {@code null} otherwise. */
+    private String[] keptKeys;
+
     public ChampollionJsonParser(Reader reader) {
         this.tokenizer = new JsonReaderTokenizer(reader);
     }
@@ -86,10 +92,24 @@ public final class ChampollionJsonParser implements JsonParser {
         clearState();
     }
 
-    /** P10.1 — {@code reset(String)} variant: tokenizer in direct String mode. */
+    /** P10.1 — {@code reset(String)} variant: tokenizer in direct String mode, reused when it already is. */
     public void reset(String src) {
-        this.tokenizer = new JsonStringTokenizer(src);
+        if (tokenizer instanceof JsonStringTokenizer strings) {
+            strings.reset(src);
+        } else {
+            this.tokenizer = new JsonStringTokenizer(src);
+        }
         clearState();
+    }
+
+    /**
+     * Makes this parser remember the member names it reads, across {@link #reset} calls: a name read again, as
+     * the members of a record are in every body, comes back as the same string instead of a new one. For a parser
+     * that is kept and reused, as {@code Jsonb} keeps one; a parser used once would only pay for the table.
+     */
+    public ChampollionJsonParser keepingKeys() {
+        if (keptKeys == null) keptKeys = new String[KEPT_KEYS];
+        return this;
     }
 
     private void clearState() {
@@ -260,6 +280,9 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public String getString() {
+        if (lastEvent == Event.KEY_NAME && keptKeys != null) {
+            return tokenizer.currentKey(keptKeys);
+        }
         if (lastEvent == Event.VALUE_STRING || lastEvent == Event.KEY_NAME
                 || lastEvent == Event.VALUE_NUMBER) {
             return tokenizer.currentString();

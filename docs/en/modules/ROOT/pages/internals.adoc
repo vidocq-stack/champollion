@@ -69,6 +69,8 @@ On an `OutputStream` the generator encodes UTF-8 itself into a byte buffer that 
 
 `Jsonb.fromJson(InputStream, ...)` reads a body of up to 8 KB whole into a buffer the `Jsonb` keeps, decodes it to a `String` when it is UTF-8 (with or without a byte order mark), and parses that string with the kept parser [.tag-new]#NEW#. There is no pushback stream, no charset decoder and no reader per call: a 50-byte body costs 496 bytes instead of 2,848. A body in UTF-16 or UTF-32, or longer than 8 KB, takes the streaming path described above, with the bytes already read put back in front. In every case the stream is closed, as before.
 
+The parser a `Jsonb` keeps is recycled whole between two reads [.tag-new]#NEW#: `reset(String)` reuses its tokenizer instead of building a new one, and the parser remembers the member names it has read, in a table of 64 slots. A name read again, as the members of a record are in every body, comes back as the same `String`, so neither the string nor its hash is computed again. Only unescaped names of at most 32 characters are kept; a name replaces the one that shared its slot. Reading the 50-byte body now allocates 224 bytes, the body, its one value and the record, and takes about 135 ns instead of 186 (BENCH-20261029-03). A parser created by `JsonProvider.createParser` does not keep names: used once, it would only pay for the table.
+
 == JSON-B pipeline — runtime introspection (default mode)
 
 [mermaid]

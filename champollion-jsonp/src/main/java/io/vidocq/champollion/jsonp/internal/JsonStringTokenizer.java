@@ -40,14 +40,23 @@ import java.math.BigDecimal;
  */
 public final class JsonStringTokenizer extends JsonTokenizer {
 
-    private final String src;
-    private final int srcLen;
+    private String src;
+    private int srcLen;
     private int srcPos = 0;
 
     public JsonStringTokenizer(String src) {
         if (src == null) throw new IllegalArgumentException("src is null");
         this.src = src;
         this.srcLen = src.length();
+    }
+
+    /** Reads {@code src} from its start, as a new tokenizer would: a kept parser reuses its tokenizer. */
+    void reset(String src) {
+        if (src == null) throw new IllegalArgumentException("src is null");
+        this.src = src;
+        this.srcLen = src.length();
+        this.srcPos = 0;
+        restart();
     }
 
     @Override

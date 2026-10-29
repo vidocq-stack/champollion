@@ -138,6 +138,51 @@ public abstract class JsonTokenizer {
         return valScratch ? buffer.charAt(i) : rangeChar(i);
     }
 
+    /** Longest key kept by {@link #currentKey}: longer ones are rare and would pin memory. */
+    static final int MAX_KEPT_KEY = 32;
+
+    /**
+     * The pending value read as a member name: when the same name, unescaped and short, was read before into
+     * {@code kept}, that string, otherwise a new one, kept for next time. {@code kept} has a power-of-two length;
+     * a name replaces the one that shared its slot.
+     */
+    public final String currentKey(String[] kept) {
+        if (valMaterialized != null) return valMaterialized;
+        if (valScratch || valLen > MAX_KEPT_KEY) return currentString();
+        int h = 0;
+        for (int i = 0; i < valLen; i++) h = 31 * h + rangeChar(i);
+        int slot = (h ^ (h >>> 16)) & (kept.length - 1);
+        String key = kept[slot];
+        if (key == null || !rangeEquals(key)) {
+            key = materializeRange();
+            kept[slot] = key;
+        }
+        valMaterialized = key;
+        return key;
+    }
+
+    /** True when the pending value range holds the characters of {@code s}. */
+    private boolean rangeEquals(String s) {
+        if (s.length() != valLen) return false;
+        for (int i = 0; i < valLen; i++) {
+            if (rangeChar(i) != s.charAt(i)) return false;
+        }
+        return true;
+    }
+
+    /** Back to the state of a new tokenizer, for a subclass that reads a new source. */
+    protected final void restart() {
+        buffer.setLength(0);
+        peek = NO_PEEK;
+        line = 1;
+        column = 0;
+        offset = 0;
+        valStart = -1;
+        valLen = 0;
+        valScratch = false;
+        valMaterialized = null;
+    }
+
     /** Registers a freshly scanned value as a source range. */
     protected final void valueRange(int start, int len) {
         valStart = start;
