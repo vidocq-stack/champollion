@@ -104,26 +104,8 @@ public final class ChampollionJsonb implements Jsonb {
         this.readRegistry.setGlobalDeserializers(deserializers);
         // A generated binding implements the default mapping of its type: under a configuration that changes the
         // mapping, the runtime registries serve every type, the generated bindings are not consulted.
-        List<String> customised = new ArrayList<>();
-        if (this.writeNullValues) customised.add(JsonbConfig.NULL_VALUES);
-        if (this.strictIJson) customised.add(JsonbConfig.STRICT_IJSON);
-        if (defaultDateFormat != null) customised.add(JsonbConfig.DATE_FORMAT);
-        if (binaryStrategy != null) customised.add(JsonbConfig.BINARY_DATA_STRATEGY);
-        if (namingStrategy != null
-                && !jakarta.json.bind.config.PropertyNamingStrategy.IDENTITY.equals(namingStrategy)) {
-            customised.add(JsonbConfig.PROPERTY_NAMING_STRATEGY);
-        }
-        if (orderStrategy != null
-                && !jakarta.json.bind.config.PropertyOrderStrategy.LEXICOGRAPHICAL.equals(orderStrategy)) {
-            customised.add(JsonbConfig.PROPERTY_ORDER_STRATEGY);
-        }
-        if (visibilityStrategy != null) customised.add(JsonbConfig.PROPERTY_VISIBILITY_STRATEGY);
-        if (configLocale != null) customised.add(JsonbConfig.LOCALE);
-        if (failOnUnknown) customised.add("jsonb.fail-on-unknown-properties");
-        if (creatorParametersRequired) customised.add(JsonbConfig.CREATOR_PARAMETERS_REQUIRED);
-        if (!adapterMap.isEmpty()) customised.add(JsonbConfig.ADAPTERS);
-        if (!serializers.isEmpty()) customised.add(JsonbConfig.SERIALIZERS);
-        if (!deserializers.isEmpty()) customised.add(JsonbConfig.DESERIALIZERS);
+        List<String> customised = mappingSettings(config, !adapterMap.isEmpty(), !serializers.isEmpty(),
+                !deserializers.isEmpty());
         StaticBindings generated = staticBindings == null ? StaticBindings.EMPTY : staticBindings;
         if (!customised.isEmpty() && !generated.view().isEmpty()) {
             LOG.log(System.Logger.Level.DEBUG, () -> "Generated JSON-B bindings not used: the configuration sets "
@@ -132,6 +114,35 @@ public final class ChampollionJsonb implements Jsonb {
         }
         this.staticBindings = generated;
         this.writeRegistry.setStaticBindings(this.staticBindings);
+    }
+
+    /**
+     * The settings of {@code config} that change the default mapping, which generated bindings implement: empty when
+     * they may serve their types. Formatting and encoding act on the generator and are not listed.
+     */
+    private static List<String> mappingSettings(JsonbConfig config, boolean adapters, boolean serializers,
+                                                boolean deserializers) {
+        List<String> settings = new ArrayList<>();
+        for (String key : List.of(JsonbConfig.NULL_VALUES, JsonbConfig.STRICT_IJSON,
+                JsonbConfig.CREATOR_PARAMETERS_REQUIRED, "jsonb.fail-on-unknown-properties")) {
+            if (booleanProp(config, key)) settings.add(key);
+        }
+        for (String key : List.of(JsonbConfig.DATE_FORMAT, JsonbConfig.BINARY_DATA_STRATEGY, JsonbConfig.LOCALE,
+                JsonbConfig.PROPERTY_VISIBILITY_STRATEGY)) {
+            if (config != null && config.getProperty(key).isPresent()) settings.add(key);
+        }
+        String naming = stringProp(config, JsonbConfig.PROPERTY_NAMING_STRATEGY);
+        if (naming != null && !jakarta.json.bind.config.PropertyNamingStrategy.IDENTITY.equals(naming)) {
+            settings.add(JsonbConfig.PROPERTY_NAMING_STRATEGY);
+        }
+        String order = stringProp(config, JsonbConfig.PROPERTY_ORDER_STRATEGY);
+        if (order != null && !jakarta.json.bind.config.PropertyOrderStrategy.LEXICOGRAPHICAL.equals(order)) {
+            settings.add(JsonbConfig.PROPERTY_ORDER_STRATEGY);
+        }
+        if (adapters) settings.add(JsonbConfig.ADAPTERS);
+        if (serializers) settings.add(JsonbConfig.SERIALIZERS);
+        if (deserializers) settings.add(JsonbConfig.DESERIALIZERS);
+        return settings;
     }
 
     private static boolean booleanProp(JsonbConfig config, String key) {
