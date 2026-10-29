@@ -170,8 +170,10 @@ class FromJsonOnStreamTest {
 
     @Test
     void emptyAndInvalidBodiesStillFail() {
-        assertThrows(RuntimeException.class, () -> read(new byte[0]));
-        assertThrows(RuntimeException.class, () -> read("{\"title\":".getBytes(StandardCharsets.UTF_8)));
+        byte[] empty = new byte[0];
+        byte[] truncated = "{\"title\":".getBytes(StandardCharsets.UTF_8);
+        assertThrows(RuntimeException.class, () -> read(empty));
+        assertThrows(RuntimeException.class, () -> read(truncated));
     }
 
     /** Reads its value, a JSON text inside a string, with the same {@link Jsonb}, from a stream. */

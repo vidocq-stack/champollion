@@ -438,33 +438,34 @@ public final class ChampollionJsonb implements Jsonb {
     private Object readValueFromStream(InputStream stream, Type runtimeType) {
         byte[] buffer = readBufferSlot.getAndSet(null);
         if (buffer == null) buffer = new byte[READ_BUFFER_SIZE];
-        String text = null;
-        InputStream streamed;
-        try {
-            int length = readUpTo(stream, buffer);
-            int next = length == buffer.length ? stream.read() : -1;
+        String text;
+        byte[] otherEncoding = null;
+        try (InputStream in = stream) {
+            int length = readUpTo(in, buffer);
+            int next = length == buffer.length ? in.read() : -1;
             if (next >= 0) {
                 // Longer than the buffer: stream it all, the bytes already read first.
                 byte[] head = java.util.Arrays.copyOf(buffer, length + 1);
                 head[length] = (byte) next;
-                streamed = new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(head), stream);
-            } else {
-                text = utf8Text(buffer, length);
-                streamed = text == null ? new java.io.ByteArrayInputStream(java.util.Arrays.copyOf(buffer, length)) : null;
-                closeQuietly(stream);
+                return readStreamed(new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(head), in), runtimeType);
             }
+            text = utf8Text(buffer, length);
+            if (text == null) otherEncoding = java.util.Arrays.copyOf(buffer, length);
         } catch (java.io.IOException e) {
-            closeQuietly(stream);
             throw new JsonbException("I/O error while reading JSON", e);
         } finally {
             readBufferSlot.setRelease(buffer);
         }
-        if (streamed != null) {
-            try (JsonParser p = jsonProvider.createParser(streamed)) {
-                return readValue(p, runtimeType);
-            }
+        return otherEncoding != null
+                ? readStreamed(new java.io.ByteArrayInputStream(otherEncoding), runtimeType)
+                : readValuePooledFromString(text, runtimeType);
+    }
+
+    /** Reads with a parser of the provider, which detects the encoding and closes {@code in}. */
+    private Object readStreamed(InputStream in, Type runtimeType) {
+        try (JsonParser p = jsonProvider.createParser(in)) {
+            return readValue(p, runtimeType);
         }
-        return readValuePooledFromString(text, runtimeType);
     }
 
     /** Reads {@code in} into {@code buffer} until the end of the stream or a full buffer; returns how many bytes. */
@@ -494,14 +495,6 @@ public final class ChampollionJsonb implements Jsonb {
         }
         int start = length >= 3 && (bytes[0] & 0xff) == 0xEF && (bytes[1] & 0xff) == 0xBB && (bytes[2] & 0xff) == 0xBF ? 3 : 0;
         return new String(bytes, start, length - start, java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    private static void closeQuietly(InputStream in) {
-        try {
-            in.close();
-        } catch (java.io.IOException ignored) {
-            // the value is read; a failure to close the stream does not change it
-        }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

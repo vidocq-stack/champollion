@@ -56,21 +56,8 @@ final class WriterSink extends GeneratorSink<Writer> {
         }
     }
 
-    @Override void appendLong(long v) {
-        if (v == Long.MIN_VALUE) {
-            append(Long.toString(v));
-            return;
-        }
-        ensureRoom(MAX_LONG_CHARS);
-        int end = pos + decimalLength(v);
-        int i = end;
-        long u = v < 0 ? -v : v;
-        do {
-            buf[--i] = (char) ('0' + (int) (u % 10));
-            u /= 10;
-        } while (u != 0);
-        if (v < 0) buf[--i] = '-';
-        pos = end;
+    @Override void put(int index, char c) {
+        buf[index] = c;
     }
 
     @Override int capacity() {

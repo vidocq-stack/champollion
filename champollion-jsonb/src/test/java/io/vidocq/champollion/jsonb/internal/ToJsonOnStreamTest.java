@@ -82,7 +82,7 @@ class ToJsonOnStreamTest {
         }
     }
 
-    /** {@code List<Todo>}, as a REST layer builds it from the generic return type of a resource method. */
+    /** A list of {@code element}, as a REST layer builds it from the generic return type of a resource method. */
     private record ListOf(java.lang.reflect.Type element) implements java.lang.reflect.ParameterizedType {
         @Override public java.lang.reflect.Type[] getActualTypeArguments() { return new java.lang.reflect.Type[] {element}; }
         @Override public java.lang.reflect.Type getRawType() { return List.class; }
@@ -126,7 +126,7 @@ class ToJsonOnStreamTest {
         }
     }
 
-    /** Writes the todo, then the same todo again with the {@link Jsonb} it was given, to a stream of its own. */
+    /** Writes each record, and first writes its id and title with the same {@link Jsonb}, to a stream of its own. */
     public static class EchoingSerializer implements jakarta.json.bind.serializer.JsonbSerializer<Todo> {
         static Jsonb jsonb;
         static final ByteArrayOutputStream echoes = new ByteArrayOutputStream();

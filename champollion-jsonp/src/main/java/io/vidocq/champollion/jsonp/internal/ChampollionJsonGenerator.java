@@ -84,10 +84,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     private int depth = 0;
 
     public ChampollionJsonGenerator(Writer out, boolean pretty) {
-        if (out == null) throw new IllegalArgumentException("writer is null");
-        this.out = new WriterSink(out);
-        this.pretty = pretty;
-        push(Ctx.ROOT_BEFORE);
+        this(new WriterSink(requireTarget(out, "writer is null")), pretty);
     }
 
     /**
@@ -95,10 +92,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      * {@code OutputStreamWriter}, and a buffer that starts small.
      */
     public ChampollionJsonGenerator(OutputStream out, boolean pretty) {
-        if (out == null) throw new IllegalArgumentException("output stream is null");
-        this.out = new Utf8StreamSink(out);
-        this.pretty = pretty;
-        push(Ctx.ROOT_BEFORE);
+        this(new Utf8StreamSink(requireTarget(out, "output stream is null")), pretty);
     }
 
     /**
@@ -109,11 +103,19 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
      * share the place: one that finds it empty allocates a buffer, which it leaves there when it is closed.
      */
     public ChampollionJsonGenerator(OutputStream out, boolean pretty, AtomicReference<byte[]> keptBuffer) {
-        if (out == null) throw new IllegalArgumentException("output stream is null");
-        if (keptBuffer == null) throw new IllegalArgumentException("kept buffer place is null");
-        this.out = new Utf8StreamSink(out, keptBuffer);
+        this(new Utf8StreamSink(requireTarget(out, "output stream is null"),
+                requireTarget(keptBuffer, "kept buffer place is null")), pretty);
+    }
+
+    private ChampollionJsonGenerator(GeneratorSink<?> out, boolean pretty) {
+        this.out = out;
         this.pretty = pretty;
         push(Ctx.ROOT_BEFORE);
+    }
+
+    private static <T> T requireTarget(T target, String message) {
+        if (target == null) throw new IllegalArgumentException(message);
+        return target;
     }
 
     // ===== writeStart* / writeEnd =====
@@ -152,7 +154,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
 
     @Override public JsonGenerator writeEnd() {
         Ctx top = peek();
-        if (top == null || top == Ctx.ROOT_BEFORE || top == Ctx.ROOT_AFTER) {
+        if (top == Ctx.ROOT_BEFORE || top == Ctx.ROOT_AFTER) {
             throw new JsonGenerationException("writeEnd() called without matching start");
         }
         boolean wasEmpty = (top == Ctx.OBJECT_FIRST || top == Ctx.ARRAY_FIRST);
@@ -425,7 +427,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
     private void beforeValue() {
         Ctx top = peek();
         switch (top) {
-            case ROOT_BEFORE -> { replaceTop(Ctx.ROOT_AFTER); }
+            case ROOT_BEFORE -> replaceTop(Ctx.ROOT_AFTER);
             case ARRAY_FIRST -> {
                 if (pretty) { write('\n'); indent(); }
                 replaceTop(Ctx.ARRAY_AFTER);
@@ -434,9 +436,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
                 write(',');
                 if (pretty) { write('\n'); indent(); }
             }
-            case OBJECT_VALUE -> {
-                replaceTop(Ctx.OBJECT_AFTER_VALUE);
-            }
+            case OBJECT_VALUE -> replaceTop(Ctx.OBJECT_AFTER_VALUE);
             default -> throw new JsonGenerationException("Unexpected value at this position (state=" + top + ")");
         }
     }
@@ -517,8 +517,9 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
         return CONTROL_ESCAPES[c];
     }
 
+    /** The current context; the root one is never popped, so there always is one. */
     private Ctx peek() {
-        return size == 0 ? null : stack[size - 1];
+        return stack[size - 1];
     }
 
     private void push(Ctx ctx) {

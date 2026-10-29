@@ -37,6 +37,9 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -371,19 +374,19 @@ class Utf8StreamGeneratorTest {
         try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
             smallTodo(g);
         }
-        assertEquals(null, kept.get(), "a 47-byte document borrowed the kept buffer");
+        assertNull(kept.get(), "a 47-byte document borrowed the kept buffer");
         try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
             hundredTodos(g);
         }
         byte[] buffer = kept.get();
-        assertTrue(buffer != null, "a 4 KB document left no buffer to keep");
+        assertNotNull(buffer, "a 4 KB document left no buffer to keep");
         try (JsonGenerator g = new ChampollionJsonGenerator(out, false, kept)) {
             g.writeStartArray();
             for (int i = 0; i < 1_000; i++) g.write(i);
-            assertEquals(null, kept.get(), "the kept buffer is not lent while it is borrowed");
+            assertNull(kept.get(), "the kept buffer is not lent while it is borrowed");
             g.writeEnd();
         }
-        assertTrue(buffer == kept.get(), "the same buffer is given back");
+        assertSame(buffer, kept.get(), "the same buffer is given back");
         assertThrows(IllegalArgumentException.class, () -> new ChampollionJsonGenerator(out, false,
                 (java.util.concurrent.atomic.AtomicReference<byte[]>) null));
     }

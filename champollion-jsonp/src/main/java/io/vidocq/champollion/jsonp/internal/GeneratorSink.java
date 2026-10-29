@@ -63,7 +63,25 @@ abstract sealed class GeneratorSink<T extends Closeable & Flushable> permits Wri
     }
 
     /** Appends the decimal form of {@code v}, as {@link Long#toString(long)} writes it, without building that string. */
-    abstract void appendLong(long v);
+    final void appendLong(long v) {
+        if (v == Long.MIN_VALUE) {
+            append(Long.toString(v));
+            return;
+        }
+        ensureRoom(MAX_LONG_CHARS);
+        int end = pos + decimalLength(v);
+        int i = end;
+        long u = v < 0 ? -v : v;
+        do {
+            put(--i, (char) ('0' + (int) (u % 10)));
+            u /= 10;
+        } while (u != 0);
+        if (v < 0) put(--i, '-');
+        pos = end;
+    }
+
+    /** Stores the ASCII character {@code c} at {@code index} of the buffer, which has room for it. */
+    abstract void put(int index, char c);
 
     /** The longest decimal form of a {@code long}: a minus sign and 19 digits. */
     static final int MAX_LONG_CHARS = 20;

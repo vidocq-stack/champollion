@@ -59,16 +59,19 @@ Tried and changed on measurement: handing the kept 4 KB buffer to every generato
 `writeOne` 10 ns (25.5 → 35.5 ns, two atomic operations per call on a 38-byte document); borrowing it only
 when a document outgrows 128 bytes brings `writeOne` back to 25.3 ns.
 
-- **Résultats** (`avgt`, ns/op, and `gc.alloc.rate.norm`, B/op):
+- **Résultats** (`avgt`, ns/op, and `gc.alloc.rate.norm`, B/op; 2 forks × 5 iterations unless stated):
   ```
   Benchmark                            main (e682d2a)          branch                  Jackson 2 (same run as main)
-  TodoBench.champollion_writeOne        25.466 ± 0.332  496 B   25.306 ±  0.226  496 B  104.794 ±   2.471  832 B
-  TodoBench.champollion_writeList     5657.540 ± 17.079 21640 B 4058.374 ± 46.838 8768 B 3950.282 ± 104.976 9088 B
-  TodoBench.champollion_readCreation   295.697 ± 4.290  2848 B  177.987 ± 33.493  496 B  127.384 ±   4.440  892 B
+  TodoBench.champollion_writeOne        25.466 ± 0.332  496 B   25.399 ±  0.395  496 B  104.794 ±   2.471  832 B
+  TodoBench.champollion_writeList     5657.540 ± 17.079 21640 B 4125.157 ± 56.784 8768 B 3950.282 ± 104.976 9088 B
+  TodoBench.champollion_readCreation   295.697 ± 4.290  2848 B  185.976 ± 21.221  496 B  127.384 ±   4.440  892 B
   ```
-- **Delta vs main** : writeList −28 % time, −59 % allocation (on par with Jackson 2, which allocates more);
-  readCreation −40 % time, −83 % allocation (less than Jackson 2, still ~40 % slower); writeOne unchanged.
-  What reading still pays: the body as a `String`, the keys `title` and `done` materialised by
+  `readCreation` on the branch is bimodal across forks: 6 forks × 3 iterations gave 193, 138, 199–209, 199, 196
+  and 186 ns per fork (the mean above). The committed variant and the final one show the same distribution, so
+  it is a JIT decision, not a code difference; main sat at 296 ns in both of its forks.
+- **Delta vs main** : writeList −27 % time, −59 % allocation (on par with Jackson 2, which allocates more);
+  readCreation −37 % time on average, −83 % allocation (less than Jackson 2, still ~45 % slower); writeOne
+  unchanged. What reading still pays: the body as a `String`, the keys `title` and `done` materialised by
   `getString()` in the generated binding, and four atomic operations on the kept parser and buffer.
 - **Conformance** : JSON-P 2.1 TCK 179/179 + pluggability 18/18; JSON-B 3.0 TCK 295 run, 290 pass, 5 skipped (as on main).
 
