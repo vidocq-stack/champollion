@@ -454,3 +454,21 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Fix** : the handles are resolved from the bean class's loader, once per class (`ClassValue`). A missing
   container still falls back silently; any other CDI failure is logged at WARNING before the no-argument fallback.
 - **Regression tests** : `CdiResolverTest` (5 cases). JSON-B TCK 295/0/5 in runtime and `--static` modes.
+
+## BUG-20261029-05 — JSON-B: a property typed by a type variable a subclass binds is read as a generic value
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED (fix/type-variables)
+- **Module touché** : `champollion-jsonb` — `internal.RuntimeReadRegistry`
+- **Symptôme** : with `class Base<T> { public T value; public List<T> items; }` and
+  `class Dto extends Base<Address> {}`, `fromJson(json, Dto.class)` fills `value` and the elements of `items` with
+  `LinkedHashMap`s instead of `Address` instances (JSON-B 3.0 §3.11); the caller then fails with a
+  `ClassCastException` far from the cause. Setters typed by `T` behave the same.
+- **Reproduction minimale** : `JsonbTypeVariableTest` (3 cases).
+- **Cause** : the readers were built from the member's own generic type; a `TypeVariable` fell back to the dynamic
+  reader, which maps a JSON object to a `Map`.
+- **Fix** : `GenericTypes.resolve` substitutes the variables the bound class's superclasses and interfaces bind
+  (passed on through intermediate classes too) inside the member's type, for fields, setters and polymorphic
+  subtypes. Writing was not affected: it follows the runtime class of each value.
+- **Regression tests** : `JsonbTypeVariableTest`, `GenericTypesTest`. JSON-B TCK 295/0/5 in runtime and `--static`
+  modes.

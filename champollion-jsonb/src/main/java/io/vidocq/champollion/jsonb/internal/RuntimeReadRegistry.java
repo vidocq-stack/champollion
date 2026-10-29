@@ -589,7 +589,7 @@ final class RuntimeReadRegistry {
      * setter, the getter or the underlying field, then the date and number formats, then the type's reader.
      */
     private BindingReader setterReader(Class<?> type, String prop, Method m, Method getter) {
-        Type valueType = m.getGenericParameterTypes()[0];
+        Type valueType = GenericTypes.resolve(m.getGenericParameterTypes()[0], type);
         Field underlyingF = findFieldByName(type, prop);
         var adapterR = customAdapterReader(m, underlyingF);
         if (adapterR.isEmpty() && getter != null) adapterR = customAdapterReader(getter, underlyingF);
@@ -630,17 +630,21 @@ final class RuntimeReadRegistry {
             if (name != null) {
                 writersByName.computeIfAbsent(name, _ -> {
                     makeAccessible(f);
-                    return new FieldSetter(f, fieldReader(f));
+                    return new FieldSetter(f, fieldReader(f, type));
                 });
             }
         }
     }
 
-    /** §4.7 {@code @JsonbTypeAdapter} / {@code @JsonbTypeDeserializer} on the field, else the reader of its type. */
-    private BindingReader fieldReader(Field f) {
+    /**
+     * §4.7 {@code @JsonbTypeAdapter} / {@code @JsonbTypeDeserializer} on the field, else the reader of its type, its
+     * type variables resolved against {@code type}, the class being bound (§3.11).
+     */
+    private BindingReader fieldReader(Field f, Class<?> type) {
+        Type fieldType = GenericTypes.resolve(f.getGenericType(), type);
         return customAdapterReader(f, null)
-                .or(() -> customDeserializerReader(f, null, f.getGenericType()))
-                .orElseGet(() -> readerFor(f.getGenericType()));
+                .or(() -> customDeserializerReader(f, null, fieldType))
+                .orElseGet(() -> readerFor(fieldType));
     }
 
     /**
@@ -667,7 +671,7 @@ final class RuntimeReadRegistry {
             for (Field f : c.getDeclaredFields()) {
                 if (!Modifier.isPublic(f.getModifiers()) && !f.isSynthetic() && isBindableField(f)
                         && covered.add(f.getName()) && f.trySetAccessible()) {
-                    writersByName.putIfAbsent(jsonbName(f), new FieldSetter(f, fieldReader(f)));
+                    writersByName.putIfAbsent(jsonbName(f), new FieldSetter(f, fieldReader(f, type)));
                 }
             }
         }
@@ -1299,7 +1303,8 @@ final class RuntimeReadRegistry {
                 if (name != null && !creatorNames.contains(name)) {
                     out.computeIfAbsent(name, _ -> {
                         makeAccessible(m);
-                        return new MethodSetter(m, readerFor(m.getGenericParameterTypes()[0]));
+                        return new MethodSetter(m,
+                                readerFor(GenericTypes.resolve(m.getGenericParameterTypes()[0], type)));
                     });
                 }
             }
@@ -1313,7 +1318,7 @@ final class RuntimeReadRegistry {
             if (name != null && !creatorNames.contains(name)) {
                 out.computeIfAbsent(name, _ -> {
                     makeAccessible(f);
-                    return new FieldSetter(f, readerFor(f.getGenericType()));
+                    return new FieldSetter(f, readerFor(GenericTypes.resolve(f.getGenericType(), type)));
                 });
             }
         }
@@ -1861,14 +1866,16 @@ final class RuntimeReadRegistry {
             String prop = sm.getParameterCount() == 1 ? setterProperty(sm) : null;
             if (prop != null) {
                 makeAccessible(sm);
-                writers.put(prop, new MethodSetter(sm, readerFor(sm.getGenericParameterTypes()[0])));
+                writers.put(prop, new MethodSetter(sm,
+                        readerFor(GenericTypes.resolve(sm.getGenericParameterTypes()[0], concrete))));
             }
         }
         // Public fields not covered by a setter (case Dog.isDog).
         for (Field f : concrete.getFields()) {
             if (isBindableField(f) && !writers.containsKey(f.getName())) {
                 makeAccessible(f);
-                writers.put(f.getName(), new FieldSetter(f, readerFor(f.getGenericType())));
+                writers.put(f.getName(),
+                        new FieldSetter(f, readerFor(GenericTypes.resolve(f.getGenericType(), concrete))));
             }
         }
         return writers;
