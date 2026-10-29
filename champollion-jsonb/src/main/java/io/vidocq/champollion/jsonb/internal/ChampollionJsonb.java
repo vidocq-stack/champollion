@@ -61,13 +61,18 @@ public final class ChampollionJsonb implements Jsonb {
     private final boolean strictIJson;
 
     /**
-     * P9 — per-thread Champollion parser pool. Avoids reallocating
+     * P9 — the Champollion parser kept between two reads. Avoids reallocating
      * {@code JsonTokenizer + char[512] + Deque} on every {@code fromJson} call.
      * Pool only when the provider is {@code ChampollionJsonProvider}; for any
      * other provider, fall back to {@code createParser}.
+     * <p>
+     * A read takes the parser out of the slot and puts it back when it is done, so a read that starts
+     * meanwhile — on another thread, or from an adapter of this very read — finds the slot empty and uses
+     * a parser of its own (BUG-20261029-07). Not a {@code ThreadLocal}: a virtual thread reads once and
+     * ends, and a per-thread parser would never be reused (architecture constraint 4).
      */
-    private final ThreadLocal<io.vidocq.champollion.jsonp.internal.ChampollionJsonParser> parserPool =
-            ThreadLocal.withInitial(() -> null);
+    private final java.util.concurrent.atomic.AtomicReference<io.vidocq.champollion.jsonp.internal.ChampollionJsonParser>
+            parserSlot = new java.util.concurrent.atomic.AtomicReference<>();
 
     ChampollionJsonb(JsonbConfig config, JsonProvider jsonProvider, StaticBindings staticBindings) {
         this.jsonProvider = jsonProvider;
@@ -336,14 +341,17 @@ public final class ChampollionJsonb implements Jsonb {
      * {@link io.vidocq.champollion.jsonp.internal.JsonStringTokenizer}).
      */
     private Object readValuePooledFromString(String src, Type runtimeType) {
-        var parser = parserPool.get();
+        var parser = parserSlot.getAndSet(null);
         if (parser == null) {
             parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(src);
-            parserPool.set(parser);
         } else {
             parser.reset(src);
         }
-        return readValue(parser, runtimeType);
+        try {
+            return readValue(parser, runtimeType);
+        } finally {
+            parserSlot.compareAndSet(null, parser);
+        }
     }
 
     @Override public <T> T fromJson(Reader reader, Class<T> type) {
@@ -361,22 +369,25 @@ public final class ChampollionJsonb implements Jsonb {
     }
 
     /**
-     * Pooled path: retrieve (or create) a thread-local
+     * Pooled path: take (or create) the kept
      * {@link io.vidocq.champollion.jsonp.internal.ChampollionJsonParser},
-     * {@code reset(reader)}, read the value, and leave it in place for the next
-     * call on this thread. The provided {@code reader} is not closed — that is the
+     * {@code reset(reader)}, read the value, and put it back for the next
+     * call. The provided {@code reader} is not closed — that is the
      * caller's responsibility (consistent with the usual
      * {@code fromJson(Reader, ...)} contract).
      */
     private Object readValuePooled(Reader reader, Type runtimeType) {
-        var parser = parserPool.get();
+        var parser = parserSlot.getAndSet(null);
         if (parser == null) {
             parser = new io.vidocq.champollion.jsonp.internal.ChampollionJsonParser(reader);
-            parserPool.set(parser);
         } else {
             parser.reset(reader);
         }
-        return readValue(parser, runtimeType);
+        try {
+            return readValue(parser, runtimeType);
+        } finally {
+            parserSlot.compareAndSet(null, parser);
+        }
     }
 
     @Override public <T> T fromJson(InputStream stream, Class<T> type) {
@@ -400,8 +411,8 @@ public final class ChampollionJsonb implements Jsonb {
         return readRegistry.readerFor(runtimeType).read(p);
     }
 
-    /** Releases the parser this thread keeps for this instance; other threads drop theirs when they end. */
+    /** Releases the parser this instance keeps between two reads. */
     @Override public void close() {
-        parserPool.remove();
+        parserSlot.set(null);
     }
 }

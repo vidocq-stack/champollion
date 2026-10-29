@@ -489,3 +489,22 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Fix** : a JSON `null` sets a container component to `null`; every non-`Optional` component honours
   `@JsonbNillable`.
 - **Regression tests** : see reproduction. JSON-B TCK 295/0/5 in runtime and `--static` modes.
+
+## BUG-20261029-07 — JSON-B: a `Jsonb` called again while it reads lost the enclosing read
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED 2026-10-29 (branch `fix/reentrant-parser-pool`, generated-code audit)
+- **Module touché** : `champollion-jsonb` — `ChampollionJsonb` (P9 parser pool, `fromJson(String)` and
+  `fromJson(Reader)`)
+- **Symptôme** : an adapter (or deserializer) that reads its own JSON with the same `Jsonb` instance, on the same
+  thread, made the enclosing read fail with `NoSuchElementException: No more JSON events`. The properties after the
+  adapted one were never read.
+- **Reproduction minimale** : `ChampollionJsonbReentrancyTest` (`champollion-jsonb`): a `Shape` whose `origin` goes
+  through a `JsonbAdapter<Point, String>` that calls `jsonb.fromJson(json, Point.class)`.
+- **Hypothèse de cause** : the pool kept one parser per thread in a `ThreadLocal`. The nested read took the same
+  parser and `reset` it onto the adapter's string while the enclosing read was still using it. The `ThreadLocal`
+  also broke architecture constraint 4, and on virtual threads (one read per thread) it never reused a parser.
+- **Investigations** :
+  - 2026-10-29 : found while auditing the `ThreadLocal` noted by the generated-code audit. Fix: a single slot
+    (`AtomicReference`). A read takes the parser out and puts it back when it is done, so a nested or concurrent
+    read finds the slot empty and uses a parser of its own.
