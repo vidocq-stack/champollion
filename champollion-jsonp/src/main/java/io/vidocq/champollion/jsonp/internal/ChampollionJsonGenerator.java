@@ -453,9 +453,7 @@ public final class ChampollionJsonGenerator implements JsonGenerator, RawJsonKey
                 if (pretty) { write('\n'); indent(); }
                 replaceTop(Ctx.OBJECT_VALUE);
             }
-            case OBJECT_KEY -> {
-                replaceTop(Ctx.OBJECT_VALUE);
-            }
+            case OBJECT_KEY -> replaceTop(Ctx.OBJECT_VALUE);
             default -> throw new JsonGenerationException("Key not allowed at this position (state=" + top + ")");
         }
         writeString(name);
