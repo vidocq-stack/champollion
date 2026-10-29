@@ -509,6 +509,26 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     (`AtomicReference`). A read takes the parser out and puts it back when it is done, so a nested or concurrent
     read finds the slot empty and uses a parser of its own.
 
+## BUG-20261029-09 — JSON-B runtime mapping: "Recursive update" reading a parameterized type made of parameterized types
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED 2026-10-29 (branch `fix/nested-parameterized-reader-recursion`)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.typeCache` (`readerFor`, `readerForGeneric`)
+- **Symptôme** : `fromJson(json, List<Order>)`, where `Order` has a `List<Item>` member, sometimes failed with
+  `IllegalStateException: Recursive update` from `ConcurrentHashMap.computeIfAbsent`. Seen in the
+  `JsonbReadBenchStatic` LARGE benchmark (`List<Order>`): it failed in one JVM run and passed in the next.
+- **Reproduction minimale** : `NestedParameterizedReaderTest` (`champollion-jsonb`): a record with about forty
+  parameterized members read as `List<Wide>` fails on every run before the fix.
+- **Hypothèse de cause** : the reader of a parameterized type was built inside `typeCache.computeIfAbsent`, and
+  building it resolves the readers of its members, parameterized ones included, through the same map. A nested
+  `computeIfAbsent` on a `ConcurrentHashMap` throws when the inner key falls in the bin the outer one is computing.
+  Since BUG-20261029-08 the keys are the types themselves, whose hash codes are identity hash codes: whether two
+  keys share a bin changes from one JVM run to the next. With the former keys (type names, stable hashes) the
+  benchmark's pair did not collide, but the code had the same flaw.
+- **Investigations** :
+  - 2026-10-29 : fix: the reader is built outside the map and published with `putIfAbsent`; two threads may build
+    the same reader, the first one stored is kept. The write side builds its parameterized writers without a map.
+
 ## BUG-20261029-08 — JSON-B runtime mapping: parameterized types of the same name shared one reader
 
 - **Date** : 2026-10-29

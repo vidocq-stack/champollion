@@ -201,6 +201,21 @@ final class RuntimeReadRegistry {
 
     private record ArrayKey(Object component) {}
 
+    /**
+     * The reader of {@code p}, built once. It is built outside {@code computeIfAbsent}: building it resolves the
+     * readers of the types {@code p} is made of, parameterized ones among them, and a nested update of the same
+     * {@code ConcurrentHashMap} fails with "Recursive update" when both keys share a bin (BUG-20261029-09). Two
+     * threads may build the same reader; the first one stored is kept.
+     */
+    private BindingReader cachedParameterizedReader(java.lang.reflect.ParameterizedType p) {
+        Object key = cacheKey(p);
+        BindingReader reader = typeCache.get(key);
+        if (reader != null) return reader;
+        reader = parameterizedReader(p);
+        BindingReader first = typeCache.putIfAbsent(key, reader);
+        return first != null ? first : reader;
+    }
+
     BindingReader readerFor(Type t) {
         // Global adapter or deserializer registered for this type?
         Class<?> rawAd = rawClassOf(t, null);
@@ -213,7 +228,7 @@ final class RuntimeReadRegistry {
             return classCache.get(c);
         }
         if (t instanceof java.lang.reflect.ParameterizedType p) {
-            return typeCache.computeIfAbsent(cacheKey(p), k -> parameterizedReader(p));
+            return cachedParameterizedReader(p);
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             return arrayReader(rawClassOf(ga.getGenericComponentType(), Object.class));
@@ -340,7 +355,7 @@ final class RuntimeReadRegistry {
     private BindingReader readerForGeneric(java.lang.reflect.Type t) {
         if (t == null) return this::dynamicValue;
         if (t instanceof java.lang.reflect.ParameterizedType p) {
-            return typeCache.computeIfAbsent(cacheKey(p), k -> parameterizedReader(p));
+            return cachedParameterizedReader(p);
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             return arrayReader(rawClassOf(ga.getGenericComponentType(), Object.class));
