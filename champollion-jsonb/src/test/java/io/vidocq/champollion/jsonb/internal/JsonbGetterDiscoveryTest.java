@@ -108,6 +108,57 @@ class JsonbGetterDiscoveryTest {
         public String name = "l";
     }
 
+    public static class Guarded {
+        protected String name = "guarded";
+        protected String getName() { return name; }
+        protected void setName(String name) { this.name = name; }
+    }
+
+    /** A public override of a protected accessor: the override decides, the property is visible (§3.7.1). */
+    public static class Opened extends Guarded {
+        @Override public String getName() { return name; }
+        @Override public void setName(String name) { this.name = name; }
+    }
+
+    public interface Labelled {
+        default String getLabel() { return "label"; }
+    }
+
+    /** A getter inherited from an interface default method is a property like any other public getter. */
+    public static class WithLabel implements Labelled {
+        public String name = "n";
+    }
+
+    public static class Named {
+        @jakarta.json.bind.annotation.JsonbProperty("full_name")
+        public String getName() { return "base"; }
+    }
+
+    /** An override without {@code @JsonbProperty} keeps the name the overridden getter gives the property. */
+    public static class Renamed extends Named {
+        @Override public String getName() { return "renamed"; }
+    }
+
+    @Test
+    void an_override_keeps_the_property_name_of_the_overridden_getter() {
+        assertEquals("{\"full_name\":\"renamed\"}", jsonb.toJson(new Renamed()));
+    }
+
+    @Test
+    void a_public_override_of_a_protected_getter_is_written() {
+        assertEquals("{\"name\":\"guarded\"}", jsonb.toJson(new Opened()));
+    }
+
+    @Test
+    void a_public_override_of_a_protected_setter_is_read() {
+        assertEquals("read", jsonb.fromJson("{\"name\":\"read\"}", Opened.class).getName());
+    }
+
+    @Test
+    void a_default_getter_of_an_interface_is_written() {
+        assertEquals("{\"label\":\"label\",\"name\":\"n\"}", jsonb.toJson(new WithLabel()));
+    }
+
     @Test
     void hidden_static_and_transient_properties_are_not_written() {
         assertEquals("{\"open\":\"o\"}", jsonb.toJson(new Hidden()));

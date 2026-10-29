@@ -390,3 +390,27 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     configuration sets anything they do not implement (null values, naming/order/visibility strategy, date format,
     locale, binary strategy, adapters, serializers, deserializers, strict I-JSON, required creator parameters,
     `jsonb.fail-on-unknown-properties`); formatting and encoding keep them. Documented in `concepts.adoc`.
+
+## BUG-20261029-02 — JSON-B runtime mapping: inherited accessors chosen by their least specific declaration
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED 2026-10-29 (branch `fix/inherited-accessors`, generated-code audit)
+- **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.discoverGetters`, `RuntimeReadRegistry.discoverSetters`,
+  `jsonbNameFromMethod`, `annotatedMember`
+- **Symptôme** :
+  - `Base { protected String getName() }` and `Sub extends Base { @Override public String getName() }`: `toJson(new
+    Sub())` gave `{}`. The protected declaration hid the property although the override is public; the setter side
+    did the same (`fromJson` left the property unset).
+  - A getter inherited from an interface `default` method was never written.
+  - `@JsonbProperty("full_name")` (or `@JsonbDateFormat`, `@JsonbNumberFormat`) on an overridden getter was lost when
+    the override did not repeat it.
+- **Reproduction minimale** : `JsonbGetterDiscoveryTest` (`a_public_override_of_a_protected_getter_is_written`,
+  `a_public_override_of_a_protected_setter_is_read`, `a_default_getter_of_an_interface_is_written`,
+  `an_override_keeps_the_property_name_of_the_overridden_getter`).
+- **Hypothèse de cause** : the discovery walked `getDeclaredMethods()` up the superclasses and judged every
+  declaration, overridden or not; interfaces were never walked; annotations were read on the most specific method only.
+- **Investigations** :
+  - 2026-10-29 : found by the generated-code audit. Fix: `accessorCandidates` keeps each signature's most specific
+    declaration along the superclasses, then the interfaces' default methods; an interface's default getter sorts with
+    the first class that implements it. `overriddenWith` finds an annotation on the nearest overridden method when
+    the override does not carry it.

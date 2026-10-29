@@ -850,17 +850,48 @@ final class RuntimeBindingRegistry {
      */
     private static java.util.LinkedHashMap<String, Method> discoverGetters(Class<?> type, java.util.Set<String> hiddenProps) {
         var getterByProp = new java.util.LinkedHashMap<String, Method>();
-        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
-            for (Method m : c.getDeclaredMethods()) {
-                String propName = getterPropertyName(m);
-                if (propName == null) continue;
-                if (hidesProperty(type, m, propName)) hiddenProps.add(propName);
-                else preferGetter(getterByProp, propName, m);
-            }
+        for (Method m : accessorCandidates(type)) {
+            String propName = getterPropertyName(m);
+            if (propName == null) continue;
+            if (hidesProperty(type, m, propName)) hiddenProps.add(propName);
+            else preferGetter(getterByProp, propName, m);
         }
         // Removes hidden props in case both public/non-public are present
         getterByProp.keySet().removeAll(hiddenProps);
         return getterByProp;
+    }
+
+    /**
+     * The methods that may be accessors of {@code type}: those declared along its superclasses, then the default
+     * methods of its interfaces, each signature taken from its most specific declaration only. An override decides
+     * the visibility of the method it overrides: a public override of a protected getter is a public getter.
+     */
+    static List<Method> accessorCandidates(Class<?> type) {
+        List<Method> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<Class<?>> interfaces = new java.util.ArrayDeque<>();
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            addMostSpecific(c.getDeclaredMethods(), seen, out, false);
+            interfaces.addAll(java.util.Arrays.asList(c.getInterfaces()));
+        }
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        while (!interfaces.isEmpty()) {
+            Class<?> itf = interfaces.poll();
+            if (!visited.add(itf)) continue;
+            addMostSpecific(itf.getDeclaredMethods(), seen, out, true);
+            interfaces.addAll(java.util.Arrays.asList(itf.getInterfaces()));
+        }
+        return out;
+    }
+
+    private static void addMostSpecific(Method[] declared, java.util.Set<String> seen, List<Method> out,
+                                        boolean defaultsOnly) {
+        for (Method m : declared) {
+            if (m.isBridge() || m.isSynthetic() || Modifier.isStatic(m.getModifiers())) continue;
+            if (defaultsOnly && !m.isDefault()) continue;
+            String signature = m.getName() + java.util.Arrays.toString(m.getParameterTypes());
+            if (seen.add(signature)) out.add(m);
+        }
     }
 
     /** The bean property read by {@code m}, or {@code null} when {@code m} is not an instance getter. */
@@ -920,8 +951,39 @@ final class RuntimeBindingRegistry {
     /** The getter if it carries the annotation, else the underlying field if it does, else {@code null}. */
     private static java.lang.reflect.AnnotatedElement annotatedMember(
             Method getter, Field underlying, Class<? extends java.lang.annotation.Annotation> annotationType) {
-        if (getter.isAnnotationPresent(annotationType)) return getter;
+        Method annotated = overriddenWith(getter, annotationType);
+        if (annotated != null) return annotated;
         if (underlying != null && underlying.isAnnotationPresent(annotationType)) return underlying;
+        return null;
+    }
+
+    /**
+     * {@code m}, or the nearest method it overrides (superclasses first, then interfaces), that carries
+     * {@code annotationType}: an override without the annotation keeps the customisation of the method it overrides.
+     */
+    static Method overriddenWith(Method m, Class<? extends java.lang.annotation.Annotation> annotationType) {
+        if (m.isAnnotationPresent(annotationType)) return m;
+        java.util.ArrayDeque<Class<?>> types = new java.util.ArrayDeque<>();
+        for (Class<?> c = m.getDeclaringClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            if (c != m.getDeclaringClass()) types.add(c);
+        }
+        for (Class<?> c = m.getDeclaringClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            types.addAll(java.util.Arrays.asList(c.getInterfaces()));
+        }
+        java.util.Set<Class<?>> visited = new java.util.HashSet<>();
+        while (!types.isEmpty()) {
+            Class<?> c = types.poll();
+            if (!visited.add(c)) continue;
+            try {
+                Method candidate = c.getDeclaredMethod(m.getName(), m.getParameterTypes());
+                if (!Modifier.isPrivate(candidate.getModifiers()) && candidate.isAnnotationPresent(annotationType)) {
+                    return candidate;
+                }
+            } catch (NoSuchMethodException _) {
+                // not declared there
+            }
+            if (c.isInterface()) types.addAll(java.util.Arrays.asList(c.getInterfaces()));
+        }
         return null;
     }
 
@@ -1130,8 +1192,20 @@ final class RuntimeBindingRegistry {
 
     private static Class<?> declaringClassOf(Property pr, Class<?> fallback) {
         if (pr.accessor instanceof FieldAccessor(Field field)) return field.getDeclaringClass();
-        if (pr.accessor instanceof MethodAccessor(Method method)) return method.getDeclaringClass();
+        if (pr.accessor instanceof MethodAccessor(Method method)) {
+            Class<?> declaring = method.getDeclaringClass();
+            return declaring.isInterface() ? firstImplementor(declaring, fallback) : declaring;
+        }
         return fallback;
+    }
+
+    /** The most general class of {@code type}'s superclass chain that implements {@code itf}: its default getters sort with it. */
+    private static Class<?> firstImplementor(Class<?> itf, Class<?> type) {
+        Class<?> found = type;
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            if (itf.isAssignableFrom(c)) found = c;
+        }
+        return found;
     }
 
     /**
@@ -1555,7 +1629,8 @@ final class RuntimeBindingRegistry {
 
     /** Renaming via {@code @JsonbProperty(name)} on a method, its paired setter, or the underlying field. */
     String jsonbNameFromMethod(Method m, String defaultName) {
-        var prop = m.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
+        Method annotated = overriddenWith(m, jakarta.json.bind.annotation.JsonbProperty.class);
+        var prop = annotated == null ? null : annotated.getAnnotation(jakarta.json.bind.annotation.JsonbProperty.class);
         if (prop != null && !prop.value().isEmpty()) return applyNamingStrategy(prop.value(), true);
         // Also search the paired setter and the underlying field (spec §4.1.2).
         Class<?> declaring = m.getDeclaringClass();

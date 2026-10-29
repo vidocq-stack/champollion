@@ -518,14 +518,12 @@ final class RuntimeReadRegistry {
      */
     private static Map<String, Method> discoverSetters(Class<?> type, java.util.Set<String> hiddenProps) {
         Map<String, Method> setterByProp = new java.util.LinkedHashMap<>();
-        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
-            for (Method m : c.getDeclaredMethods()) {
-                String prop = setterProperty(m);
-                if (prop != null && isHiddenSetter(type, m, prop)) {
-                    hiddenProps.add(prop);
-                } else if (prop != null) {
-                    keepMostSpecificSetter(setterByProp, prop, m);
-                }
+        for (Method m : RuntimeBindingRegistry.accessorCandidates(type)) {
+            String prop = setterProperty(m);
+            if (prop != null && isHiddenSetter(type, m, prop)) {
+                hiddenProps.add(prop);
+            } else if (prop != null) {
+                keepMostSpecificSetter(setterByProp, prop, m);
             }
         }
         setterByProp.keySet().removeAll(hiddenProps);
