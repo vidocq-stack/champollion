@@ -433,7 +433,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             case DOUBLE, FLOAT -> pw.println(INDENT_8 + key + " g.write((double) " + accessor + ");");
             case BOOLEAN -> pw.println(INDENT_8 + key + SPACE_G_WRITE + accessor + ");");
             case DECLARED -> emitWriteDeclared(pw, (DeclaredType) tm, accessor, key, nillable);
-            case ARRAY -> emitWriteArray(pw, (ArrayType) tm, accessor, key);
+            case ARRAY -> emitWriteArray(pw, (ArrayType) tm, accessor, key, nillable);
             default -> {
                 // Unreachable: isSupportedComponentType rejects any other component kind.
             }
@@ -444,10 +444,6 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         String fqn = dt.asElement().toString();
         if (JAVA_LANG_STRING.equals(fqn)) {
             pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + "); }");
-            if (nillable) {
-                // @JsonbNillable: null values are serialized as JSON null.
-                pw.println("        else { " + key + " g.writeNull(); }");
-            }
         } else if (isEnum(dt)) {
             pw.println(IF_8 + accessor + " != null) { " + key + SPACE_G_WRITE + accessor + ".name()); }");
         } else if (isStaticRecord(dt)) {
@@ -489,9 +485,17 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             pw.println(WRITE_END_12);
             pw.println(CLOSE_8);
         }
+        // §3.14.1 / §4.3 @JsonbNillable: a null value of any type is written as JSON null. Every branch above ends
+        // with the "if (value != null) { ... }" this else completes; an Optional writes nothing when empty.
+        if (nillable && !JAVA_UTIL_OPTIONAL.equals(fqn)) emitWriteNullElse(pw, key);
     }
 
-    private static void emitWriteArray(PrintWriter pw, ArrayType arrayType, String accessor, String key) {
+    private static void emitWriteNullElse(PrintWriter pw, String key) {
+        pw.println("        else { " + key + " g.writeNull(); }");
+    }
+
+    private static void emitWriteArray(PrintWriter pw, ArrayType arrayType, String accessor, String key,
+                                       boolean nillable) {
         TypeMirror comp = arrayType.getComponentType();
         pw.println(IF_8 + accessor + NOT_NULL_THEN);
         pw.println(INDENT_12 + key);
@@ -513,6 +517,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         }
         pw.println(WRITE_END_12);
         pw.println(CLOSE_8);
+        if (nillable) emitWriteNullElse(pw, key);
     }
 
     /**
@@ -629,6 +634,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                 } else if (JAVA_UTIL_LIST.equals(fqn)) {
                     TypeMirror elem = dt.getTypeArguments().get(0);
                     String elemFqn = ((TypeElement) ((DeclaredType) elem).asElement()).getQualifiedName().toString();
+                    emitReadNullOr(pw, target);
                     pw.println("                    if (__ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
                     pw.println("                    java.util.ArrayList<" + elemFqn + "> __list = new java.util.ArrayList<>();");
                     pw.println(DECLARE_AEV_20);
@@ -637,6 +643,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     pw.println("                        else __list.add(" + readInline("__aev", "p", elem) + ");");
                     pw.println(CLOSE_20);
                     pw.println(INDENT_20 + target + " = __list;");
+                    pw.println(CLOSE_20);
                 } else if (JAVA_UTIL_OPTIONAL.equals(fqn)) {
                     TypeMirror inner = dt.getTypeArguments().get(0);
                     pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + " = java.util.Optional.empty();");
@@ -644,6 +651,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                 } else if (JAVA_UTIL_MAP.equals(fqn)) {
                     TypeMirror valT = dt.getTypeArguments().get(1);
                     String valFqn = ((TypeElement) ((DeclaredType) valT).asElement()).getQualifiedName().toString();
+                    emitReadNullOr(pw, target);
                     pw.println("                    if (__ev != JsonParser.Event.START_OBJECT) throw new IllegalStateException(\"Expected START_OBJECT\");");
                     pw.println("                    java.util.LinkedHashMap<String, " + valFqn + "> __map = new java.util.LinkedHashMap<>();");
                     pw.println("                    JsonParser.Event __mev;");
@@ -655,10 +663,12 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     pw.println("                        else __map.put(__k, " + readInline("__vev", "p", valT) + ");");
                     pw.println(CLOSE_20);
                     pw.println(INDENT_20 + target + " = __map;");
+                    pw.println(CLOSE_20);
                 }
             }
             case ARRAY -> {
                 TypeMirror comp = ((ArrayType) tm).getComponentType();
+                emitReadNullOr(pw, target);
                 pw.println("                    if (__ev != JsonParser.Event.START_ARRAY) throw new IllegalStateException(\"Expected START_ARRAY\");");
                 switch (comp.getKind()) {
                     case INT -> {
@@ -706,11 +716,21 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                         // Unreachable: isSupportedComponentType rejects any other array component.
                     }
                 }
+                pw.println(CLOSE_20);
             }
             default -> {
                 // Unreachable: isSupportedComponentType rejects any other component kind.
             }
         }
+    }
+
+    /**
+     * Opens the read of a container component: a JSON {@code null} sets it to {@code null} (§3.14.1), anything else
+     * goes to the block the caller emits next and closes with {@code CLOSE_20}.
+     */
+    private static void emitReadNullOr(PrintWriter pw, String target) {
+        pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + ASSIGN_NULL);
+        pw.println("                    else {");
     }
 
     /** Reads the current value as a leaf type. {@code ev} = event already consumed for this value. */

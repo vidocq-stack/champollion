@@ -127,6 +127,45 @@ class DifferentialBindingTest {
         }
     }
 
+    /** JSON-B 3.0 §3.14.1: a JSON {@code null} for a container component reads as {@code null}, as at run time. */
+    @Test
+    void a_json_null_container_reads_as_null(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.diff;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                import java.util.List;
+                import java.util.Map;
+                @JsonbStatic
+                public record Containers(List<String> list, Map<String, String> map, int[] ints, long[] longs,
+                                         double[] doubles, boolean[] flags, String[] names) {}
+                """;
+        Setup s = setup(tmp, "generated.diff.Containers", src);
+
+        assertReadEquals(s, "{\"list\":null,\"map\":null,\"ints\":null,\"longs\":null,"
+                + "\"doubles\":null,\"flags\":null,\"names\":null}");
+    }
+
+    /** JSON-B 3.0 §3.14.1 / §4.3: {@code @JsonbNillable} writes {@code null} for any null component, not just a String. */
+    @Test
+    void nillable_writes_null_for_every_component_type(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.diff;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                import jakarta.json.bind.annotation.JsonbNillable;
+                import java.util.List;
+                import java.util.Map;
+                @JsonbStatic
+                public record Nillable(@JsonbNillable List<String> list, @JsonbNillable Map<String, String> map,
+                                       @JsonbNillable int[] ints, @JsonbNillable String[] names,
+                                       @JsonbNillable Thread.State state, @JsonbNillable String text) {}
+                """;
+        Setup s = setup(tmp, "generated.diff.Nillable", src);
+        Object instance = s.targetClass.getDeclaredConstructors()[0]
+                .newInstance(null, null, null, null, null, null);
+
+        assertWriteEquals(s, instance);
+    }
+
     // ============================================================
     // Plumbing
     // ============================================================

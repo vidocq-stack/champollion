@@ -472,3 +472,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   subtypes. Writing was not affected: it follows the runtime class of each value.
 - **Regression tests** : `JsonbTypeVariableTest`, `GenericTypesTest`. JSON-B TCK 295/0/5 in runtime and `--static`
   modes.
+
+## BUG-20261029-06 — Static bindings: a JSON null container throws, `@JsonbNillable` only works on a String
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED (fix/static-nulls)
+- **Module touché** : `champollion-codegen-apt` — `JsonbStaticProcessor`
+- **Symptôme** : with a `@JsonbStatic` record, `{"list":null}` for a `List`, `Map` or array component threw
+  `IllegalStateException: Expected START_ARRAY` (or `START_OBJECT`) where the runtime binding reads `null`; and
+  `@JsonbNillable` on a null `List`, `Map`, array, enum or nested record wrote nothing where the runtime binding writes
+  `null` (JSON-B 3.0 §3.14.1, §4.3).
+- **Reproduction minimale** : `DifferentialBindingTest.a_json_null_container_reads_as_null`,
+  `nillable_writes_null_for_every_component_type`.
+- **Cause** : the generated reads of containers expected their opening event unconditionally, and the generator
+  emitted the `@JsonbNillable` `else` branch for `String` components only.
+- **Fix** : a JSON `null` sets a container component to `null`; every non-`Optional` component honours
+  `@JsonbNillable`.
+- **Regression tests** : see reproduction. JSON-B TCK 295/0/5 in runtime and `--static` modes.
