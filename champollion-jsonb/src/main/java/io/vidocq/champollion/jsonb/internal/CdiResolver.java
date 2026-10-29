@@ -31,50 +31,48 @@ import java.lang.invoke.MethodType;
  * MUST resolve adapters, serializers and deserializers as CDI beans before
  * falling back to no-arg instantiation.</blockquote>
  *
- * <p>The CDI lookup is performed reflectively via {@link MethodHandle} (resolved
- * once at class load time) so as to <strong>avoid a hard runtime dependency</strong>
- * on {@code jakarta.enterprise.cdi-api}. If CDI is not on the classpath, or if
- * {@code CDI.current()} throws {@link IllegalStateException} (no active container),
- * we fall back to no-arg instantiation via the declared constructor.</p>
+ * <p>The CDI lookup is performed reflectively via {@link MethodHandle} so as to
+ * <strong>avoid a hard runtime dependency</strong> on {@code jakarta.enterprise.cdi-api}.
+ * The CDI API is looked up from the bean class's own class loader, once per class: in a
+ * Vidocq application the container lives in the application layer, which Champollion's
+ * loader does not see. If that loader has no CDI API, or if {@code CDI.current()} throws
+ * {@link IllegalStateException} (no active container), we fall back to no-arg
+ * instantiation via the declared constructor.</p>
  */
 final class CdiResolver {
 
-    private static final MethodHandle CDI_CURRENT;
-    private static final MethodHandle CDI_SELECT;
-    private static final MethodHandle INSTANCE_GET;
-    private static final MethodHandle INSTANCE_IS_UNSATISFIED;
-    private static final MethodHandle INSTANCE_IS_AMBIGUOUS;
-    private static final boolean CDI_AVAILABLE;
+    private static final System.Logger LOG = System.getLogger(CdiResolver.class.getName());
     private static final String INJECT = "jakarta.inject.Inject";
     private static final java.lang.annotation.Annotation[] EMPTY_QUALIFIERS = new java.lang.annotation.Annotation[0];
 
-    static {
-        MethodHandle current = null;
-        MethodHandle select = null;
-        MethodHandle get = null;
-        MethodHandle isUnsatisfied = null;
-        MethodHandle isAmbiguous = null;
-        boolean available = false;
-        try {
-            Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI");
-            Class<?> instCls = Class.forName("jakarta.enterprise.inject.Instance");
-            var lookup = MethodHandles.publicLookup();
-            current = lookup.findStatic(cdiCls, "current", MethodType.methodType(cdiCls));
-            select = lookup.findVirtual(cdiCls, "select",
-                    MethodType.methodType(instCls, Class.class, java.lang.annotation.Annotation[].class));
-            get = lookup.findVirtual(instCls, "get", MethodType.methodType(Object.class));
-            isUnsatisfied = lookup.findVirtual(instCls, "isUnsatisfied", MethodType.methodType(boolean.class));
-            isAmbiguous = lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class));
-            available = true;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError _) {
-            // CDI absent from the classpath — fallback newInstance will always be used.
+    /** The CDI API seen by a bean class, or {@code null} when its loader has none. */
+    private static final ClassValue<Cdi> CDI = new ClassValue<>() {
+        @Override
+        protected Cdi computeValue(Class<?> beanClass) {
+            return Cdi.seenBy(beanClass.getClassLoader());
         }
-        CDI_CURRENT = current;
-        CDI_SELECT = select;
-        INSTANCE_GET = get;
-        INSTANCE_IS_UNSATISFIED = isUnsatisfied;
-        INSTANCE_IS_AMBIGUOUS = isAmbiguous;
-        CDI_AVAILABLE = available;
+    };
+
+    /** The handles of {@code CDI.current().select(type).get()} and of the two {@code Instance} checks. */
+    private record Cdi(MethodHandle current, MethodHandle select, MethodHandle get,
+                       MethodHandle isUnsatisfied, MethodHandle isAmbiguous) {
+
+        static Cdi seenBy(ClassLoader loader) {
+            try {
+                Class<?> cdiCls = Class.forName("jakarta.enterprise.inject.spi.CDI", false, loader);
+                Class<?> instCls = Class.forName("jakarta.enterprise.inject.Instance", false, loader);
+                var lookup = MethodHandles.publicLookup();
+                return new Cdi(
+                        lookup.findStatic(cdiCls, "current", MethodType.methodType(cdiCls)),
+                        lookup.findVirtual(cdiCls, "select",
+                                MethodType.methodType(instCls, Class.class, java.lang.annotation.Annotation[].class)),
+                        lookup.findVirtual(instCls, "get", MethodType.methodType(Object.class)),
+                        lookup.findVirtual(instCls, "isUnsatisfied", MethodType.methodType(boolean.class)),
+                        lookup.findVirtual(instCls, "isAmbiguous", MethodType.methodType(boolean.class)));
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError _) {
+                return null; // no CDI API for this loader: no-arg instantiation only
+            }
+        }
     }
 
     private CdiResolver() {}
@@ -90,21 +88,32 @@ final class CdiResolver {
         // Without this filter, a CDI container with bean-discovery-mode=all can
         // produce "synthetic" instances for ordinary classes (state-free TCK
         // Deserializer/Adapter) and alter parser state in critical paths.
-        if (CDI_AVAILABLE && isLikelyManagedBean(beanClass)) {
-            try {
-                Object cdi = CDI_CURRENT.invoke();
-                Object inst = CDI_SELECT.invoke(cdi, beanClass, EMPTY_QUALIFIERS);
-                boolean unsatisfied = (boolean) INSTANCE_IS_UNSATISFIED.invoke(inst);
-                boolean ambiguous = (boolean) INSTANCE_IS_AMBIGUOUS.invoke(inst);
-                if (!unsatisfied && !ambiguous) {
-                    Object bean = INSTANCE_GET.invoke(inst);
-                    if (bean != null) return (T) bean;
-                }
-            } catch (Throwable _) {
-                // Container not started → fallback newInstance.
-            }
+        Cdi cdi = isLikelyManagedBean(beanClass) ? CDI.get(beanClass) : null;
+        if (cdi != null) {
+            T bean = (T) fromContainer(cdi, beanClass);
+            if (bean != null) return bean;
         }
         return newInstanceFallback(beanClass);
+    }
+
+    /** The CDI bean of {@code beanClass}, or {@code null} when there is no container or no single bean. */
+    private static Object fromContainer(Cdi cdi, Class<?> beanClass) {
+        Object container;
+        try {
+            container = cdi.current().invoke();
+        } catch (Throwable _) {
+            return null; // no active container: no-arg instantiation
+        }
+        try {
+            Object inst = cdi.select().invoke(container, beanClass, EMPTY_QUALIFIERS);
+            boolean unsatisfied = (boolean) cdi.isUnsatisfied().invoke(inst);
+            boolean ambiguous = (boolean) cdi.isAmbiguous().invoke(inst);
+            return unsatisfied || ambiguous ? null : cdi.get().invoke(inst);
+        } catch (Throwable e) {
+            LOG.log(System.Logger.Level.WARNING, () -> "CDI could not provide " + beanClass.getName()
+                    + "; it is instantiated with its no-argument constructor instead", e);
+            return null;
+        }
     }
 
     /**

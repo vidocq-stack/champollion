@@ -437,3 +437,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   JSON name is a compile error naming both components; the processor drops entries whose record is gone or no
   longer `@JsonbStatic`; `fromServiceLoader` skips (and logs at WARNING) a provider that fails to load.
 - **Regression tests** : see reproduction. JSON-B TCK 295/0/5 in runtime and `--static` modes.
+
+## BUG-20261029-04 — JSON-B adapters are never CDI beans when CDI lives in the application's class loader
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED (fix/cdi-resolver-loader)
+- **Module touché** : `champollion-jsonb` — `internal.CdiResolver`
+- **Symptôme** : an `@ApplicationScoped` adapter, serializer or deserializer is instantiated with `new` instead of
+  being looked up in the CDI container (JSON-B 3.0 §5) when the CDI API is visible to the application's class loader
+  but not to Champollion's, as in a Vidocq application where the container sits in the application layer. A CDI
+  lookup that failed for another reason than a missing container was also dropped without a trace.
+- **Reproduction minimale** : `CdiResolverTest.aBeanIsResolvedThroughTheCdiApiItsOwnClassLoaderSees`: a loader that
+  defines a minimal CDI API and a scoped bean, a child of the platform loader.
+- **Cause** : the CDI handles were resolved once, in a static initializer, with the single-argument `Class.forName`,
+  so through Champollion's own class loader.
+- **Fix** : the handles are resolved from the bean class's loader, once per class (`ClassValue`). A missing
+  container still falls back silently; any other CDI failure is logged at WARNING before the no-argument fallback.
+- **Regression tests** : `CdiResolverTest` (5 cases). JSON-B TCK 295/0/5 in runtime and `--static` modes.
