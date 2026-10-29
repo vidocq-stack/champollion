@@ -95,6 +95,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private static final String CLOSE_20 = "                    }";
     private static final String IF_8 = "        if (";
     private static final String IF_VALUE_NOT_NULL_20 = "                    if (__ev != JsonParser.Event.VALUE_NULL) ";
+    private static final String IF_VALUE_NULL_20 = "                    if (__ev == JsonParser.Event.VALUE_NULL) ";
     private static final String DECLARE_AEV_20 = "                    JsonParser.Event __aev;";
     private static final String WRITE_END_12 = "            g.writeEnd();";
     private static final String NOT_NULL_THEN = " != null) {";
@@ -486,7 +487,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             pw.println(CLOSE_8);
         }
         // §3.14.1 / §4.3 @JsonbNillable: a null value of any type is written as JSON null. Every branch above ends
-        // with the "if (value != null) { ... }" this else completes; an Optional writes nothing when empty.
+        // with the not-null test this else completes; an Optional writes nothing when empty.
         if (nillable && !JAVA_UTIL_OPTIONAL.equals(fqn)) emitWriteNullElse(pw, key);
     }
 
@@ -626,7 +627,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     // explicitly to cover both.
                     String binding = bindingFqnOf(dt);
                     String f = ((TypeElement) dt.asElement()).getQualifiedName().toString();
-                    pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + ASSIGN_NULL);
+                    pw.println(IF_VALUE_NULL_20 + target + ASSIGN_NULL);
                     pw.println("                    else {");
                     pw.println("                        JsonParser __primed = new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(__ev, p);");
                     pw.println("                        " + target + " = (" + f + ") new " + binding + "().read(__primed);");
@@ -646,7 +647,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                     pw.println(CLOSE_20);
                 } else if (JAVA_UTIL_OPTIONAL.equals(fqn)) {
                     TypeMirror inner = dt.getTypeArguments().get(0);
-                    pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + " = java.util.Optional.empty();");
+                    pw.println(IF_VALUE_NULL_20 + target + " = java.util.Optional.empty();");
                     pw.println("                    else " + target + " = java.util.Optional.of(" + readInline("__ev", "p", inner) + ");");
                 } else if (JAVA_UTIL_MAP.equals(fqn)) {
                     TypeMirror valT = dt.getTypeArguments().get(1);
@@ -729,7 +730,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
      * goes to the block the caller emits next and closes with {@code CLOSE_20}.
      */
     private static void emitReadNullOr(PrintWriter pw, String target) {
-        pw.println("                    if (__ev == JsonParser.Event.VALUE_NULL) " + target + ASSIGN_NULL);
+        pw.println(IF_VALUE_NULL_20 + target + ASSIGN_NULL);
         pw.println("                    else {");
     }
 
