@@ -508,3 +508,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-10-29 : found while auditing the `ThreadLocal` noted by the generated-code audit. Fix: a single slot
     (`AtomicReference`). A read takes the parser out and puts it back when it is done, so a nested or concurrent
     read finds the slot empty and uses a parser of its own.
+
+## BUG-20261029-08 — JSON-B runtime mapping: parameterized types of the same name shared one reader
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED 2026-10-29 (branch `fix/type-cache-identity`, generated-code audit item 11)
+- **Module touché** : `champollion-jsonb` — `RuntimeReadRegistry.typeCache` (`readerFor`, `readerForGeneric`)
+- **Symptôme** : `List<Item>` was read with the reader built for the first `List<Item>` met, even when this `Item` came
+  from another class loader. The list then held instances of the other loader's `Item`. A layered runtime (one
+  class loader per application) is affected when two applications bind same-named classes with one `Jsonb`.
+- **Reproduction minimale** : `JsonbTypeIdentityTest` (`champollion-jsonb`): a loader defines its own copy of `Item`,
+  and `fromJson(.., List<copy>)` returned the original `Item`.
+- **Hypothèse de cause** : the cache of parameterized-type readers was keyed by `Type.getTypeName()`, which also built
+  a string on every read.
+- **Investigations** :
+  - 2026-10-29 : fix: the key is the type itself when the JDK made it (its `equals` compares the types it is made
+    of), and a value with the same parts otherwise, so that a `ParameterizedType` a caller builds on each call
+    without `equals` does not grow the cache.

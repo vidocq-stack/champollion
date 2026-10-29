@@ -48,7 +48,7 @@ import java.util.UUID;
  * {@link BindingReader} registry symmetrical to {@link RuntimeBindingRegistry}.
  *
  * <p>{@link ClassValue} cache for simple classes + concurrent map for parameterized
- * types (key = {@link Type#getTypeName()}).</p>
+ * types, keyed by the type itself: two types of the same name, from two class loaders, are two types.</p>
  */
 final class RuntimeReadRegistry {
 
@@ -179,7 +179,27 @@ final class RuntimeReadRegistry {
         };
     }
 
-    private final java.util.concurrent.ConcurrentHashMap<String, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<Object, BindingReader> typeCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * The {@link #typeCache} key of {@code type}: the type itself when the JDK made it, as its {@code equals} compares
+     * the types it is made of; otherwise a value with the same parts, so that a caller who builds its own
+     * {@link java.lang.reflect.ParameterizedType} on each call, without {@code equals}, still finds its reader.
+     */
+    private static Object cacheKey(Type type) {
+        if (type instanceof Class<?> || type.getClass().getModule() == Object.class.getModule()) return type;
+        return switch (type) {
+            case java.lang.reflect.ParameterizedType p -> new ParameterizedKey(p.getRawType(),
+                    p.getOwnerType() == null ? null : cacheKey(p.getOwnerType()),
+                    java.util.Arrays.stream(p.getActualTypeArguments()).map(RuntimeReadRegistry::cacheKey).toList());
+            case java.lang.reflect.GenericArrayType a -> new ArrayKey(cacheKey(a.getGenericComponentType()));
+            default -> type;
+        };
+    }
+
+    private record ParameterizedKey(Type raw, Object owner, List<Object> arguments) {}
+
+    private record ArrayKey(Object component) {}
 
     BindingReader readerFor(Type t) {
         // Global adapter or deserializer registered for this type?
@@ -193,7 +213,7 @@ final class RuntimeReadRegistry {
             return classCache.get(c);
         }
         if (t instanceof java.lang.reflect.ParameterizedType p) {
-            return typeCache.computeIfAbsent(p.getTypeName(), k -> parameterizedReader(p));
+            return typeCache.computeIfAbsent(cacheKey(p), k -> parameterizedReader(p));
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             return arrayReader(rawClassOf(ga.getGenericComponentType(), Object.class));
@@ -320,7 +340,7 @@ final class RuntimeReadRegistry {
     private BindingReader readerForGeneric(java.lang.reflect.Type t) {
         if (t == null) return this::dynamicValue;
         if (t instanceof java.lang.reflect.ParameterizedType p) {
-            return typeCache.computeIfAbsent(p.getTypeName(), k -> parameterizedReader(p));
+            return typeCache.computeIfAbsent(cacheKey(p), k -> parameterizedReader(p));
         }
         if (t instanceof java.lang.reflect.GenericArrayType ga) {
             return arrayReader(rawClassOf(ga.getGenericComponentType(), Object.class));
