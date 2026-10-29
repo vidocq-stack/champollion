@@ -62,21 +62,22 @@ final class GenericTypes {
     }
 
     private static void bind(Type supertype, Map<TypeVariable<?>, Type> bindings) {
-        Class<?> raw;
-        if (supertype instanceof ParameterizedType p) {
-            raw = (Class<?>) p.getRawType();
-            TypeVariable<?>[] variables = raw.getTypeParameters();
-            Type[] arguments = p.getActualTypeArguments();
-            for (int i = 0; i < variables.length && i < arguments.length; i++) {
-                // A nearer class may pass its own variable on (Middle<U> extends Base<U>): resolve it first.
-                bindings.putIfAbsent(variables[i], substitute(arguments[i], bindings));
+        switch (supertype) {
+            case ParameterizedType p -> {
+                Class<?> raw = (Class<?>) p.getRawType();
+                TypeVariable<?>[] variables = raw.getTypeParameters();
+                Type[] arguments = p.getActualTypeArguments();
+                for (int i = 0; i < variables.length && i < arguments.length; i++) {
+                    // A nearer class may pass its own variable on (Middle<U> extends Base<U>): resolve it first.
+                    bindings.putIfAbsent(variables[i], substitute(arguments[i], bindings));
+                }
+                collect(raw, bindings);
             }
-        } else if (supertype instanceof Class<?> c) {
-            raw = c;
-        } else {
-            return;
+            case Class<?> c -> collect(c, bindings);
+            default -> {
+                // A superclass or interface is a class or a parameterized type; nothing else binds a variable.
+            }
         }
-        collect(raw, bindings);
     }
 
     private static Type substitute(Type type, Map<TypeVariable<?>, Type> bindings) {
