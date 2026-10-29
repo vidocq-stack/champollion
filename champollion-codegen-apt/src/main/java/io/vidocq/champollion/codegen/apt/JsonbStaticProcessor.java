@@ -69,6 +69,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private static final String SERVICE_FILE =
             "META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding";
 
+    /** Suffix of a generated binding's name, after the record's. */
+    private static final String BINDING_SUFFIX = "$$Binding";
     // Qualified names the component types are matched against.
     private static final String JAVA_LANG_STRING = "java.lang.String";
     private static final String JAVA_LANG_INTEGER = "java.lang.Integer";
@@ -139,7 +141,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             return;
         }
         String pkgName = pkg.getQualifiedName().toString();
-        String bindingSimple = simpleName + "$$Binding";
+        String bindingSimple = simpleName + BINDING_SUFFIX;
         String bindingFqn = pkgName.isEmpty() ? bindingSimple : pkgName + "." + bindingSimple;
         String targetFqn = recordType.getQualifiedName().toString();
 
@@ -263,7 +265,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
 
     /** Binary name of the generated binding for a static record: {@code <FQN>$$Binding}. */
     private static String bindingFqnOf(DeclaredType dt) {
-        return ((TypeElement) dt.asElement()).getQualifiedName().toString() + "$$Binding";
+        return ((TypeElement) dt.asElement()).getQualifiedName().toString() + BINDING_SUFFIX;
     }
 
     // ============================================================
@@ -772,10 +774,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     /** Whether the record a binding was generated for still exists and is still annotated {@code @JsonbStatic}. */
     private boolean stillStatic(String bindingFqn) {
         if (generatedBindings.contains(bindingFqn)) return true;
-        String suffix = "$$Binding";
-        if (!bindingFqn.endsWith(suffix)) return true;
+        if (!bindingFqn.endsWith(BINDING_SUFFIX)) return true;
         TypeElement target = processingEnv.getElementUtils()
-                .getTypeElement(bindingFqn.substring(0, bindingFqn.length() - suffix.length()));
+                .getTypeElement(bindingFqn.substring(0, bindingFqn.length() - BINDING_SUFFIX.length()));
         return target != null && target.getAnnotation(JsonbStatic.class) != null;
     }
 
