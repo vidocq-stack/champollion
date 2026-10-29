@@ -36,6 +36,8 @@ import java.util.ServiceLoader;
  */
 final class StaticBindings {
 
+    private static final System.Logger LOG = System.getLogger(StaticBindings.class.getName());
+
     static final StaticBindings EMPTY = new StaticBindings(Map.of());
 
     private final Map<Class<?>, JsonbBinding<?>> byType;
@@ -67,8 +69,17 @@ final class StaticBindings {
         for (ClassLoader loader : loaders) {
             if (loader == null || seen.contains(loader)) continue;
             seen.add(loader);
-            for (JsonbBinding<?> b : ServiceLoader.load(JsonbBinding.class, loader)) {
-                found.add(b);
+            // Provider by provider: a stale entry (a binding class an incremental build left listed but deleted)
+            // is reported and skipped, it does not take the other bindings down with it.
+            var providers = ServiceLoader.load(JsonbBinding.class, loader).stream().iterator();
+            while (true) {
+                try {
+                    if (!providers.hasNext()) break;
+                    found.add(providers.next().get());
+                } catch (java.util.ServiceConfigurationError e) {
+                    LOG.log(System.Logger.Level.WARNING, "Skipping a JSON-B binding listed in META-INF/services: "
+                            + e.getMessage());
+                }
             }
         }
         return of(found);

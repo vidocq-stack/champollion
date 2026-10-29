@@ -111,4 +111,21 @@ class StaticBindingsClassLoaderTest {
             thread.setContextClassLoader(previous);
         }
     }
+
+    /**
+     * A services file left behind by an incremental build may name a binding class that no longer exists: that entry
+     * is skipped, the others are used, and {@code JsonbBuilder.create()} does not fail.
+     */
+    @Test
+    void aStaleServiceEntryIsSkipped(@TempDir Path dir) throws Exception {
+        Path services = dir.resolve("META-INF/services");
+        Files.createDirectories(services);
+        Files.writeString(services.resolve(JsonbBinding.class.getName()),
+                "demo.Gone$$Binding\n" + PointBinding.class.getName() + "\n");
+        try (ApplicationLayer app = new ApplicationLayer(dir)) {
+            StaticBindings bindings = StaticBindings.fromServiceLoader(app);
+            assertNotNull(bindings.view().get(app.loadClass(Point.class.getName())),
+                    "the valid binding after the stale entry must still be found");
+        }
+    }
 }

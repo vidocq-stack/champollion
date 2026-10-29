@@ -414,3 +414,26 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     declaration along the superclasses, then the interfaces' default methods; an interface's default getter sorts with
     the first class that implements it. `overriddenWith` finds an annotation on the nearest overridden method when
     the override does not carry it.
+
+## BUG-20261029-03 — Static processor: nested records crash javac, quoted or duplicate names, stale services entries
+
+- **Date** : 2026-10-29
+- **Statut** : FIXED (fix/static-processor-robustness)
+- **Module touché** : `champollion-codegen-apt` — `JsonbStaticProcessor`; `champollion-jsonb` — `internal.StaticBindings`
+- **Symptôme** :
+  - a `@JsonbStatic` record nested in a class makes the processor throw a `ClassCastException` out of javac
+    (`getEnclosingElement()` cast to `PackageElement`) instead of reporting an error;
+  - a `@JsonbProperty` name containing `"` or `\` is written unescaped into a `case` label, so the generated source
+    does not compile; two components with the same JSON name give a duplicate `case` label, again in generated code;
+  - an incremental build keeps the services entry of a record that lost `@JsonbStatic` (or was deleted), and
+    `ServiceLoader` then fails on the missing class, which made `StaticBindings.fromServiceLoader` throw and disable
+    every static binding of the loader.
+- **Reproduction minimale** : `JsonbStaticProcessorDiagnosticsTest` (4 cases) and
+  `StaticBindingsClassLoaderTest.aStaleServiceEntryIsSkipped`.
+- **Cause** : unchecked cast, raw string concatenation of the JSON name in the generated switch, the services file
+  merged with its previous content without checking the entries, and a `ServiceLoader` loop with no per-provider
+  error handling.
+- **Fix** : a nested record is a compile error ("top-level"); the labels go through the literal escaper; a duplicate
+  JSON name is a compile error naming both components; the processor drops entries whose record is gone or no
+  longer `@JsonbStatic`; `fromServiceLoader` skips (and logs at WARNING) a provider that fails to load.
+- **Regression tests** : see reproduction. JSON-B TCK 295/0/5 in runtime and `--static` modes.

@@ -132,10 +132,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
 
     private void processRecord(TypeElement recordType) {
         String simpleName = recordType.getSimpleName().toString();
-        PackageElement pkg = (PackageElement) recordType.getEnclosingElement();
         // Nested types: we must reconstruct the binary name with '$' but the source
         // file has a name derived from the simple name. For M5.2, only top-level types are accepted.
-        if (!(pkg instanceof PackageElement)) {
+        if (!(recordType.getEnclosingElement() instanceof PackageElement pkg)) {
             error(recordType, "@JsonbStatic only supported on top-level records in M5.2");
             return;
         }
@@ -147,6 +146,17 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         List<? extends RecordComponentElement> comps = recordType.getRecordComponents();
 
         // Validation: components supported in M5.2.
+        // JSON-B 3.0 §3.7: two properties cannot share a JSON name; the read switch could not tell them apart.
+        java.util.Map<String, String> componentByJsonName = new java.util.HashMap<>();
+        for (var c : comps) {
+            if (isJsonbTransient(c)) continue;
+            String previous = componentByJsonName.putIfAbsent(jsonbName(c), c.getSimpleName().toString());
+            if (previous != null) {
+                error(recordType, "@JsonbStatic components " + previous + " and " + c.getSimpleName()
+                        + " have the same JSON name \"" + jsonbName(c) + "\"");
+                return;
+            }
+        }
         for (var c : comps) {
             if (!isSupportedComponentType(c.asType())) {
                 error(recordType,
@@ -375,7 +385,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         for (var c : comps) {
             if (isJsonbTransient(c)) continue;   // @JsonbTransient: no read mapping
             String name = c.getSimpleName().toString();
-            pw.println("                case \"" + jsonbName(c) + "\" -> {");
+            pw.println("                case " + lit(jsonbName(c)) + " -> {");
             emitReadComponent(pw, c, "_" + name);
             pw.println("                }");
         }
@@ -759,11 +769,24 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return all;
     }
 
+    /** Whether the record a binding was generated for still exists and is still annotated {@code @JsonbStatic}. */
+    private boolean stillStatic(String bindingFqn) {
+        if (generatedBindings.contains(bindingFqn)) return true;
+        String suffix = "$$Binding";
+        if (!bindingFqn.endsWith(suffix)) return true;
+        TypeElement target = processingEnv.getElementUtils()
+                .getTypeElement(bindingFqn.substring(0, bindingFqn.length() - suffix.length()));
+        return target != null && target.getAnnotation(JsonbStatic.class) != null;
+    }
+
     private void writeServicesFile() {
         Filer filer = processingEnv.getFiler();
         try {
             // Read existing services (to append across multi-rounds / incremental builds)
             Set<String> all = readExistingServices(filer);
+            // An incremental build keeps the entries it did not regenerate, but not one whose record is gone or no
+            // longer @JsonbStatic: its binding class would be stale, or missing at run time.
+            all.removeIf(binding -> !stillStatic(binding));
             all.addAll(generatedBindings);
             FileObject f = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
             try (var w = f.openWriter()) {
