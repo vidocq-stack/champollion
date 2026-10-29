@@ -887,10 +887,9 @@ final class RuntimeBindingRegistry {
     private static void addMostSpecific(Method[] declared, java.util.Set<String> seen, List<Method> out,
                                         boolean defaultsOnly) {
         for (Method m : declared) {
-            if (m.isBridge() || m.isSynthetic() || Modifier.isStatic(m.getModifiers())) continue;
-            if (defaultsOnly && !m.isDefault()) continue;
-            String signature = m.getName() + java.util.Arrays.toString(m.getParameterTypes());
-            if (seen.add(signature)) out.add(m);
+            boolean candidate = !m.isBridge() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers())
+                    && (!defaultsOnly || m.isDefault());
+            if (candidate && seen.add(m.getName() + java.util.Arrays.toString(m.getParameterTypes()))) out.add(m);
         }
     }
 
@@ -973,18 +972,23 @@ final class RuntimeBindingRegistry {
         java.util.Set<Class<?>> visited = new java.util.HashSet<>();
         while (!types.isEmpty()) {
             Class<?> c = types.poll();
-            if (!visited.add(c)) continue;
-            try {
-                Method candidate = c.getDeclaredMethod(m.getName(), m.getParameterTypes());
-                if (!Modifier.isPrivate(candidate.getModifiers()) && candidate.isAnnotationPresent(annotationType)) {
-                    return candidate;
-                }
-            } catch (NoSuchMethodException _) {
-                // not declared there
-            }
+            Method candidate = visited.add(c) ? annotatedDeclaration(c, m, annotationType) : null;
+            if (candidate != null) return candidate;
             if (c.isInterface()) types.addAll(java.util.Arrays.asList(c.getInterfaces()));
         }
         return null;
+    }
+
+    /** The non-private method of {@code type} with {@code m}'s signature, when it carries {@code annotationType}. */
+    private static Method annotatedDeclaration(Class<?> type, Method m,
+                                               Class<? extends java.lang.annotation.Annotation> annotationType) {
+        try {
+            Method declared = type.getDeclaredMethod(m.getName(), m.getParameterTypes());
+            return !Modifier.isPrivate(declared.getModifiers()) && declared.isAnnotationPresent(annotationType)
+                    ? declared : null;
+        } catch (NoSuchMethodException _) {
+            return null;
+        }
     }
 
     /**
