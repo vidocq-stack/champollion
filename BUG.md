@@ -545,3 +545,23 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-10-29 : fix: the key is the type itself when the JDK made it (its `equals` compares the types it is made
     of), and a value with the same parts otherwise, so that a `ParameterizedType` a caller builds on each call
     without `equals` does not grow the cache.
+
+## BUG-20261031-01 — JSON-B: a type whose package is not opened fails with no word about the module
+
+- **Date** : 2026-10-31
+- **Statut** : FIXED 2026-10-31 (branch `fix/jsonb-access-cause`)
+- **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.readProperty`, the constructors, setters and
+  fields of `RuntimeReadRegistry`
+- **Symptôme** : the Vidocq tutorial returned a `Book` from a REST resource whose package the application module did
+  not open: `GET` answered 500 `JsonbException: Failed to read property author`, `POST` 500
+  `JsonbException: ctor failed for class com.example.lib.book.Book`. Neither message named the module access problem,
+  which only showed deep in the cause.
+- **Reproduction minimale** : `AccessFailuresTest` (`champollion-jsonb`): an `IllegalAccessException` on a type of a
+  package its module opens to nobody.
+- **Hypothèse de cause** : the reflective binding wrapped every failure in the same message, whatever the cause.
+- **Investigations** :
+  - 2026-10-31 : fix: `AccessFailures.wrap` adds, when the cause chain holds an `IllegalAccessException` or an
+    `InaccessibleObjectException` and the type's named module does not open its package to Champollion,
+    `: module M does not open package P to io.vidocq.champollion.jsonb — add `opens P;` to its module-info.java`.
+    Reported by the vidocq-tutorial session (finding R3); Vidocq's `vidocq:check-module-info` now reports the same
+    packages at build time (Vidocq BUG-20261031-04).

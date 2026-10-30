@@ -1046,7 +1046,7 @@ final class RuntimeReadRegistry {
         public void applyValue(Object target, Object value) {
             try { m.invoke(target, value); }
             catch (ReflectiveOperationException e) {
-                throw new JsonbException("Setter failed: " + m, e);
+                throw AccessFailures.wrap("Setter failed: " + m, m.getDeclaringClass(), e);
             }
             catch (IllegalArgumentException e) {
                 throw new JsonbException("Setter argument mismatch on " + m
@@ -1072,7 +1072,8 @@ final class RuntimeReadRegistry {
         public void applyValue(Object target, Object value) {
             try { mh.invoke(target, value); }
             catch (Throwable t) {
-                throw new JsonbException("Setter failed on '" + m.getName() + "': " + t.getMessage(), t);
+                throw AccessFailures.wrap("Setter failed on '" + m.getName() + "': " + t.getMessage(),
+                        m.getDeclaringClass(), t);
             }
         }
     }
@@ -1088,7 +1089,7 @@ final class RuntimeReadRegistry {
         public void applyValue(Object target, Object value) {
             try { f.set(target, value); }
             catch (IllegalAccessException e) {
-                throw new JsonbException("Field set failed: " + f, e);
+                throw AccessFailures.wrap("Field set failed: " + f, f.getDeclaringClass(), e);
             }
         }
     }
@@ -1103,7 +1104,7 @@ final class RuntimeReadRegistry {
             if (ctorMh != null) inst = ctorMh.invoke();
             else inst = ctor.newInstance();
         } catch (Throwable ex) {
-            throw new JsonbException("ctor failed for " + type, ex);
+            throw AccessFailures.wrap("ctor failed for " + type, type, ex);
         }
         boolean open = true;
         while (open) {
@@ -1874,7 +1875,7 @@ final class RuntimeReadRegistry {
         Object[] args = readArguments(parser, paramTypes, readers, indexByName);
         try { return ctor.newInstance(args); }
         catch (ReflectiveOperationException ex) {
-            throw new JsonbException("ctor failed for " + concrete, ex);
+            throw AccessFailures.wrap("ctor failed for " + concrete, concrete, ex);
         }
     }
 
@@ -1891,7 +1892,7 @@ final class RuntimeReadRegistry {
         }
         makeAccessible(ctor);
         try { return ctor.newInstance(); }
-        catch (ReflectiveOperationException ex) { throw new JsonbException("ctor failed for " + concrete, ex); }
+        catch (ReflectiveOperationException ex) { throw AccessFailures.wrap("ctor failed for " + concrete, concrete, ex); }
     }
 
     /** The public one-argument setters of a polymorphic subtype, then its public fields not covered by a setter. */

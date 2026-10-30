@@ -60,6 +60,15 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 
 Internal packages (`*.internal`) are **not exported** — do not depend on them, they may break between versions. The provider classes above live in `internal` packages on purpose: they are reached through `ServiceLoader`, never referenced directly.
 
+[[bound-types-access]]
+=== Bound types and `opens` [.tag-new]#NEW#
+
+Without a generated binding (`@JsonbStatic`), Champollion binds a type by reflection. On the module path, the module holding the type must then open its package to `io.vidocq.champollion.jsonb`, or export it when the type and the members bound are public. When it does not, the `JsonbException` names the module, the package and the line to add:
+
+----
+Failed to read property author: module com.example.lib does not open package com.example.lib.book to io.vidocq.champollion.jsonb — add `opens com.example.lib.book;` to its module-info.java
+----
+
 == Supported JSON-B annotations
 
 Standard Jakarta JSON Binding 3.0 annotations — all supported:

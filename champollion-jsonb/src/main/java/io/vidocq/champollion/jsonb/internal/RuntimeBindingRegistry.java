@@ -1728,7 +1728,7 @@ final class RuntimeBindingRegistry {
         try {
             return p.accessor.read(target);
         } catch (Throwable t) {
-            throw new JsonbException(failure + p.name, t);
+            throw AccessFailures.wrap(failure + p.name, target == null ? null : target.getClass(), t);
         }
     }
 
