@@ -52,6 +52,8 @@ import java.util.UUID;
  */
 final class RuntimeReadRegistry {
 
+    private static final String CTOR_FAILED = "ctor failed for ";
+
     private final String defaultDateFormat;
     private final String binaryDataStrategy;
     private final String propertyNamingStrategy;
@@ -1104,7 +1106,7 @@ final class RuntimeReadRegistry {
             if (ctorMh != null) inst = ctorMh.invoke();
             else inst = ctor.newInstance();
         } catch (Throwable ex) {
-            throw AccessFailures.wrap("ctor failed for " + type, type, ex);
+            throw AccessFailures.wrap(CTOR_FAILED + type, type, ex);
         }
         boolean open = true;
         while (open) {
@@ -1875,7 +1877,7 @@ final class RuntimeReadRegistry {
         Object[] args = readArguments(parser, paramTypes, readers, indexByName);
         try { return ctor.newInstance(args); }
         catch (ReflectiveOperationException ex) {
-            throw AccessFailures.wrap("ctor failed for " + concrete, concrete, ex);
+            throw AccessFailures.wrap(CTOR_FAILED + concrete, concrete, ex);
         }
     }
 
@@ -1892,7 +1894,7 @@ final class RuntimeReadRegistry {
         }
         makeAccessible(ctor);
         try { return ctor.newInstance(); }
-        catch (ReflectiveOperationException ex) { throw AccessFailures.wrap("ctor failed for " + concrete, concrete, ex); }
+        catch (ReflectiveOperationException ex) { throw AccessFailures.wrap(CTOR_FAILED + concrete, concrete, ex); }
     }
 
     /** The public one-argument setters of a polymorphic subtype, then its public fields not covered by a setter. */
