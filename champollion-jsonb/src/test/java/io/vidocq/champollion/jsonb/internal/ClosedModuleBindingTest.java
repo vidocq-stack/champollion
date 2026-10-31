@@ -32,6 +32,7 @@ import java.lang.classfile.Annotation;
 import java.lang.classfile.AnnotationElement;
 import java.lang.classfile.AnnotationValue;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.attribute.ModuleAttribute;
 import java.lang.classfile.attribute.RecordAttribute;
 import java.lang.classfile.attribute.RecordComponentInfo;
@@ -87,10 +88,10 @@ class ClosedModuleBindingTest {
             cb.withMethodBody("getName", MethodTypeDesc.of(ConstantDescs.CD_String), ClassFile.ACC_PUBLIC,
                     code -> code.ldc("x").areturn());
             cb.withMethodBody("run", MethodTypeDesc.of(ConstantDescs.CD_void), ClassFile.ACC_PUBLIC,
-                    code -> code.return_());
+                    CodeBuilder::return_);
         }));
-        write(root, REC, record(cf, REC));
-        write(root, ANIMAL_REC, record(cf, ANIMAL_REC, ANIMAL));
+        write(root, REC, recordClass(cf, REC));
+        write(root, ANIMAL_REC, recordClass(cf, ANIMAL_REC, ANIMAL));
         write(root, ANIMAL, cf.build(ANIMAL, cb -> {
             cb.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT);
             cb.with(RuntimeVisibleAnnotationsAttribute.of(Annotation.of(
@@ -117,7 +118,7 @@ class ClosedModuleBindingTest {
     }
 
     /** A record with one {@code String name} component. */
-    private static byte[] record(ClassFile cf, ClassDesc type, ClassDesc... interfaces) {
+    private static byte[] recordClass(ClassFile cf, ClassDesc type, ClassDesc... interfaces) {
         return cf.build(type, cb -> {
             cb.withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL).withSuperclass(ClassDesc.of("java.lang.Record"))
                     .withInterfaceSymbols(interfaces);
