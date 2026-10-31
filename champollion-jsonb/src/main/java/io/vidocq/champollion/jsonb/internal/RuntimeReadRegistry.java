@@ -485,7 +485,7 @@ final class RuntimeReadRegistry {
             if (ctorMh != null) return ctorMh.invokeWithArguments(args);
             return reflCtor.newInstance(args);
         } catch (Throwable t) {
-            throw new JsonbException("Failed to instantiate record " + type + ": " + t.getMessage(), t);
+            throw AccessFailures.wrap("Failed to instantiate record " + type + ": " + t.getMessage(), type, t);
         }
     }
 
@@ -1074,8 +1074,7 @@ final class RuntimeReadRegistry {
         public void applyValue(Object target, Object value) {
             try { mh.invoke(target, value); }
             catch (Throwable t) {
-                throw AccessFailures.wrap("Setter failed on '" + m.getName() + "': " + t.getMessage(),
-                        m.getDeclaringClass(), t);
+                throw new JsonbException("Setter failed on '" + m.getName() + "': " + t.getMessage(), t);
             }
         }
     }
@@ -1091,7 +1090,7 @@ final class RuntimeReadRegistry {
         public void applyValue(Object target, Object value) {
             try { f.set(target, value); }
             catch (IllegalAccessException e) {
-                throw AccessFailures.wrap("Field set failed: " + f, f.getDeclaringClass(), e);
+                throw new JsonbException("Field set failed: " + f, e);
             }
         }
     }

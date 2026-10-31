@@ -70,4 +70,29 @@ class AccessFailuresTest {
         assertEquals("ctor failed for x", AccessFailures.wrap("ctor failed for x", AccessFailuresTest.class,
                 new IllegalAccessException("no")).getMessage());
     }
+
+    @Test
+    void noTypeOrACauseThatIsItsOwnCauseKeepsTheMessage() throws Exception {
+        assertEquals("", AccessFailures.hint(null, new IllegalAccessException("no")));
+        Throwable selfCaused = new RuntimeException("loop") {
+            @Override
+            public synchronized Throwable getCause() {
+                return this;
+            }
+        };
+        assertEquals("", AccessFailures.hint(closedType(), selfCaused));
+    }
+
+    @Test
+    void aTypeOutsideAnyNamedModuleKeepsTheMessage() {
+        byte[] bytes = java.lang.classfile.ClassFile.of().build(java.lang.constant.ClassDesc.of("unnamed.Sample"),
+                cb -> cb.withFlags(java.lang.classfile.ClassFile.ACC_PUBLIC));
+        Class<?> unnamed = new ClassLoader(null) {
+            Class<?> define() {
+                return defineClass("unnamed.Sample", bytes, 0, bytes.length);
+            }
+        }.define();
+
+        assertEquals("", AccessFailures.hint(unnamed, new IllegalAccessException("no")));
+    }
 }
