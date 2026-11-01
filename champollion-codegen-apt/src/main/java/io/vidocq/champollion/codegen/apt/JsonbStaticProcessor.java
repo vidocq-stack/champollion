@@ -62,7 +62,7 @@ import java.util.Set;
  * <p>M5.2: limited to records whose components are primitive types or
  * {@link String}. Containers (List/Map/Optional/Array) will be added in M5.3.</p>
  */
-@SupportedAnnotationTypes({"io.vidocq.champollion.jsonb.spi.JsonbStatic", RestBindings.PATH})
+@SupportedAnnotationTypes({JsonbStaticProcessor.JSONB_STATIC, RestBindings.PATH})
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class JsonbStaticProcessor extends AbstractProcessor {
 
@@ -109,7 +109,16 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
 
     /** Processor option: {@code false} turns off the bindings of the types JAX-RS resources reach. */
     static final String REST_OPTION = "champollion.jsonb.rest";
+    /**
+     * Processor option: comma-separated names of types to bind with the types they reach, whatever annotations the
+     * compilation holds. Vidocq's {@code generate} goal passes the types of a dependency that the application's
+     * resources reach, listed in its {@value #DEPENDENCY_TYPES_FILE}.
+     */
+    static final String TYPES_OPTION = "champollion.jsonb.types";
+    /** The types of other compilations the resources reach, by binary name: a dependency's, to bind there. */
+    static final String DEPENDENCY_TYPES_FILE = "META-INF/champollion/dependency-types";
     private static final String JSONB_BINDING = "io.vidocq.champollion.jsonb.spi.JsonbBinding";
+    static final String JSONB_STATIC = "io.vidocq.champollion.jsonb.spi.JsonbStatic";
     /** The bindings generated for the types resources reach, and their type: kept across incremental builds. */
     private static final String REST_BINDINGS_FILE = "META-INF/champollion/rest-bindings";
 
@@ -118,15 +127,43 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private final java.util.Map<String, String> restBindings = new java.util.LinkedHashMap<>();
     /** The types of this compilation, every round's: a binding can only be generated in their packages. */
     private final Set<TypeElement> compiled = new java.util.HashSet<>();
+    /** The binary names of the types of other compilations the resources reach. */
+    private final Set<String> dependencyTypes = new java.util.TreeSet<>();
+    private boolean namedTypesDone;
 
     @Override
     public Set<String> getSupportedOptions() {
-        return Set.of(REST_OPTION);
+        return Set.of(REST_OPTION, TYPES_OPTION);
+    }
+
+    /** With {@value #TYPES_OPTION}, every compilation: the types to bind need carry no annotation. */
+    @Override
+    public Set<String> getSupportedAnnotationTypes() {
+        return namedTypes().isEmpty() ? super.getSupportedAnnotationTypes() : Set.of("*");
+    }
+
+    private List<String> namedTypes() {
+        String option = processingEnv == null ? null : processingEnv.getOptions().get(TYPES_OPTION);
+        if (option == null || option.isBlank()) return List.of();
+        return java.util.Arrays.stream(option.split(",")).map(String::trim).filter(n -> !n.isEmpty()).toList();
     }
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
         for (Element root : env.getRootElements()) addCompiled(root);
+        if (!namedTypesDone && !namedTypes().isEmpty()) {
+            namedTypesDone = true;
+            List<TypeElement> types = new java.util.ArrayList<>();
+            for (String name : namedTypes()) {
+                TypeElement type = processingEnv.getElementUtils().getTypeElement(name.replace('$', '.'));
+                if (type == null) continue;
+                types.add(type);
+                // Run over a dependency's classes, the processor sees the named ones only: the types of their
+                // packages, which the bindings may hold, belong to the same jar (a package lives in one module).
+                processingEnv.getElementUtils().getPackageOf(type).getEnclosedElements().forEach(this::addCompiled);
+            }
+            generate(new RestBindings(processingEnv, compiled).collectTypes(types));
+        }
         for (TypeElement annotation : annotations) {
             String name = annotation.getQualifiedName().toString();
             if (RestBindings.PATH.equals(name)) {
@@ -135,6 +172,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                 }
                 continue;
             }
+            // With "*" supported (TYPES_OPTION), the other annotations of the compilation come here too.
+            if (!JSONB_STATIC.equals(name)) continue;
             for (Element annotated : env.getElementsAnnotatedWith(annotation)) {
                 if (annotated.getKind() != ElementKind.RECORD) {
                     error(annotated, "@JsonbStatic only supported on records (M5.2). Got: " + annotated.getKind());
@@ -146,6 +185,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         if (env.processingOver() && !generatedBindings.isEmpty()) {
             writeServicesFile();
         }
+        if (env.processingOver() && !dependencyTypes.isEmpty()) writeDependencyTypes();
         // Never claims: other processors (Cassini's, Vauban's) read @Path too.
         return false;
     }
@@ -173,7 +213,11 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                             + " the types its resources exchange keep the reflective JSON-B mapping at run time");
             return;
         }
-        RestBindings found = new RestBindings(processingEnv, compiled).collect(resources);
+        generate(new RestBindings(processingEnv, compiled).collect(resources));
+    }
+
+    /** Writes the bindings of the types {@code found} models, and notes why the others keep the runtime mapping. */
+    private void generate(RestBindings found) {
         java.util.Map<RestBindings.Model, String> names = new java.util.LinkedHashMap<>();
         for (RestBindings.Model model : found.models()) {
             if (!restBindings.containsKey(model.bindingName())) names.put(model, model.bindingName());
@@ -192,6 +236,9 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             restBindings.put(entry.getValue(), model.typeName());
         }
         for (var skipped : found.skipped().entrySet()) {
+            if (RestBindings.NOT_COMPILED.equals(skipped.getValue())) {
+                dependencyTypes.add(processingEnv.getElementUtils().getBinaryName(skipped.getKey()).toString());
+            }
             processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE,
                     "Champollion: " + skipped.getKey().getQualifiedName()
                             + " keeps the reflective JSON-B mapping at run time: " + skipped.getValue(),
@@ -923,6 +970,23 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         } catch (IOException e) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Failed to write " + SERVICE_FILE + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Lists the types of other compilations the resources reach, for Vidocq's {@code generate} goal to bind in the
+     * dependency that holds them ({@value #TYPES_OPTION}).
+     */
+    private void writeDependencyTypes() {
+        try {
+            FileObject f = processingEnv.getFiler()
+                    .createResource(StandardLocation.CLASS_OUTPUT, "", DEPENDENCY_TYPES_FILE);
+            try (var w = f.openWriter()) {
+                for (String type : dependencyTypes) w.write(type + "\n");
+            }
+        } catch (IOException e) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "Failed to write " + DEPENDENCY_TYPES_FILE + ": " + e.getMessage());
         }
     }
 

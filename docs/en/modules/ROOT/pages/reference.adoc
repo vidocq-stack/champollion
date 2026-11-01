@@ -97,6 +97,8 @@ Champollion: com.example.shop.Legacy keeps the reflective JSON-B mapping at run 
 
 The usual reasons: an abstract class, a JSON-B annotation on a property the binding cannot honour (a CDI bean as adapter or serializer, a creator parameter without a name…), or one on the class, a superclass or their package other than the three above (`@JsonbVisibility`, `@JsonbPropertyOrder`…), an annotated interface method a getter implements, an array of a generic type, a property declared on several classes of a hierarchy (an overridden getter), an interface with a default getter, a type of a dependency. The processor option `-Achampollion.jsonb.rest=false` turns the generation off.
 
+[.tag-new]#NEW# A type of a dependency that the resources reach is compiled elsewhere, so the application's compilation cannot bind it: the processor lists it, by binary name, in `META-INF/champollion/dependency-types`. Run over the dependency with `-Achampollion.jsonb.types=<names>` (comma-separated), the processor binds those types, and the types they reach, there, with no annotation in the dependency. Vidocq's `generate` goal does this for the application's dependencies and writes the bindings into its enriched copy of the jar.
+
 The generated bindings implement a type of `io.vidocq.champollion.jsonb`, so a named module must read that module (`requires io.vidocq.champollion.jsonb;`, directly or through a `requires transitive`) to get them. A module that does not read it keeps the reflective mapping for all its types, and the compiler says so once:
 
 ----

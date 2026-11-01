@@ -54,6 +54,8 @@ import java.util.Set;
 final class RestBindings {
 
     static final String PATH = "jakarta.ws.rs.Path";
+    /** Why a type of another compilation (a dependency's, say) gets no binding here. */
+    static final String NOT_COMPILED = "not compiled with the resources (a dependency's type, or an incremental build)";
     private static final String HTTP_METHOD = "jakarta.ws.rs.HttpMethod";
     private static final String JSONB_ANNOTATIONS = "jakarta.json.bind.annotation.";
     private static final String JSONB_PROPERTY = JSONB_ANNOTATIONS + "JsonbProperty";
@@ -253,6 +255,19 @@ final class RestBindings {
             TypeElement resource = resourceOf(element);
             if (resource != null) reachFrom(resource);
         }
+        return settle();
+    }
+
+    /**
+     * Collects {@code types} and the types they reach, and models those it can: for the types of a dependency that
+     * the resources of an application reach (their names come from its {@link #NOT_COMPILED} notes).
+     */
+    RestBindings collectTypes(Collection<TypeElement> types) {
+        types.forEach(type -> reach(type.asType()));
+        return settle();
+    }
+
+    private RestBindings settle() {
         while (!pending.isEmpty()) {
             TypeElement type = pending.poll();
             if (!isDecided(type)) {
@@ -362,7 +377,7 @@ final class RestBindings {
             return null;
         }
         if (!compiled.contains(type)) {
-            return "not compiled with the resources (a dependency's type, or an incremental build)";
+            return NOT_COMPILED;
         }
         if (hasAnnotation(type, JSONB_TYPE_INFO)) return polymorphicBase(type);
         String where = placement(type);

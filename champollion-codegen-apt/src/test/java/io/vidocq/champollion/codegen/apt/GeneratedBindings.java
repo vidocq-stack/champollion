@@ -100,6 +100,21 @@ final class GeneratedBindings implements AutoCloseable {
 
     /** Compiles the JAX-RS annotations and {@code sources} (by qualified name, {@code package-info} included). */
     static GeneratedBindings compile(Path tmp, Map<String, String> sources) throws Exception {
+        return compile(tmp, sources, List.of(), null);
+    }
+
+    /**
+     * Compiles {@code sources} with the processor's {@code options} ({@code -Akey=value}), {@code classes} (a
+     * directory of another compilation, or {@code null}) on the class path.
+     */
+    static GeneratedBindings compile(Path tmp, Map<String, String> sources, List<String> options, Path classes)
+            throws Exception {
+        return compile(tmp, sources, options, classes, null);
+    }
+
+    /** As above, the processor also running over the {@code classNames} of {@code classes}, as on a dependency. */
+    static GeneratedBindings compile(Path tmp, Map<String, String> sources, List<String> options, Path classes,
+                                     List<String> classNames) throws Exception {
         Path out = tmp.resolve("out");
         Files.createDirectories(out);
         var compiler = ToolProvider.getSystemJavaCompiler();
@@ -113,20 +128,23 @@ final class GeneratedBindings implements AutoCloseable {
                 JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignore) { return source; }
         }));
-        String cp = System.getProperty("java.class.path");
+        String cp = System.getProperty("java.class.path")
+                + (classes == null ? "" : java.io.File.pathSeparator + classes);
         String mp = System.getProperty("jdk.module.path", "");
-        boolean ok = compiler.getTask(null, fm, diagnostics,
-                List.of("-d", out.toString(), "--release", "25",
-                        "-cp", mp.isEmpty() ? cp : cp + java.io.File.pathSeparator + mp,
-                        "-processor", JsonbStaticProcessor.class.getName()),
-                null, files).call();
+        List<String> arguments = new ArrayList<>(List.of("-d", out.toString(), "--release", "25",
+                "-cp", mp.isEmpty() ? cp : cp + java.io.File.pathSeparator + mp,
+                "-processor", JsonbStaticProcessor.class.getName()));
+        arguments.addAll(options);
+        boolean ok = compiler.getTask(null, fm, diagnostics, arguments, classNames, files).call();
         fm.close();
         List<String> notes = new ArrayList<>();
         for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
             if (d.getKind() == Diagnostic.Kind.NOTE) notes.add(d.getMessage(null));
         }
         assertTrue(ok, () -> "compilation must succeed: " + diagnostics.getDiagnostics());
-        var loader = new URLClassLoader(new URL[] {out.toUri().toURL()}, GeneratedBindings.class.getClassLoader());
+        URL[] urls = classes == null ? new URL[] {out.toUri().toURL()}
+                : new URL[] {out.toUri().toURL(), classes.toUri().toURL()};
+        var loader = new URLClassLoader(urls, GeneratedBindings.class.getClassLoader());
         return new GeneratedBindings(out, loader, notes, JsonbBuilder.create());
     }
 
