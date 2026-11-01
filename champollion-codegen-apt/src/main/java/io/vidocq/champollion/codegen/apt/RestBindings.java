@@ -91,6 +91,7 @@ final class RestBindings {
     /** The element of an annotation that holds its main value. */
     private static final String VALUE = "value";
     private static final String CREATOR_PARAMETER = "@JsonbCreator parameter ";
+    private static final String COMPONENT = "component ";
 
     /** The types JSON-B maps natively; {@code JsonbLeaf} hands their codecs to the generated code. */
     static final Set<String> LEAVES = Set.of(
@@ -171,7 +172,6 @@ final class RestBindings {
         }
     }
 
-    /** A type a binding is generated for. */
     /** A {@code @JsonbCreator} parameter: the JSON name its {@code @JsonbProperty} gives, and its type. */
     record Param(String jsonName, TypeMirror type) {}
 
@@ -390,8 +390,11 @@ final class RestBindings {
                 : classProperties(type, properties);
         if (reason == null) reason = unsupportedProperty(properties);
         if (reason != null) return reason;
-        // The runtime's default order: a class's properties lexicographically (JSON-B 3.0 §4.4, one declaring class
-        // here), a record's components in their declaration order.
+        return addModel(type, properties);
+    }
+
+    /** Records the model of {@code type}, whose {@code properties} are mapped; {@code null}, or why it cannot be. */
+    private String addModel(TypeElement type, List<Property> properties) {
         boolean isRecord = type.getKind() == ElementKind.RECORD;
         boolean subclassable = !isRecord && !type.getModifiers().contains(Modifier.FINAL);
         Creator creator = creators.get(type);
@@ -588,28 +591,35 @@ final class RestBindings {
             if (hasJsonbCreator(m)) return "a @JsonbCreator factory";
         }
         for (var component : type.getRecordComponents()) {
-            List<Element> members = new ArrayList<>(List.of(component));
-            if (component.getAccessor() != null) members.add(component.getAccessor());
-            String annotations = jsonbAnnotations(members);
-            if (annotations != null) return "component " + component.getSimpleName() + ": " + annotations;
-            String name = component.getSimpleName().toString();
-            // A transient component is not a JSON property: the emitter passes its default to the constructor.
-            if (isTransient(members)) continue;
-            // The runtime looks at the accessor, then at the field, where the component's annotations land.
-            Element field = ElementFilter.fieldsIn(type.getEnclosedElements()).stream()
-                    .filter(f -> f.getSimpleName().contentEquals(name)).<Element>map(f -> f).findFirst()
-                    .orElse(component);
-            List<Element> lookup = present(component.getAccessor(), field);
-            if (hasAnnotation(members, JSONB_TYPE_SERIALIZER) || hasAnnotation(members, JSONB_TYPE_DESERIALIZER)) {
-                return "component " + name + ": a serializer or deserializer on a record component, which the"
-                        + " runtime does not call";
-            }
-            // The runtime takes a component's adapter from its accessor only.
-            Mapping mapping = mapping(type, component.asType(), lookup, present(component.getAccessor()), null);
-            if (mapping == null) return "component " + name + ": " + lastReason;
-            properties.add(new Property(jsonName(members, name), component.asType(), new Member(Access.METHOD,
-                    name + "()"), new Member(Access.COMPONENT, name), nillable(type, lookup), mapping, mapping));
+            String reason = componentProperty(type, component, properties);
+            if (reason != null) return COMPONENT + component.getSimpleName() + ": " + reason;
         }
+        return null;
+    }
+
+    /** Adds the property of {@code component}, unless it is transient; {@code null}, or why it cannot be mapped. */
+    private String componentProperty(TypeElement type, javax.lang.model.element.RecordComponentElement component,
+                                     List<Property> properties) {
+        List<Element> members = new ArrayList<>(List.of(component));
+        if (component.getAccessor() != null) members.add(component.getAccessor());
+        String annotations = jsonbAnnotations(members);
+        if (annotations != null) return annotations;
+        String name = component.getSimpleName().toString();
+        // A transient component is not a JSON property: the emitter passes its default to the constructor.
+        if (isTransient(members)) return null;
+        if (hasAnnotation(members, JSONB_TYPE_SERIALIZER) || hasAnnotation(members, JSONB_TYPE_DESERIALIZER)) {
+            return "a serializer or deserializer on a record component, which the runtime does not call";
+        }
+        // The runtime looks at the accessor, then at the field, where the component's annotations land.
+        Element field = ElementFilter.fieldsIn(type.getEnclosedElements()).stream()
+                .filter(f -> f.getSimpleName().contentEquals(name)).<Element>map(f -> f).findFirst()
+                .orElse(component);
+        List<Element> lookup = present(component.getAccessor(), field);
+        // The runtime takes a component's adapter from its accessor only.
+        Mapping mapping = mapping(type, component.asType(), lookup, present(component.getAccessor()), null);
+        if (mapping == null) return lastReason;
+        properties.add(new Property(jsonName(members, name), component.asType(), new Member(Access.METHOD,
+                name + "()"), new Member(Access.COMPONENT, name), nillable(type, lookup), mapping, mapping));
         return null;
     }
 
@@ -853,16 +863,9 @@ final class RestBindings {
         TypeMirror t = m.type();
         if (!sameTypes(t, m)) return PROPERTY + m.name() + " has different types on its field and accessors";
         List<Element> members = m.all();
-        String annotations = jsonbAnnotations(members);
-        if (annotations == null) annotations = interfaceAnnotations(owner, m.getter());
-        if (annotations == null) annotations = interfaceAnnotations(owner, m.setter());
+        String annotations = memberAnnotations(owner, m);
         if (annotations != null) return PROPERTY + m.name() + ": " + annotations;
-        if (isTransient(members)) {
-            boolean everywhere = members.stream().allMatch(e -> hasAnnotation(e, JSONB_TRANSIENT));
-            boolean onField = m.field() != null && hasAnnotation(m.field(), JSONB_TRANSIENT);
-            return everywhere || onField ? null
-                    : PROPERTY + m.name() + " is @JsonbTransient on part of its members only";
-        }
+        if (isTransient(members)) return transientReason(m);
         // On write, the runtime looks at the getter then the field; on read, at the setter, the getter, the field.
         List<Element> writeLookup = present(m.getter(), m.field());
         List<Element> readLookup = present(m.setter(), m.getter(), m.field());
@@ -982,7 +985,7 @@ final class RestBindings {
         String unusable = instantiable(adapter, packageOf(owner));
         if (unusable != null) return fail(unusable);
         List<? extends TypeMirror> args = adapterArguments(adapter);
-        if (args == null) return fail("its JsonbAdapter type arguments are not concrete types");
+        if (args.isEmpty()) return fail("its JsonbAdapter type arguments are not concrete types");
         if (!env.getTypeUtils().isSameType(args.get(0), propertyType)) {
             return fail("it adapts " + args.get(0) + ", not " + propertyType);
         }
@@ -1040,11 +1043,11 @@ final class RestBindings {
                 if (JSONB_ADAPTER.equals(erasureName(d))) {
                     List<? extends TypeMirror> args = d.getTypeArguments();
                     boolean concrete = args.size() == 2 && args.stream().allMatch(RestBindings::isConcrete);
-                    return concrete ? args : null;
+                    return concrete ? args : List.of();
                 }
             }
         }
-        return null;
+        return List.of();
     }
 
     /** A type with no type variable nor wildcard in it. */
@@ -1144,6 +1147,21 @@ final class RestBindings {
         return e.getAnnotationMirrors().stream().filter(a -> annotation.equals(nameOf(a))).findFirst().orElse(null);
     }
 
+    /** The JSON-B annotations of the members of {@code m}, or of the interface methods they implement, not generated. */
+    private String memberAnnotations(TypeElement owner, Members m) {
+        String annotations = jsonbAnnotations(m.all());
+        if (annotations == null) annotations = interfaceAnnotations(owner, m.getter());
+        if (annotations == null) annotations = interfaceAnnotations(owner, m.setter());
+        return annotations;
+    }
+
+    /** {@code null} when {@code m} is not a property ({@code @JsonbTransient} where the runtime honours it), else why. */
+    private static String transientReason(Members m) {
+        boolean everywhere = m.all().stream().allMatch(e -> hasAnnotation(e, JSONB_TRANSIENT));
+        boolean onField = m.field() != null && hasAnnotation(m.field(), JSONB_TRANSIENT);
+        return everywhere || onField ? null : PROPERTY + m.name() + " is @JsonbTransient on part of its members only";
+    }
+
     private boolean sameTypes(TypeMirror t, Members m) {
         return (m.getter() == null || same(t, m.getter().getReturnType()))
                 && (m.setter() == null || same(t, m.setter().getParameters().get(0).asType()))
@@ -1226,20 +1244,39 @@ final class RestBindings {
     }
 
     private String missingBinding(Model model) {
-        if (model.polymorphism() != null && model.polymorphism().isBase()) {
-            for (Variant v : model.polymorphism().variants()) {
-                String reason = unreachable(List.of(v.type().asType()), model.packageName());
-                if (reason == null) reason = unbound(List.of(v.type().asType()));
-                if (reason != null) return "@JsonbSubtype \"" + v.alias() + "\" is " + reason;
-            }
+        String reason = missingVariant(model);
+        if (reason == null) reason = missingParameter(model);
+        return reason != null ? reason : missingProperty(model);
+    }
+
+    /** A {@code @JsonbSubtype} of a polymorphic base without a binding its package reaches, or {@code null}. */
+    private String missingVariant(Model model) {
+        if (model.polymorphism() == null || !model.polymorphism().isBase()) return null;
+        for (Variant v : model.polymorphism().variants()) {
+            String reason = missing(List.of(v.type().asType()), List.of(v.type().asType()), model.packageName());
+            if (reason != null) return "@JsonbSubtype \"" + v.alias() + "\" is " + reason;
         }
-        if (model.creator() != null) {
-            for (Param param : model.creator().params()) {
-                String reason = unreachable(List.of(param.type()), model.packageName());
-                if (reason == null) reason = unbound(List.of(param.type()));
-                if (reason != null) return CREATOR_PARAMETER + "\"" + param.jsonName() + "\" holds " + reason;
-            }
+        return null;
+    }
+
+    /** A {@code @JsonbCreator} parameter whose type has no binding its package reaches, or {@code null}. */
+    private String missingParameter(Model model) {
+        if (model.creator() == null) return null;
+        for (Param param : model.creator().params()) {
+            String reason = missing(List.of(param.type()), List.of(param.type()), model.packageName());
+            if (reason != null) return CREATOR_PARAMETER + "\"" + param.jsonName() + "\" holds " + reason;
         }
+        return null;
+    }
+
+    /** A type of {@code named} the package cannot name, or one of {@code mapped} without a binding; or {@code null}. */
+    private String missing(List<TypeMirror> named, List<TypeMirror> mapped, String pkg) {
+        String reason = unreachable(named, pkg);
+        return reason != null ? reason : unbound(mapped);
+    }
+
+    /** A property whose types have no binding the package reaches, or {@code null}. */
+    private String missingProperty(Model model) {
         for (Property p : model.properties()) {
             // The binding names the property's type, and maps the types the JSON holds (an adapter's, maybe).
             List<TypeMirror> named = new ArrayList<>(p.jsonTypes());

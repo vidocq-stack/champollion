@@ -153,33 +153,15 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         for (Element root : env.getRootElements()) addCompiled(root);
         if (!namedTypesDone && !namedTypes().isEmpty()) {
             namedTypesDone = true;
-            List<TypeElement> types = new java.util.ArrayList<>();
-            for (String name : namedTypes()) {
-                TypeElement type = processingEnv.getElementUtils().getTypeElement(name.replace('$', '.'));
-                if (type == null) continue;
-                types.add(type);
-                // Run over a dependency's classes, the processor sees the named ones only: the types of their
-                // packages, which the bindings may hold, belong to the same jar (a package lives in one module).
-                processingEnv.getElementUtils().getPackageOf(type).getEnclosedElements().forEach(this::addCompiled);
-            }
-            generate(new RestBindings(processingEnv, compiled).collectTypes(types));
+            bindNamedTypes();
         }
         for (TypeElement annotation : annotations) {
             String name = annotation.getQualifiedName().toString();
-            if (RestBindings.PATH.equals(name)) {
-                if (!"false".equals(processingEnv.getOptions().get(REST_OPTION))) {
-                    generateRestBindings(env.getElementsAnnotatedWith(annotation));
-                }
-                continue;
-            }
-            // With "*" supported (TYPES_OPTION), the other annotations of the compilation come here too.
-            if (!JSONB_STATIC.equals(name)) continue;
-            for (Element annotated : env.getElementsAnnotatedWith(annotation)) {
-                if (annotated.getKind() != ElementKind.RECORD) {
-                    error(annotated, "@JsonbStatic only supported on records (M5.2). Got: " + annotated.getKind());
-                    continue;
-                }
-                processRecord((TypeElement) annotated);
+            if (RestBindings.PATH.equals(name) && !"false".equals(processingEnv.getOptions().get(REST_OPTION))) {
+                generateRestBindings(env.getElementsAnnotatedWith(annotation));
+            } else if (JSONB_STATIC.equals(name)) {
+                // With "*" supported (TYPES_OPTION), the other annotations of the compilation come here too.
+                env.getElementsAnnotatedWith(annotation).forEach(this::processStatic);
             }
         }
         if (env.processingOver() && !generatedBindings.isEmpty()) {
@@ -188,6 +170,30 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         if (env.processingOver() && !dependencyTypes.isEmpty()) writeDependencyTypes();
         // Never claims: other processors (Cassini's, Vauban's) read @Path too.
         return false;
+    }
+
+    /** Binds the types {@value #TYPES_OPTION} names, and the types they reach. */
+    private void bindNamedTypes() {
+        List<TypeElement> types = new java.util.ArrayList<>();
+        for (String name : namedTypes()) {
+            TypeElement type = processingEnv.getElementUtils().getTypeElement(name.replace('$', '.'));
+            if (type != null) {
+                types.add(type);
+                // Run over a dependency's classes, the processor sees the named ones only: the types of their
+                // packages, which the bindings may hold, belong to the same jar (a package lives in one module).
+                processingEnv.getElementUtils().getPackageOf(type).getEnclosedElements().forEach(this::addCompiled);
+            }
+        }
+        generate(new RestBindings(processingEnv, compiled).collectTypes(types));
+    }
+
+    /** A type annotated {@code @JsonbStatic}: a record gets its binding. */
+    private void processStatic(Element annotated) {
+        if (annotated.getKind() != ElementKind.RECORD) {
+            error(annotated, "@JsonbStatic only supported on records (M5.2). Got: " + annotated.getKind());
+            return;
+        }
+        processRecord((TypeElement) annotated);
     }
 
     private void addCompiled(Element element) {

@@ -60,6 +60,11 @@ final class RestBindingEmitter {
                             }
                         }
                 """;
+    private static final String CTX_OPEN = " ctx) {\n";
+    private static final String PRIVATE_STATIC = "    private static ";
+    private static final String NEW_END = "();\n";
+    private static final String CASE = "                case ";
+    private static final String ASSIGN = " = %s;";
     private static final String I8 = "        ";
     private static final String I16 = "                ";
     private static final String WRITE_G = ".write(g, ";
@@ -69,7 +74,7 @@ final class RestBindingEmitter {
     private static final String DESER_CONTEXT = "jakarta.json.bind.serializer.DeserializationContext";
     /** The parameters of a reader method: the parser, the value's leading event (consumed), the context. */
     private static final String READER_PARAMETERS = "(jakarta.json.stream.JsonParser p, "
-            + "jakarta.json.stream.JsonParser.Event e, " + DESER_CONTEXT + " ctx) {\n";
+            + "jakarta.json.stream.JsonParser.Event e, " + DESER_CONTEXT + CTX_OPEN;
     private final Model model;
     private final Map<TypeElement, String> others;
     /** Leaf codec fields, by the expression creating them. */
@@ -118,18 +123,18 @@ final class RestBindingEmitter {
         }
         for (var e : instances.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
-                    .append(" = new ").append(e.getKey()).append("();\n");
+                    .append(" = new ").append(e.getKey()).append(NEW_END);
         }
         for (var e : bindings.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
-                    .append(" = new ").append(e.getKey()).append("();\n");
+                    .append(" = new ").append(e.getKey()).append(NEW_END);
         }
         out.append("\n    @Override public Class<").append(type).append("> type() { return ").append(type)
                 .append(".class; }\n\n");
         out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
                 .append(" value) {\n        write(g, value, null);\n    }\n\n");
         out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
-                .append(" value, ").append(SER_CONTEXT).append(" ctx) {\n");
+                .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
         out.append("        if (value == null) { g.writeNull(); return; }\n");
         out.append("        g.writeStartObject();\n");
         if (poly != null && !poly.isBase()) {
@@ -139,7 +144,7 @@ final class RestBindingEmitter {
             out.append("        g.writeEnd();\n    }\n\n");
             out.append("    /** Writes the members of {@code value}, after its discriminator. */\n");
             out.append("    public void writeMembers(jakarta.json.stream.JsonGenerator g, ").append(type)
-                    .append(" value, ").append(SER_CONTEXT).append(" ctx) {\n");
+                    .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
             out.append(write);
             out.append("    }\n\n");
         } else {
@@ -300,7 +305,7 @@ final class RestBindingEmitter {
             out.append("        return readMembers(p, ctx);\n    }\n\n");
             out.append("    /** Reads the members of an object whose start and discriminator are consumed. */\n");
             out.append("    public ").append(type).append(" readMembers(jakarta.json.stream.JsonParser p, ")
-                    .append(DESER_CONTEXT).append(" ctx) {\n");
+                    .append(DESER_CONTEXT).append(CTX_OPEN);
             out.append("        jakarta.json.stream.JsonParser.Event e;\n");
         }
         List<? extends RecordComponentElement> components = model.type().getRecordComponents();
@@ -313,7 +318,7 @@ final class RestBindingEmitter {
         }
         out.append(LOOP_START);
         for (Property p : model.properties()) {
-            out.append("                case ").append(lit(p.jsonName())).append(" -> ");
+            out.append(CASE).append(lit(p.jsonName())).append(" -> ");
             assign(out, p, locals.get(p.writeMember()));
         }
         out.append(LOOP_END);
@@ -367,11 +372,11 @@ final class RestBindingEmitter {
         StringBuilder out = new StringBuilder();
         out.append(readHeader(type));
         out.append(READ_START);
-        out.append(I8).append(type).append(" o = new ").append(type).append("();\n");
+        out.append(I8).append(type).append(" o = new ").append(type).append(NEW_END);
         out.append(LOOP_START);
         for (Property p : model.properties()) {
             if (p.write() == Access.NONE) continue;   // read-only: its key is skipped like an unknown one
-            out.append("                case ").append(lit(p.jsonName())).append(" -> ");
+            out.append(CASE).append(lit(p.jsonName())).append(" -> ");
             assignWith(out, p, target(p, "o"));
         }
         out.append(LOOP_END);
@@ -384,12 +389,12 @@ final class RestBindingEmitter {
         return "    @Override\n    public " + type + " read(jakarta.json.stream.JsonParser p) {\n"
                 + "        return read(p, null);\n    }\n\n"
                 + "    @Override\n    public " + type + " read(jakarta.json.stream.JsonParser p, " + DESER_CONTEXT
-                + " ctx) {\n";
+                + CTX_OPEN;
     }
 
     /** How a value is stored into property {@code p} of {@code o}: a format with one {@code %s}. */
     private static String target(Property p, String o) {
-        return p.write() == Access.FIELD ? o + "." + p.writeMember() + " = %s;" : o + "." + p.writeMember() + "(%s);";
+        return p.write() == Access.FIELD ? o + "." + p.writeMember() + ASSIGN : o + "." + p.writeMember() + "(%s);";
     }
 
     /**
@@ -408,8 +413,8 @@ final class RestBindingEmitter {
             args.add(local);
             out.append(I8).append(render(param.type())).append(' ').append(local).append(" = ")
                     .append(defaultOf(param.type())).append(";\n");
-            cases.append("                case ").append(lit(param.jsonName())).append(" -> ");
-            assignValue(cases, param.type(), param.jsonName(), reader(param.type()), local + " = %s;");
+            cases.append(CASE).append(lit(param.jsonName())).append(" -> ");
+            assignValue(cases, param.type(), param.jsonName(), reader(param.type()), local + ASSIGN);
         }
         StringBuilder after = new StringBuilder();
         for (Property p : model.properties()) {
@@ -419,7 +424,7 @@ final class RestBindingEmitter {
             out.append(I8).append(render(p.type())).append(' ').append(local).append(" = ")
                     .append(defaultOf(p.type())).append(";\n");
             out.append("        boolean ").append(seen).append(" = false;\n");
-            cases.append("                case ").append(lit(p.jsonName())).append(" -> ");
+            cases.append(CASE).append(lit(p.jsonName())).append(" -> ");
             assignValue(cases, p.type(), p.jsonName(), reader(p.type()), local + " = %s; " + seen + " = true;");
             after.append("        if (").append(seen).append(") ").append(String.format(target(p, "o"), local))
                     .append('\n');
@@ -438,7 +443,7 @@ final class RestBindingEmitter {
 
     /** Reads the property into the record's local. */
     private void assign(StringBuilder out, Property p, String local) {
-        assignWith(out, p, local + " = %s;");
+        assignWith(out, p, local + ASSIGN);
     }
 
     /** Reads the property and stores it through {@code target}, a format with one {@code %s}. */
@@ -469,7 +474,7 @@ final class RestBindingEmitter {
         readerNames.put(key, name);
         String type = t.getKind().isPrimitive() ? boxed(t) : key;
         StringBuilder r = new StringBuilder();
-        r.append("    private static ").append(type).append(' ').append(name)
+        r.append(PRIVATE_STATIC).append(type).append(' ').append(name)
                 .append(READER_PARAMETERS);
         if (t.getKind().isPrimitive() || RestBindings.isPrimitiveArray(t)
                 || RestBindings.LEAVES.contains(RestBindings.erasureName(t))) {
@@ -576,7 +581,7 @@ final class RestBindingEmitter {
         readerNames.put(key, name);
         String inner = reader(adapter.adapted());
         String adapted = render(adapter.adapted());
-        readers.append("    private static ").append(render(t)).append(' ').append(name)
+        readers.append(PRIVATE_STATIC).append(render(t)).append(' ').append(name)
                 .append(READER_PARAMETERS)
                 .append(I8).append(adapted).append(" a = ").append(inner).append("(p, e, ctx);\n")
                 .append("        if (a == null) return null;\n")
@@ -597,7 +602,7 @@ final class RestBindingEmitter {
         if (existing != null) return existing;
         String name = "__r" + readerNames.size();
         readerNames.put(key, name);
-        readers.append("    private static ").append(render(t)).append(' ').append(name).append(READER_PARAMETERS)
+        readers.append(PRIVATE_STATIC).append(render(t)).append(' ').append(name).append(READER_PARAMETERS)
                 .append("        return ").append(field).append(".deserialize(p, ")
                 .append("io.vidocq.champollion.jsonb.spi.JsonbContexts.deserialization(ctx), ").append(render(t))
                 .append(".class);\n    }\n\n");
@@ -613,7 +618,7 @@ final class RestBindingEmitter {
         String name = "__r" + readerNames.size();
         readerNames.put(key, name);
         String type = t.getKind().isPrimitive() ? boxed(t) : render(t);
-        readers.append("    private static ").append(type).append(' ').append(name)
+        readers.append(PRIVATE_STATIC).append(type).append(' ').append(name)
                 .append(READER_PARAMETERS)
                 .append("        return (").append(type).append(") ").append(codec)
                 .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n    }\n\n");
