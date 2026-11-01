@@ -75,6 +75,7 @@ class RestBindingsCustomisationsTest {
                         @GET public Circle circle() { return null; }
                         @GET public Open open() { return null; }
                         @GET public OpenA openA() { return null; }
+                        @GET public Zoo zoo() { return null; }
                     }
                     """),
             Map.entry("fmt.Event", """
@@ -378,6 +379,24 @@ class RestBindingsCustomisationsTest {
                     package fmt;
                     public record OpenA(String x) implements Open {}
                     """),
+            Map.entry("fmt.OpenB", """
+                    package fmt;
+                    public class OpenB implements Open { public String getY() { return "y"; } }
+                    """),
+            Map.entry("fmt.Animal", "package fmt; public interface Animal { String getName(); }"),
+            Map.entry("fmt.Dog", """
+                    package fmt;
+                    public class Dog implements Animal {
+                        public String getName() { return "rex"; }
+                        public int getLegs() { return 4; }
+                    }
+                    """),
+            Map.entry("fmt.Vehicle", "package fmt; public abstract class Vehicle { public String getMake() { return \"m\"; } }"),
+            Map.entry("fmt.Car", "package fmt; public class Car extends Vehicle { public int getDoors() { return 4; } }"),
+            Map.entry("fmt.Zoo", """
+                    package fmt;
+                    public record Zoo(Animal animal, Vehicle vehicle, java.util.List<Animal> all, Object anything) {}
+                    """),
             Map.entry("fmt.Unnamed", """
                     package fmt;
                     import jakarta.json.bind.annotation.*;
@@ -585,14 +604,32 @@ class RestBindingsCustomisationsTest {
         assertBothFail("fmt.Shape", "{\"radius\":1.0,\"kind\":\"circle\"}");
     }
 
+    /**
+     * An interface with {@code @JsonbTypeInfo} that is not sealed: the listed records go through their binding, any
+     * other class to the runtime, by its class (it writes no discriminator for it, as the runtime does).
+     */
     @Test
-    void anOpenInterfaceWithTypeInfoKeepsTheRuntimeButItsSubtypeIsBound() throws Exception {
-        assertFalse(fmt.hasBinding("fmt.Open"));
-        assertTrue(fmt.noted("fmt.Open", "not a sealed interface"), fmt.notes()::toString);
+    void anOpenInterfaceWithTypeInfoDispatchesAndFallsBackToTheRuntime() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Open"), fmt.notes()::toString);
+        assertSameAsTheRuntime("fmt.Open", fmt.newInstance("fmt.OpenA", "x"));
+        Object other = fmt.type("fmt.OpenB").getDeclaredConstructor().newInstance();
+        assertEquals(fmt.writeRuntime("fmt.Open", other), fmt.writeStatic("fmt.Open", other));
         assertSameAsTheRuntime("fmt.OpenA", fmt.newInstance("fmt.OpenA", "x"));
     }
 
-    /** Without {@code @JsonbProperty}, a creator parameter's JSON name is its name, as the runtime reads it. */
+    /** An interface or an abstract class as a property type: each value is mapped by its class, as the runtime does. */
+    @Test
+    void anInterfaceOrAbstractPropertyIsMappedByTheValuesClass() throws Exception {
+        Object dog = fmt.type("fmt.Dog").getDeclaredConstructor().newInstance();
+        Object car = fmt.type("fmt.Car").getDeclaredConstructor().newInstance();
+        Object zoo = fmt.newInstance("fmt.Zoo", dog, car, List.of(dog), car);
+        assertTrue(fmt.hasBinding("fmt.Zoo"), fmt.notes()::toString);
+        assertTrue(fmt.hasBinding("fmt.Dog") && fmt.hasBinding("fmt.Car"), "the implementations get theirs");
+        assertEquals(fmt.writeRuntime("fmt.Zoo", zoo), fmt.writeStatic("fmt.Zoo", zoo));
+        // The runtime cannot create an Animal: it refuses to read a Zoo at all, the binding when an animal comes.
+        assertBothFail("fmt.Zoo", "{\"animal\":{\"name\":\"x\"}}");
+    }
+
     @Test
     void aCreatorParameterWithoutJsonbPropertyIsNamedByItsName() throws Exception {
         assertTrue(fmt.hasBinding("fmt.Unnamed"), fmt.notes()::toString);

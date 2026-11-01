@@ -136,9 +136,11 @@ final class RestBindingEmitter {
         out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
                 .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
         out.append("        if (value == null) { g.writeNull(); return; }\n");
-        out.append("        g.writeStartObject();\n");
-        if (poly != null && !poly.isBase()) {
+        if (poly != null && poly.isBase()) {
+            out.append(write).append("    }\n\n");
+        } else if (poly != null) {
             // A subtype writes its discriminator first, then its members: those the base's binding writes too.
+            out.append("        g.writeStartObject();\n");
             out.append(I8).append(discriminatorKey(poly)).append(" g.write(").append(lit(poly.alias())).append(");\n");
             out.append("        writeMembers(g, value, ctx);\n");
             out.append("        g.writeEnd();\n    }\n\n");
@@ -148,6 +150,7 @@ final class RestBindingEmitter {
             out.append(write);
             out.append("    }\n\n");
         } else {
+            out.append("        g.writeStartObject();\n");
             out.append(write);
             out.append("        g.writeEnd();\n    }\n\n");
         }
@@ -250,7 +253,11 @@ final class RestBindingEmitter {
         DeclaredType d = (DeclaredType) t;
         String name = RestBindings.erasureName(d);
         TypeElement element = (TypeElement) d.asElement();
-        if (RestBindings.LEAVES.contains(name)) {
+        if (RestBindings.isDynamic(t)) {
+            // Mapped by its class, as the runtime does: through the context, which uses that class's binding.
+            out.append(indent).append("io.vidocq.champollion.jsonb.spi.JsonbContexts.serialization(ctx).serialize(")
+                    .append(expr).append(", g);\n");
+        } else if (RestBindings.LEAVES.contains(name)) {
             out.append(indent).append(leaf(t)).append(WRITE_G).append(expr).append(");\n");
         } else if (element.getKind() == ElementKind.ENUM) {
             out.append(indent).append("g.write(").append(expr).append(".name());\n");
@@ -336,17 +343,23 @@ final class RestBindingEmitter {
         return "__key(g, " + lit(preQuote(poly.key())) + ", " + lit(poly.key()) + ");";
     }
 
-    /** The members of a polymorphic base's {@code write}: the discriminator and members of the value's subtype. */
+    /**
+     * The body of a polymorphic base's {@code write}: the discriminator and members of the value's record, through its
+     * binding; a class no {@code @JsonbSubtype} lists (an interface that is not sealed) goes to the runtime, by its class.
+     */
     private StringBuilder writeBase(Polymorphism poly) {
         StringBuilder out = new StringBuilder();
         out.append("        switch (value) {\n");
         for (RestBindings.Variant v : poly.variants()) {
             String subtype = v.type().getQualifiedName().toString();
             out.append("            case ").append(subtype).append(" v -> {\n");
+            out.append(I16).append("g.writeStartObject();\n");
             out.append(I16).append(discriminatorKey(poly)).append(" g.write(").append(lit(v.alias())).append(");\n");
             out.append(I16).append(binding(v.type())).append(".writeMembers(g, v, ctx);\n");
+            out.append(I16).append("g.writeEnd();\n");
             out.append("            }\n");
         }
+        out.append("            default -> io.vidocq.champollion.jsonb.spi.JsonbContexts.serialization(ctx).serialize(value, g);\n");
         out.append("        }\n");
         return out;
     }
@@ -482,6 +495,10 @@ final class RestBindingEmitter {
                     .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n");
         } else if (t.getKind() == TypeKind.ARRAY) {
             readArray(r, ((javax.lang.model.type.ArrayType) t).getComponentType());
+        } else if (RestBindings.isDynamic(t)) {
+            // Read as the runtime reads the type (an interface or an abstract class it cannot create: its error).
+            r.append("        return io.vidocq.champollion.jsonb.spi.JsonbContexts.deserialization(ctx).deserialize(")
+                    .append(key).append(".class, p);\n");
         } else {
             DeclaredType d = (DeclaredType) t;
             String erased = RestBindings.erasureName(d);

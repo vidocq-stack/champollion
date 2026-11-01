@@ -338,7 +338,9 @@ final class RestBindings {
     private void reachSubclasses(TypeElement type) {
         var erased = env.getTypeUtils().erasure(type.asType());
         for (TypeElement candidate : compiled) {
-            if (candidate != type && candidate.getKind() == ElementKind.CLASS
+            boolean concrete = candidate.getKind() == ElementKind.RECORD || candidate.getKind() == ElementKind.CLASS
+                    && !candidate.getModifiers().contains(Modifier.ABSTRACT);
+            if (candidate != type && concrete
                     && env.getTypeUtils().isSubtype(env.getTypeUtils().erasure(candidate.asType()), erased)) {
                 pending.add(candidate);
             }
@@ -400,10 +402,32 @@ final class RestBindings {
             return;
         }
         TypeElement element = (TypeElement) declared.asElement();
+        if (isDynamic(type)) {
+            // The runtime maps the value by its class: the bindings of the implementations compiled here serve it.
+            // Object's would be every class: an Object stays the runtime's.
+            if (!JAVA_LANG_OBJECT.equals(name)) reachSubclasses(element);
+            return;
+        }
         if (LEAVES.contains(name) || element.getKind() == ElementKind.ENUM || JAVA_LANG_OBJECT.equals(name)) return;
         if (!isBindable(element)) return;
         if (name.startsWith("java.") || name.startsWith("jakarta.")) return;
         pending.add(element);
+    }
+
+    /**
+     * A type whose values the runtime maps by their class, not by the type: {@code Object}, an interface without
+     * {@code @JsonbTypeInfo}, an abstract class of the application. The generated code hands such a value to the
+     * runtime's context, which uses the binding of its class when there is one.
+     */
+    static boolean isDynamic(TypeMirror type) {
+        if (type.getKind() != TypeKind.DECLARED || !((DeclaredType) type).getTypeArguments().isEmpty()) return false;
+        TypeElement element = (TypeElement) ((DeclaredType) type).asElement();
+        String name = element.getQualifiedName().toString();
+        if (JAVA_LANG_OBJECT.equals(name)) return true;
+        if (isPlatform(name)) return false;
+        return element.getKind() == ElementKind.INTERFACE && !hasAnnotation(element, JSONB_TYPE_INFO)
+                || element.getKind() == ElementKind.CLASS && element.getModifiers().contains(Modifier.ABSTRACT)
+                && !hasAnnotation(element, JSONB_TYPE_INFO);
     }
 
     // ===== Model =====
@@ -472,9 +496,7 @@ final class RestBindings {
      * {@code null}, or why it keeps the runtime.
      */
     private String polymorphicBase(TypeElement type) {
-        if (type.getKind() != ElementKind.INTERFACE || !type.getModifiers().contains(Modifier.SEALED)) {
-            return "@JsonbTypeInfo on a type that is not a sealed interface: its subtypes are not all known";
-        }
+        if (type.getKind() != ElementKind.INTERFACE) return "@JsonbTypeInfo on a class";
         if (!typeInfoChain(type).equals(List.of(type))) return "@JsonbTypeInfo on several levels";
         AnnotationMirror info = annotationOf(type, JSONB_TYPE_INFO);
         String key = "@type";
@@ -484,14 +506,10 @@ final class RestBindings {
             if (name.equals("key")) key = (String) e.getValue().getValue();
             if (name.equals(VALUE)) variants = variants(e.getValue());
         }
-        Set<TypeElement> listed = new java.util.HashSet<>();
-        for (Variant v : variants) listed.add(v.type());
-        for (TypeMirror permitted : type.getPermittedSubclasses()) {
-            TypeElement sub = (TypeElement) ((DeclaredType) permitted).asElement();
-            if (sub.getKind() != ElementKind.RECORD) return "permitted subtype " + sub.getQualifiedName() + " is no record";
-            if (!listed.remove(sub)) return "permitted subtype " + sub.getQualifiedName() + " has no @JsonbSubtype";
+        // A class the subtypes do not list (an interface that is not sealed) is mapped by the runtime, by its class.
+        for (Variant v : variants) {
+            if (v.type().getKind() != ElementKind.RECORD) return "@JsonbSubtype " + v.type().getQualifiedName() + " is no record";
         }
-        if (!listed.isEmpty()) return "a @JsonbSubtype that is not a permitted subtype";
         variants.forEach(v -> pending.add(v.type()));
         models.put(type, new Model(type, false, false, List.of(), null, new Polymorphism(key, null, variants)));
         return null;
@@ -1253,6 +1271,10 @@ final class RestBindings {
         TypeElement element = (TypeElement) declared.asElement();
         if (element.getKind() == ElementKind.ENUM) return enumReason(element, name);
         if (COLLECTIONS.contains(name) || OPTIONAL.equals(name) || MAP.equals(name)) return "nested container " + type;
+        if (isDynamic(type)) {
+            reach(type);
+            return null;
+        }
         if (!isBindable(element) || name.startsWith("java.") || name.startsWith("jakarta.")) return TYPE + name;
         pending.add(element);
         return null;   // provisionally: dropModelsReferencingSkipped checks it got a binding
@@ -1381,13 +1403,14 @@ final class RestBindings {
             return found;
         }
         TypeElement element = (TypeElement) declared.asElement();
-        if (isBindable(element) && !LEAVES.contains(name)) found.add(element);
+        if (isBindable(element) && !LEAVES.contains(name) && !isDynamic(type)) found.add(element);
         return found;
     }
 
     /** A record, a class, or an interface carrying {@code @JsonbTypeInfo}: a type that may get a binding. */
     static boolean isBindable(TypeElement element) {
-        return element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS
+        return element.getKind() == ElementKind.RECORD
+                || element.getKind() == ElementKind.CLASS && !element.getModifiers().contains(Modifier.ABSTRACT)
                 || element.getKind() == ElementKind.INTERFACE && hasAnnotation(element, JSONB_TYPE_INFO);
     }
 
