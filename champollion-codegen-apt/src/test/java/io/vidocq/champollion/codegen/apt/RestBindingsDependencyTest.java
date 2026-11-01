@@ -75,8 +75,9 @@ class RestBindingsDependencyTest {
              var application = GeneratedBindings.compile(tmp.resolve("app"), APPLICATION, List.of(),
                      library.out())) {
             assertFalse(application.hasBinding("app.Local"), "it holds a type that has no binding here");
-            assertEquals(List.of("lib.Book"),
-                    Files.readAllLines(application.out().resolve(JsonbStaticProcessor.DEPENDENCY_TYPES_FILE)));
+            assertEquals(List.of("lib.Author", "lib.Book"),
+                    Files.readAllLines(application.out().resolve(JsonbStaticProcessor.DEPENDENCY_TYPES_FILE)),
+                    "with the types its properties hold");
         }
     }
 

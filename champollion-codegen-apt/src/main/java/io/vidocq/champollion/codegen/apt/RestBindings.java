@@ -377,6 +377,8 @@ final class RestBindings {
             return null;
         }
         if (!compiled.contains(type)) {
+            // Its binding is generated where it is compiled, with the types its properties hold: list those too.
+            reachMembers(type);
             return NOT_COMPILED;
         }
         if (hasAnnotation(type, JSONB_TYPE_INFO)) return polymorphicBase(type);
@@ -405,6 +407,22 @@ final class RestBindings {
         // An instance of a subclass reaches the runtime, which uses the subclass's binding when it has one.
         if (subclassable) reachSubclasses(type);
         return null;
+    }
+
+    /**
+     * Reaches the types the components, public getters and public fields of {@code type} and its superclasses hold,
+     * whatever their mapping: those of a type compiled elsewhere are listed with it ({@link #NOT_COMPILED}).
+     */
+    private void reachMembers(TypeElement type) {
+        for (TypeElement level : hierarchy(type)) {
+            for (Element member : level.getEnclosedElements()) {
+                boolean visible = member.getModifiers().contains(Modifier.PUBLIC)
+                        && !member.getModifiers().contains(Modifier.STATIC);
+                if (member.getKind() == ElementKind.RECORD_COMPONENT) reach(member.asType());
+                else if (visible && member instanceof ExecutableElement m && isGetter(m)) reach(m.getReturnType());
+                else if (visible && member.getKind() == ElementKind.FIELD) reach(member.asType());
+            }
+        }
     }
 
     /**
