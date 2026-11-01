@@ -31,6 +31,13 @@ module io.vidocq.champollion.jsonb.cdi {
 
     exports io.vidocq.champollion.jsonb.cdi;
 
+    // No `opens`: Vauban creates the registry and calls its observers through the _VaubanComponents the Vauban
+    // processor generated in this module. Other CDI containers run it on a class path, where this is inert.
+    requires io.vidocq.vauban.api;
+
+    provides io.vidocq.vauban.api.VaubanComponentProvider
+            with io.vidocq.champollion.jsonb.cdi._VaubanComponents;
+
     provides jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension
             with io.vidocq.champollion.jsonb.cdi.JsonbCdiExtension;
 }

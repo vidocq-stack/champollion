@@ -762,3 +762,22 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Vérification** : `JsonbCdiRegistryTest` (two containers in one JVM, a `@Dependent` adapter destroyed on
   shutdown, the runtime's path, the `Jsonb` closing without the registry); `champollion-it-weld` and
   `champollion-it-openliberty` (the registry serves on Weld and on Liberty).
+
+## BUG-20261101-14 — JSON-B CDI: Vauban could not create the registry of `champollion-jsonb-cdi` on the module path
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `fix/jsonb-cdi-vauban-components`)
+- **Module touché** : `champollion-jsonb-cdi` (`pom.xml`, `module-info.java`)
+- **Symptôme** : a Vidocq application started on the original jar, not on the copy `vidocq:generate` enriched (the
+  Vidocq examples' `@VidocqTest`, which did not bind `vidocq:test-path`), failed at start: `Cannot reflectively access
+  io.vidocq.champollion.jsonb.cdi.JsonbCdiRegistry on the module path`, from the registry's `Startup` observer
+  (vidocq#474, `vidocq-runtime-cassini-rest-example`).
+- **Repro minimal** : `vidocq-runtime-cassini-rest-example` with `champollion-jsonb-cdi` in the REST bundle,
+  `./mvnw -pl vidocq-runtime-examples/vidocq-runtime-external-rest-lib,vidocq-runtime-examples/vidocq-runtime-cassini-rest-example package`.
+- **Cause** : the jar shipped no Vauban components, so Vauban fell back to reflection on a package that is not open.
+- **Correctif** : the Vauban processor runs when the module compiles, as for `mansart-data-cdi` (mansart#68): the jar
+  ships its `_VaubanComponents` (`provides io.vidocq.vauban.api.VaubanComponentProvider`), and opens nothing.
+  `vauban-api` is optional: a non-optional declaration, with its CDI exclusions, won Maven's mediation in a Vidocq
+  codegen bundle and stripped the CDI API from the processor path.
+- **Vérification** : `JsonbCdiModuleTest` (provides the components, opens nothing); `TodoResourceTest` of the example;
+  `champollion-it-weld` and `champollion-it-openliberty` unchanged.
