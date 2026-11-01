@@ -88,11 +88,11 @@ class WeldPortabilityTest {
      * runtime resolves it.
      */
     @Test
-    void aGeneratedBindingGetsTheAdapterFromTheContainer() throws Exception {
+    void aGeneratedBindingGetsTheAdapterFromTheContainer() {
         var adapter = io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class, DecoratingAdapter::new)
                 .get();
         assertEquals("<ALICE>", adapter.adaptToJson("alice"));
-        assertTrue(io.vidocq.champollion.jsonb.spi.JsonbInstances.sourceFor(DecoratingAdapter.class) != null,
+        org.junit.jupiter.api.Assertions.assertNotNull(io.vidocq.champollion.jsonb.spi.JsonbInstances.sourceFor(DecoratingAdapter.class),
                 "served by the registry champollion-jsonb-cdi installs, not by CDI.current()");
     }
 }

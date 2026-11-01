@@ -27,6 +27,7 @@ import java.lang.classfile.Annotation;
 import java.lang.classfile.AnnotationElement;
 import java.lang.classfile.AnnotationValue;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
@@ -156,7 +157,7 @@ class CdiResolverTest {
                                 code.ldc(FROM_CDI).areturn();
                             }
                         })
-                .withMethodBody("destroy", ConstantDescs.MTD_void, ClassFile.ACC_PUBLIC, code -> code.return_()));
+                .withMethodBody("destroy", ConstantDescs.MTD_void, ClassFile.ACC_PUBLIC, CodeBuilder::return_));
     }
 
     private static byte[] scoped() {

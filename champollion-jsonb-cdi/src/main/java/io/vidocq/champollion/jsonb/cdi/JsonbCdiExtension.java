@@ -70,17 +70,17 @@ public class JsonbCdiExtension implements BuildCompatibleExtension {
             JsonbTypeSerializer.class, JsonbTypeDeserializer.class, JsonbCreator.class})
     public void collect(ClassInfo type) {
         String where = type.name();
-        record(type.annotations(), where);
-        type.fields().forEach(f -> record(f.annotations(), where + "." + f.name()));
+        note(type.annotations(), where);
+        type.fields().forEach(f -> note(f.annotations(), where + "." + f.name()));
         List<MethodInfo> executables = new ArrayList<>(type.methods());
         executables.addAll(type.constructors());
         for (MethodInfo m : executables) {
-            record(m.annotations(), where + "." + m.name() + "()");
-            m.parameters().forEach(p -> record(p.annotations(), where + "." + m.name() + "(" + p.name() + ")"));
+            note(m.annotations(), where + "." + m.name() + "()");
+            m.parameters().forEach(p -> note(p.annotations(), where + "." + m.name() + "(" + p.name() + ")"));
         }
     }
 
-    private void record(Collection<AnnotationInfo> annotations, String where) {
+    private void note(Collection<AnnotationInfo> annotations, String where) {
         for (AnnotationInfo a : annotations) {
             if (ANNOTATIONS.contains(a.name()) && a.hasValue()) {
                 Type value = a.value().asType();

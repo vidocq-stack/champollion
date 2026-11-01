@@ -53,14 +53,14 @@ class JsonbCdiRegistryTest {
     void eachContainerServesAndDestroysItsOwnInstances() {
         Supplier<DependentAdapter> generated = JsonbInstances.of(DependentAdapter.class, DependentAdapter::new);
         DependentAdapter first;
-        try (WeldContainer a = start("a")) {
+        try (WeldContainer _ = start("a")) {
             first = generated.get();
             assertEquals("<x>", first.adaptToJson("x"), "injected by the container");
             assertSame(first, generated.get(), "one instance per container");
         }
         assertEquals(1, DependentAdapter.DESTROYED.get(), "destroyed with its container");
         assertNull(JsonbInstances.sourceFor(DependentAdapter.class), "the stopped container serves no more");
-        try (WeldContainer b = start("b")) {
+        try (WeldContainer _ = start("b")) {
             DependentAdapter second = generated.get();
             assertNotSame(first, second, "the second container's own instance");
             assertEquals("<y>", second.adaptToJson("y"));
@@ -74,11 +74,11 @@ class JsonbCdiRegistryTest {
         tagged.name = "n";
         // One Jsonb across both containers, as a JVM-wide one is.
         try (Jsonb jsonb = JsonbBuilder.create()) {
-            try (WeldContainer a = start("ra")) {
+            try (WeldContainer _ = start("ra")) {
                 assertEquals("{\"name\":\"<n>\"}", jsonb.toJson(tagged));
             }
             assertEquals(1, DependentAdapter.DESTROYED.get(), "the runtime's instance went with its container");
-            try (WeldContainer b = start("rb")) {
+            try (WeldContainer _ = start("rb")) {
                 assertEquals("{\"name\":\"<n>\"}", jsonb.toJson(tagged));
                 assertEquals("n", jsonb.fromJson("{\"name\":\"<n>\"}", Tagged.class).name);
             }
@@ -94,7 +94,7 @@ class JsonbCdiRegistryTest {
     void withoutTheRegistryTheJsonbDestroysWhatItObtained() throws Exception {
         Tagged tagged = new Tagged();
         tagged.name = "n";
-        try (WeldContainer c = new Weld("plain").disableDiscovery()
+        try (WeldContainer _ = new Weld("plain").disableDiscovery()
                 .addBeanClasses(DependentAdapter.class, Formatter.class).initialize()) {
             assertNull(JsonbInstances.sourceFor(DependentAdapter.class), "no registry in this container");
             Jsonb jsonb = JsonbBuilder.create();
@@ -112,9 +112,9 @@ class JsonbCdiRegistryTest {
     @Test
     void twoContainersAliveForOneLoaderAreAnErrorNotAGuess() {
         Supplier<DependentAdapter> generated = JsonbInstances.of(DependentAdapter.class, DependentAdapter::new);
-        try (WeldContainer a = start("alive-a")) {
+        try (WeldContainer _ = start("alive-a")) {
             DependentAdapter fromA;
-            try (WeldContainer b = start("alive-b")) {
+            try (WeldContainer _ = start("alive-b")) {
                 jakarta.json.bind.JsonbException e = org.junit.jupiter.api.Assertions.assertThrows(
                         jakarta.json.bind.JsonbException.class, generated::get);
                 org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("2 running CDI containers"),

@@ -33,7 +33,7 @@ class JsonbCdiExtensionTest {
     void anAdapterThatInjectsWithoutBeingABeanFailsTheDeployment() {
         Weld weld = new Weld("invalid").disableDiscovery().addBeanClasses(Holder.class, Formatter.class)
                 .addBuildCompatibleExtensions(JsonbCdiExtension.class);
-        RuntimeException e = assertThrows(RuntimeException.class, () -> weld.initialize().close());
+        RuntimeException e = assertThrows(RuntimeException.class, weld::initialize);
         String message = String.valueOf(e.getMessage()) + (e.getCause() == null ? "" : e.getCause().getMessage());
         assertTrue(message.contains("Injecting") && message.contains("is no bean"), message);
     }
@@ -45,7 +45,7 @@ class JsonbCdiExtensionTest {
                         io.vidocq.champollion.jsonb.cdi.invalid.Shared.class,
                         io.vidocq.champollion.jsonb.cdi.invalid.Shared.Special.class)
                 .addBuildCompatibleExtensions(JsonbCdiExtension.class);
-        RuntimeException e = assertThrows(RuntimeException.class, () -> weld.initialize().close());
+        RuntimeException e = assertThrows(RuntimeException.class, weld::initialize);
         String message = String.valueOf(e.getMessage()) + (e.getCause() == null ? "" : e.getCause().getMessage());
         assertTrue(message.contains("Shared") && message.contains("ambiguous"), message);
     }

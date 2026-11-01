@@ -60,6 +60,7 @@ final class RestBindingEmitter {
                             }
                         }
                 """;
+    private static final String GET = ".get()";
     private static final String CTX_OPEN = " ctx) {\n";
     private static final String METHOD_END = "    }\n\n";
     private static final String START_OBJECT = "        g.writeStartObject();\n";
@@ -212,7 +213,7 @@ final class RestBindingEmitter {
             TypeMirror inner = ((DeclaredType) t).getTypeArguments().get(0);
             out.append("            if (").append(v).append(" != null && ").append(v).append(".isPresent()) {\n");
             out.append(I16).append(key).append('\n');
-            writeValue(out, v + ".get()", inner, I16);
+            writeValue(out, v + GET, inner, I16);
             out.append("            }");
         } else {
             out.append("            if (").append(v).append(" != null) {\n");
@@ -625,7 +626,7 @@ final class RestBindingEmitter {
      * the value's first event (a JSON {@code null} included) and the property's type.
      */
     private String deserializerReader(TypeMirror t, RestBindings.Instance deserializer) {
-        String field = instance(deserializer) + ".get()";
+        String field = instance(deserializer) + GET;
         String key = field + ":" + render(t);
         String existing = readerNames.get(key);
         if (existing != null) return existing;
@@ -656,7 +657,7 @@ final class RestBindingEmitter {
 
     /** The field holding an instance of the adapter, created once with {@code new}. */
     private String adapter(Adapter adapter) {
-        return instance(adapter.instance()) + ".get()";
+        return instance(adapter.instance()) + GET;
     }
 
     /** The field holding the supplier of {@code instance}: the CDI bean, or one created, resolved on first use. */
