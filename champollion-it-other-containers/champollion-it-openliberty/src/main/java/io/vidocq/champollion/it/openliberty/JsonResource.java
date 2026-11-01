@@ -67,4 +67,13 @@ public class JsonResource {
             return order.customer + "|" + order.quantity;
         }
     }
+
+    /** The adapter as a generated binding obtains it ({@code JsonbInstances}), applied to "alice". */
+    @GET
+    @Path("/instance")
+    @Produces(MediaType.TEXT_PLAIN)
+    public String instance() throws Exception {
+        return io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class, DecoratingAdapter::new)
+                .get().adaptToJson("alice");
+    }
 }

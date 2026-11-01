@@ -66,4 +66,13 @@ class OpenLibertyPortabilityIT {
         assertEquals(200, response.statusCode(), response.body());
         return response.body();
     }
+
+    /**
+     * The route of a generated binding, {@code JsonbInstances}: the adapter is the container's bean, injected, as the
+     * runtime resolves it.
+     */
+    @Test
+    void aGeneratedBindingGetsTheAdapterFromTheContainer() throws Exception {
+        assertEquals("<ALICE>", send(HttpRequest.newBuilder(URI.create(BASE + "/json/instance")).GET()));
+    }
 }

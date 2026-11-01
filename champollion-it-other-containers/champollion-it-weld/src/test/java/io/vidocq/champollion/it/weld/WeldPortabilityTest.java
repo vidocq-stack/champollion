@@ -82,4 +82,15 @@ class WeldPortabilityTest {
             assertEquals(3, back.quantity);
         }
     }
+
+    /**
+     * The route of a generated binding, {@code JsonbInstances}: the adapter is the container's bean, injected, as the
+     * runtime resolves it.
+     */
+    @Test
+    void aGeneratedBindingGetsTheAdapterFromTheContainer() throws Exception {
+        var adapter = io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class, DecoratingAdapter::new)
+                .get();
+        assertEquals("<ALICE>", adapter.adaptToJson("alice"));
+    }
 }
