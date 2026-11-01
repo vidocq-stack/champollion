@@ -50,6 +50,15 @@ class RestBindingsDependencyTest {
                         public void setName(String name) { this.name = name; }
                     }
                     """,
+            "lib.Named", """
+                    package lib;
+                    public class Named {
+                        private final String name;
+                        @jakarta.json.bind.annotation.JsonbCreator
+                        public Named(String name) { this.name = name; }
+                        public String getName() { return name; }
+                    }
+                    """,
             "lib.Unreached", """
                     package lib;
                     public record Unreached(String x) {}
@@ -92,6 +101,18 @@ class RestBindingsDependencyTest {
             assertTrue(bound.hasBinding("lib.Author"), "a type of the same package");
             assertTrue(Files.readString(bound.out().resolve("META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding"))
                     .contains("lib.Author$$Binding"));
+        }
+    }
+
+    /** A class file compiled without -parameters names its creator's parameters argN: the processor says so. */
+    @Test
+    void aCreatorWithoutParameterNamesInTheClassFileKeepsTheRuntime(@TempDir Path tmp) throws Exception {
+        try (var library = GeneratedBindings.compile(tmp.resolve("lib"), LIBRARY);
+             var bound = GeneratedBindings.compile(tmp.resolve("bound"), Map.of(),
+                     List.of("-A" + JsonbStaticProcessor.TYPES_OPTION + "=lib.Named"), library.out(),
+                     List.of("lib.Named"))) {
+            assertFalse(bound.hasBinding("lib.Named"));
+            assertTrue(bound.noted("lib.Named", "compile lib.Named with -parameters"), bound.notes()::toString);
         }
     }
 

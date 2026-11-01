@@ -92,6 +92,8 @@ final class RestBindings {
     private static final String VALUE = "value";
     private static final String CREATOR_PARAMETER = "@JsonbCreator parameter ";
     private static final String COMPONENT = "component ";
+    /** The name javac gives a parameter of a class file compiled without {@code -parameters}. */
+    private static final java.util.regex.Pattern SYNTHETIC_PARAMETER = java.util.regex.Pattern.compile("arg\\d+");
 
     /** The types JSON-B maps natively; {@code JsonbLeaf} hands their codecs to the generated code. */
     static final Set<String> LEAVES = Set.of(
@@ -788,10 +790,12 @@ final class RestBindings {
         }
         List<Param> params = new ArrayList<>();
         for (VariableElement parameter : e.getParameters()) {
-            String name = jsonName(List.of(parameter), "");
-            if (name.isEmpty()) {
-                return CREATOR_PARAMETER + parameter.getSimpleName() + " has no @JsonbProperty name: its"
-                        + " JSON name would depend on whether the class is compiled with -parameters";
+            // Without @JsonbProperty, the runtime takes the parameter's name: the compiler knows it from the source,
+            // and from a class file compiled with -parameters; without it, it reads argN.
+            String name = jsonName(List.of(parameter), parameter.getSimpleName().toString());
+            if (SYNTHETIC_PARAMETER.matcher(name).matches() && jsonName(List.of(parameter), "").isEmpty()) {
+                return CREATOR_PARAMETER + name + " has no name in the class file: compile "
+                        + type.getQualifiedName() + " with -parameters, or name it with @JsonbProperty";
             }
             boolean customised = parameter.getAnnotationMirrors().stream().map(RestBindings::nameOf)
                     .anyMatch(n -> n.startsWith(JSONB_ANNOTATIONS) && !n.equals(JSONB_PROPERTY));

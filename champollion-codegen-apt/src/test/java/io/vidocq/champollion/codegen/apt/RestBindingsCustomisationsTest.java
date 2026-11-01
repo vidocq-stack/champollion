@@ -434,7 +434,8 @@ class RestBindingsCustomisationsTest {
 
     @BeforeAll
     static void compile(@TempDir Path tmp) throws Exception {
-        fmt = GeneratedBindings.compile(tmp, SOURCES);
+        // As a Vidocq application is compiled: the runtime reads a creator's parameter names, the binding too.
+        fmt = GeneratedBindings.compile(tmp, SOURCES, List.of("-parameters"), null);
     }
 
     @AfterAll
@@ -629,10 +630,15 @@ class RestBindingsCustomisationsTest {
         assertBothFail("fmt.Zoo", "{\"animal\":{\"name\":\"x\"}}");
     }
 
+    /** Without {@code @JsonbProperty}, a creator parameter's JSON name is its name, as the runtime reads it. */
+    @Test
+    void aCreatorParameterWithoutJsonbPropertyIsNamedByItsName() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Unnamed"), fmt.notes()::toString);
+        assertSameRead("fmt.Unnamed", "{\"name\":\"n\"}");
+    }
+
     @Test
     void whatTheGeneratedCodeCannotCallKeepsTheRuntime() {
-        assertFalse(fmt.hasBinding("fmt.Unnamed"));
-        assertTrue(fmt.noted("fmt.Unnamed", "-parameters"), fmt.notes()::toString);
         assertFalse(fmt.hasBinding("fmt.Purse"));
         assertTrue(fmt.noted("fmt.Purse", "record component"), fmt.notes()::toString);
         assertFalse(fmt.hasBinding("fmt.Injected"));
