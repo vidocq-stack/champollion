@@ -2011,4 +2011,13 @@ final class RuntimeBindingRegistry {
             return null;
         }
     }
+
+    /**
+     * The writer of a type JSON-B maps natively (JSON-B 3.0 §3.3 to §3.5), or {@code null}: what
+     * {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf} hands the generated bindings, so they map those types exactly
+     * as this registry does.
+     */
+    static BindingWriter builtinWriter(Class<?> type) {
+        return Builtins.lookup(type);
+    }
 }

@@ -124,11 +124,26 @@ final class RuntimeReadRegistry {
         if (map != null) this.globalAdapters.putAll(map);
     }
 
+    /**
+     * The generated bindings of the application. A type that has one is read by it wherever it appears: as the root,
+     * as an element of a collection, as a map value or as a member of another object. Set before the first read,
+     * since the per-class readers are cached.
+     */
+    private StaticBindings staticBindings = StaticBindings.EMPTY;
+
+    void setStaticBindings(StaticBindings bindings) {
+        this.staticBindings = bindings == null ? StaticBindings.EMPTY : bindings;
+    }
+
     /** Readers resolved by raw class. */
     private final ClassValue<BindingReader> classCache = new ComputedClassValue<>(this::resolveClass);
 
     /** The reader of the raw class {@code type}, computed once per class by {@link #classCache}. */
     private BindingReader resolveClass(Class<?> type) {
+        // Static-first, as at the root and as on the write side: a generated binding replaces the introspective
+        // reader of its type. Both consume the value's leading event themselves.
+        io.vidocq.champollion.jsonb.spi.JsonbBinding<?> staticBinding = staticBindings.get(type);
+        if (staticBinding != null) return staticBinding::read;
         BindingReader b = Builtins.lookup(type);
         if (b != null) return b;
         if (type.isEnum()) return enumReader(type);
@@ -2346,5 +2361,14 @@ final class RuntimeReadRegistry {
                 throw new JsonbException("Deprecated three-letter time zone ID: " + id);
             }
         }
+    }
+
+    /**
+     * The reader of a type JSON-B maps natively (JSON-B 3.0 §3.3 to §3.5), or {@code null}: what
+     * {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf} hands the generated bindings, so they map those types exactly
+     * as this registry does.
+     */
+    static BindingReader builtinReader(Class<?> type) {
+        return Builtins.lookup(type);
     }
 }

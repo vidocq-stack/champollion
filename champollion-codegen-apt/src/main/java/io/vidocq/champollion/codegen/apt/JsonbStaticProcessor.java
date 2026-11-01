@@ -62,7 +62,7 @@ import java.util.Set;
  * <p>M5.2: limited to records whose components are primitive types or
  * {@link String}. Containers (List/Map/Optional/Array) will be added in M5.3.</p>
  */
-@SupportedAnnotationTypes("io.vidocq.champollion.jsonb.spi.JsonbStatic")
+@SupportedAnnotationTypes({"io.vidocq.champollion.jsonb.spi.JsonbStatic", RestBindings.PATH})
 @SupportedSourceVersion(SourceVersion.RELEASE_25)
 public final class JsonbStaticProcessor extends AbstractProcessor {
 
@@ -107,18 +107,33 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private static final String ASSIGN_ARR = " = __arr;";
     private static final String GET_INT = ".getInt()";
 
+    /** Processor option: {@code false} turns off the bindings of the types JAX-RS resources reach. */
+    static final String REST_OPTION = "champollion.jsonb.rest";
+    /** The bindings generated for the types resources reach, and their type: kept across incremental builds. */
+    private static final String REST_BINDINGS_FILE = "META-INF/champollion/rest-bindings";
+
     private final Set<String> generatedBindings = new LinkedHashSet<>();
+    /** Binding name to the canonical name of its type, for the bindings of the types resources reach. */
+    private final java.util.Map<String, String> restBindings = new java.util.LinkedHashMap<>();
+    /** The types of this compilation, every round's: a binding can only be generated in their packages. */
+    private final Set<TypeElement> compiled = new java.util.HashSet<>();
+
+    @Override
+    public Set<String> getSupportedOptions() {
+        return Set.of(REST_OPTION);
+    }
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
-        if (annotations.isEmpty()) {
-            // Round final : on flush le ServiceLoader.
-            if (env.processingOver() && !generatedBindings.isEmpty()) {
-                writeServicesFile();
-            }
-            return false;
-        }
+        for (Element root : env.getRootElements()) addCompiled(root);
         for (TypeElement annotation : annotations) {
+            String name = annotation.getQualifiedName().toString();
+            if (RestBindings.PATH.equals(name)) {
+                if (!"false".equals(processingEnv.getOptions().get(REST_OPTION))) {
+                    generateRestBindings(env.getElementsAnnotatedWith(annotation));
+                }
+                continue;
+            }
             for (Element annotated : env.getElementsAnnotatedWith(annotation)) {
                 if (annotated.getKind() != ElementKind.RECORD) {
                     error(annotated, "@JsonbStatic only supported on records (M5.2). Got: " + annotated.getKind());
@@ -130,7 +145,46 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         if (env.processingOver() && !generatedBindings.isEmpty()) {
             writeServicesFile();
         }
-        return true;
+        // Never claims: other processors (Cassini's, Vauban's) read @Path too.
+        return false;
+    }
+
+    private void addCompiled(Element element) {
+        if (element instanceof TypeElement type) {
+            compiled.add(type);
+            for (Element member : type.getEnclosedElements()) addCompiled(member);
+        }
+    }
+
+    /**
+     * Generates a binding for each type the resources of {@code resources} reach that the generated code can map,
+     * and says, as a note, which ones keep the runtime mapping and why.
+     */
+    private void generateRestBindings(Set<? extends Element> resources) {
+        RestBindings found = new RestBindings(processingEnv, compiled).collect(resources);
+        java.util.Map<RestBindings.Model, String> names = new java.util.LinkedHashMap<>();
+        for (RestBindings.Model model : found.models()) {
+            if (!restBindings.containsKey(model.bindingName())) names.put(model, model.bindingName());
+        }
+        // Every model may refer to any other one, and to the bindings of @JsonbStatic records.
+        java.util.Map<TypeElement, String> all = found.bindingNames();
+        for (var entry : names.entrySet()) {
+            RestBindings.Model model = entry.getKey();
+            try (Writer w = processingEnv.getFiler().createSourceFile(entry.getValue(), model.type()).openWriter()) {
+                w.write(new RestBindingEmitter(model, all).source());
+            } catch (IOException ex) {
+                error(model.type(), "Failed to generate the JSON-B binding: " + ex.getMessage());
+                continue;
+            }
+            generatedBindings.add(entry.getValue());
+            restBindings.put(entry.getValue(), model.typeName());
+        }
+        for (var skipped : found.skipped().entrySet()) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                    "Champollion: " + skipped.getKey().getQualifiedName()
+                            + " keeps the reflective JSON-B mapping at run time: " + skipped.getValue(),
+                    skipped.getKey());
+        }
     }
 
     private void processRecord(TypeElement recordType) {
@@ -792,13 +846,38 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         return all;
     }
 
-    /** Whether the record a binding was generated for still exists and is still annotated {@code @JsonbStatic}. */
-    private boolean stillStatic(String bindingFqn) {
+    /**
+     * Whether the type a binding was generated for still exists and still gets one: annotated {@code @JsonbStatic},
+     * or reached by a resource in an earlier build ({@code previousRest}, binding name to type name).
+     */
+    private boolean stillStatic(String bindingFqn, java.util.Map<String, String> previousRest) {
         if (generatedBindings.contains(bindingFqn)) return true;
+        String restType = previousRest.get(bindingFqn);
+        if (restType != null) return processingEnv.getElementUtils().getTypeElement(restType) != null;
         if (!bindingFqn.endsWith(BINDING_SUFFIX)) return true;
         TypeElement target = processingEnv.getElementUtils()
                 .getTypeElement(bindingFqn.substring(0, bindingFqn.length() - BINDING_SUFFIX.length()));
         return target != null && target.getAnnotation(JsonbStatic.class) != null;
+    }
+
+    /** The bindings an earlier build generated for the types resources reached: binding name to type name. */
+    private java.util.Map<String, String> readPreviousRestBindings() {
+        java.util.Map<String, String> previous = new java.util.LinkedHashMap<>();
+        try {
+            FileObject existing = processingEnv.getFiler()
+                    .getResource(StandardLocation.CLASS_OUTPUT, "", REST_BINDINGS_FILE);
+            try (var reader = new BufferedReader(
+                    new InputStreamReader(existing.openInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    int eq = line.indexOf('=');
+                    if (eq > 0) previous.put(line.substring(0, eq).strip(), line.substring(eq + 1).strip());
+                }
+            }
+        } catch (IOException _) {
+            // First build: nothing generated before.
+        }
+        return previous;
     }
 
     private void writeServicesFile() {
@@ -806,10 +885,22 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         try {
             // Read existing services (to append across multi-rounds / incremental builds)
             Set<String> all = readExistingServices(filer);
+            java.util.Map<String, String> previousRest = readPreviousRestBindings();
             // An incremental build keeps the entries it did not regenerate, but not one whose record is gone or no
             // longer @JsonbStatic: its binding class would be stale, or missing at run time.
-            all.removeIf(binding -> !stillStatic(binding));
+            all.removeIf(binding -> !stillStatic(binding, previousRest));
             all.addAll(generatedBindings);
+            java.util.Map<String, String> rest = new java.util.LinkedHashMap<>();
+            for (var e : previousRest.entrySet()) {
+                if (all.contains(e.getKey())) rest.put(e.getKey(), e.getValue());
+            }
+            rest.putAll(restBindings);
+            if (!rest.isEmpty()) {
+                FileObject marker = filer.createResource(StandardLocation.CLASS_OUTPUT, "", REST_BINDINGS_FILE);
+                try (var w = marker.openWriter()) {
+                    for (var e : rest.entrySet()) w.write(e.getKey() + "=" + e.getValue() + "\n");
+                }
+            }
             FileObject f = filer.createResource(StandardLocation.CLASS_OUTPUT, "", SERVICE_FILE);
             try (var w = f.openWriter()) {
                 for (String s : all) {
