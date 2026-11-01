@@ -194,6 +194,21 @@ final class GeneratedBindings implements AutoCloseable {
         }
     }
 
+    /**
+     * A {@code Jsonb} that uses the generated bindings, as an application's does: it finds their services file
+     * through the context class loader.
+     */
+    Jsonb jsonbWithBindings() {
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        thread.setContextClassLoader(loader);
+        try {
+            return JsonbBuilder.create();
+        } finally {
+            thread.setContextClassLoader(previous);
+        }
+    }
+
     /** What the runtime writes for {@code value} as {@code type}. */
     String writeRuntime(String type, Object value) throws Exception {
         return runtime.toJson(value, (Type) type(type));

@@ -23,6 +23,7 @@ import io.vidocq.champollion.codegen.apt.RestBindings.Access;
 import io.vidocq.champollion.codegen.apt.RestBindings.Adapter;
 import io.vidocq.champollion.codegen.apt.RestBindings.Format;
 import io.vidocq.champollion.codegen.apt.RestBindings.Mapping;
+import io.vidocq.champollion.codegen.apt.RestBindings.Polymorphism;
 import io.vidocq.champollion.codegen.apt.RestBindings.Model;
 import io.vidocq.champollion.codegen.apt.RestBindings.Property;
 
@@ -63,13 +64,18 @@ final class RestBindingEmitter {
     private static final String I16 = "                ";
     private static final String WRITE_G = ".write(g, ";
     private static final String NULL_GIVES_NULL = "        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;\n";
-    private static final String WITH_EVENT = "(p, e));\n";
+    private static final String WITH_EVENT = "(p, e, ctx));\n";
+    private static final String SER_CONTEXT = "jakarta.json.bind.serializer.SerializationContext";
+    private static final String DESER_CONTEXT = "jakarta.json.bind.serializer.DeserializationContext";
+    /** The parameters of a reader method: the parser, the value's leading event (consumed), the context. */
+    private static final String READER_PARAMETERS = "(jakarta.json.stream.JsonParser p, "
+            + "jakarta.json.stream.JsonParser.Event e, " + DESER_CONTEXT + " ctx) {\n";
     private final Model model;
     private final Map<TypeElement, String> others;
     /** Leaf codec fields, by the expression creating them. */
     private final Map<String, String> leaves = new LinkedHashMap<>();
-    /** Adapter fields, by the adapter's class name. */
-    private final Map<String, String> adapters = new LinkedHashMap<>();
+    /** Fields of the adapters, serializers and deserializers the binding calls, by class name. */
+    private final Map<String, String> instances = new LinkedHashMap<>();
     /** Binding fields of the types this one holds, by their binding's name. */
     private final Map<String, String> bindings = new LinkedHashMap<>();
     /** Reader methods, by the type they read. */
@@ -86,11 +92,18 @@ final class RestBindingEmitter {
     }
 
     String source() {
+        Polymorphism poly = model.polymorphism();
         StringBuilder write = new StringBuilder();
         for (Property p : model.properties()) {
             if (p.read() != Access.NONE) emitWrite(write, p);
         }
-        String read = model.isRecord() ? readRecord() : readClass();
+        String read;
+        if (poly != null && poly.isBase()) {
+            read = readBase(poly);
+            write = writeBase(poly);
+        } else {
+            read = model.isRecord() ? readRecord() : readClass();
+        }
 
         StringBuilder out = new StringBuilder();
         String pkg = model.packageName();
@@ -103,7 +116,7 @@ final class RestBindingEmitter {
             out.append("    private static final io.vidocq.champollion.jsonb.spi.JsonbLeaf ").append(e.getValue())
                     .append(" = io.vidocq.champollion.jsonb.spi.JsonbLeaf.").append(e.getKey()).append(";\n");
         }
-        for (var e : adapters.entrySet()) {
+        for (var e : instances.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
                     .append(" = new ").append(e.getKey()).append("();\n");
         }
@@ -114,11 +127,25 @@ final class RestBindingEmitter {
         out.append("\n    @Override public Class<").append(type).append("> type() { return ").append(type)
                 .append(".class; }\n\n");
         out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
-                .append(" value) {\n");
+                .append(" value) {\n        write(g, value, null);\n    }\n\n");
+        out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
+                .append(" value, ").append(SER_CONTEXT).append(" ctx) {\n");
         out.append("        if (value == null) { g.writeNull(); return; }\n");
         out.append("        g.writeStartObject();\n");
-        out.append(write);
-        out.append("        g.writeEnd();\n    }\n\n");
+        if (poly != null && !poly.isBase()) {
+            // A subtype writes its discriminator first, then its members: those the base's binding writes too.
+            out.append(I8).append(discriminatorKey(poly)).append(" g.write(").append(lit(poly.alias())).append(");\n");
+            out.append("        writeMembers(g, value, ctx);\n");
+            out.append("        g.writeEnd();\n    }\n\n");
+            out.append("    /** Writes the members of {@code value}, after its discriminator. */\n");
+            out.append("    public void writeMembers(jakarta.json.stream.JsonGenerator g, ").append(type)
+                    .append(" value, ").append(SER_CONTEXT).append(" ctx) {\n");
+            out.append(write);
+            out.append("    }\n\n");
+        } else {
+            out.append(write);
+            out.append("        g.writeEnd();\n    }\n\n");
+        }
         out.append(read);
         out.append(readers);
         out.append("""
@@ -135,6 +162,16 @@ final class RestBindingEmitter {
 
                     private static jakarta.json.bind.JsonbException __expected(String what, jakarta.json.stream.JsonParser.Event got) {
                         return new jakarta.json.bind.JsonbException("Expected " + what + ", got " + got);
+                    }
+
+                    private static String __discriminator(jakarta.json.stream.JsonParser p, String key) {
+                        jakarta.json.stream.JsonParser.Event e = p.next();
+                        if (e != jakarta.json.stream.JsonParser.Event.KEY_NAME || !p.getString().equals(key)) {
+                            throw new jakarta.json.bind.JsonbException("Expected discriminator '" + key + "' as next member");
+                        }
+                        e = p.next();
+                        if (e != jakarta.json.stream.JsonParser.Event.VALUE_STRING) throw __expected("a string discriminator", e);
+                        return p.getString();
                     }
                 }
                 """);
@@ -185,6 +222,9 @@ final class RestBindingEmitter {
             out.append(I16).append("else {\n");
             writeValue(out, a, adapter.adapted(), I16 + "    ");
             out.append(I16).append("}\n");
+        } else if (mapping.custom() != null) {
+            out.append(I16).append(instance(mapping.custom())).append(".serialize(").append(v)
+                    .append(", g, io.vidocq.champollion.jsonb.spi.JsonbContexts.serialization(ctx));\n");
         } else if (mapping.format() != null) {
             out.append(I16).append(leaf(t, mapping.format())).append(WRITE_G).append(v).append(");\n");
         } else {
@@ -225,7 +265,7 @@ final class RestBindingEmitter {
             out.append(indent).append("}\n");
             out.append(indent).append("g.writeEnd();\n");
         } else {
-            out.append(indent).append(binding(element)).append(WRITE_G).append(expr).append(");\n");
+            out.append(indent).append(binding(element)).append(WRITE_G).append(expr).append(", ctx);\n");
         }
     }
 
@@ -247,9 +287,22 @@ final class RestBindingEmitter {
 
     private String readRecord() {
         String type = model.typeName();
+        Polymorphism poly = model.polymorphism();
         StringBuilder out = new StringBuilder();
-        out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
+        out.append(readHeader(type));
         out.append(READ_START);
+        if (poly != null) {
+            // A subtype reads its discriminator first, as the runtime does, then its members.
+            out.append("        String alias = __discriminator(p, ").append(lit(poly.key())).append(");\n");
+            out.append("        if (!alias.equals(").append(lit(poly.alias())).append(")) {\n");
+            out.append("            throw new jakarta.json.bind.JsonbException(\"Unexpected @JsonbSubtype alias \" + alias + ")
+                    .append(lit(" for " + type)).append(");\n        }\n");
+            out.append("        return readMembers(p, ctx);\n    }\n\n");
+            out.append("    /** Reads the members of an object whose start and discriminator are consumed. */\n");
+            out.append("    public ").append(type).append(" readMembers(jakarta.json.stream.JsonParser p, ")
+                    .append(DESER_CONTEXT).append(" ctx) {\n");
+            out.append("        jakarta.json.stream.JsonParser.Event e;\n");
+        }
         List<? extends RecordComponentElement> components = model.type().getRecordComponents();
         Map<String, String> locals = new LinkedHashMap<>();
         for (var c : components) {
@@ -273,11 +326,46 @@ final class RestBindingEmitter {
         return out.toString();
     }
 
+    /** The key of a discriminator, as a statement writing it. */
+    private static String discriminatorKey(Polymorphism poly) {
+        return "__key(g, " + lit(preQuote(poly.key())) + ", " + lit(poly.key()) + ");";
+    }
+
+    /** The members of a polymorphic base's {@code write}: the discriminator and members of the value's subtype. */
+    private StringBuilder writeBase(Polymorphism poly) {
+        StringBuilder out = new StringBuilder();
+        out.append("        switch (value) {\n");
+        for (RestBindings.Variant v : poly.variants()) {
+            String subtype = v.type().getQualifiedName().toString();
+            out.append("            case ").append(subtype).append(" v -> {\n");
+            out.append(I16).append(discriminatorKey(poly)).append(" g.write(").append(lit(v.alias())).append(");\n");
+            out.append(I16).append(binding(v.type())).append(".writeMembers(g, v, ctx);\n");
+            out.append("            }\n");
+        }
+        out.append("        }\n");
+        return out;
+    }
+
+    /** The {@code read} of a polymorphic base: its discriminator picks the subtype whose binding reads the rest. */
+    private String readBase(Polymorphism poly) {
+        StringBuilder out = new StringBuilder(readHeader(model.typeName()));
+        out.append(READ_START);
+        out.append("        String alias = __discriminator(p, ").append(lit(poly.key())).append(");\n");
+        out.append("        return switch (alias) {\n");
+        for (RestBindings.Variant v : poly.variants()) {
+            out.append("            case ").append(lit(v.alias())).append(" -> ").append(binding(v.type()))
+                    .append(".readMembers(p, ctx);\n");
+        }
+        out.append("            default -> throw new jakarta.json.bind.JsonbException(\"Unknown @JsonbSubtype alias: \" + alias);\n");
+        out.append("        };\n    }\n\n");
+        return out.toString();
+    }
+
     private String readClass() {
         if (model.creator() != null) return readThroughCreator(model.creator());
         String type = model.typeName();
         StringBuilder out = new StringBuilder();
-        out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
+        out.append(readHeader(type));
         out.append(READ_START);
         out.append(I8).append(type).append(" o = new ").append(type).append("();\n");
         out.append(LOOP_START);
@@ -289,6 +377,14 @@ final class RestBindingEmitter {
         out.append(LOOP_END);
         out.append("        return o;\n    }\n\n");
         return out.toString();
+    }
+
+    /** The two {@code read} methods: without a context, it calls the one with. */
+    private static String readHeader(String type) {
+        return "    @Override\n    public " + type + " read(jakarta.json.stream.JsonParser p) {\n"
+                + "        return read(p, null);\n    }\n\n"
+                + "    @Override\n    public " + type + " read(jakarta.json.stream.JsonParser p, " + DESER_CONTEXT
+                + " ctx) {\n";
     }
 
     /** How a value is stored into property {@code p} of {@code o}: a format with one {@code %s}. */
@@ -303,7 +399,7 @@ final class RestBindingEmitter {
     private String readThroughCreator(RestBindings.Creator creator) {
         String type = model.typeName();
         StringBuilder out = new StringBuilder();
-        out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
+        out.append(readHeader(type));
         out.append(READ_START);
         List<String> args = new java.util.ArrayList<>();
         StringBuilder cases = new StringBuilder();
@@ -356,11 +452,11 @@ final class RestBindingEmitter {
             // A JSON null cannot go into a primitive: the runtime rejects it, so does the binding.
             String v = newVariable();
             out.append("{ ").append(boxed(t)).append(' ').append(v).append(" = ").append(reader)
-                    .append("(p, p.next()); if (").append(v).append(" == null) throw new jakarta.json.bind.JsonbException(")
+                    .append("(p, p.next(), ctx); if (").append(v).append(" == null) throw new jakarta.json.bind.JsonbException(")
                     .append(lit("null for the primitive property " + jsonName)).append("); ")
                     .append(String.format(target, v)).append(" }\n");
         } else {
-            out.append("{ ").append(String.format(target, reader + "(p, p.next())")).append(" }\n");
+            out.append("{ ").append(String.format(target, reader + "(p, p.next(), ctx)")).append(" }\n");
         }
     }
 
@@ -374,7 +470,7 @@ final class RestBindingEmitter {
         String type = t.getKind().isPrimitive() ? boxed(t) : key;
         StringBuilder r = new StringBuilder();
         r.append("    private static ").append(type).append(' ').append(name)
-                .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n");
+                .append(READER_PARAMETERS);
         if (t.getKind().isPrimitive() || RestBindings.isPrimitiveArray(t)
                 || RestBindings.LEAVES.contains(RestBindings.erasureName(t))) {
             r.append("        return (").append(type).append(") ").append(leaf(t))
@@ -424,7 +520,7 @@ final class RestBindingEmitter {
                 r.append("        return java.util.Optional.ofNullable(").append(innerReader).append(WITH_EVENT);
             } else {
                 r.append("        return ").append(binding(element))
-                        .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n");
+                        .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p), ctx);\n");
             }
         }
         r.append("    }\n\n");
@@ -466,6 +562,7 @@ final class RestBindingEmitter {
     /** The reader method of a property of type {@code t}, through its adapter or its format if any. */
     private String mappedReader(TypeMirror t, Mapping mapping) {
         if (mapping.adapter() != null) return adaptedReader(t, mapping.adapter());
+        if (mapping.custom() != null) return deserializerReader(t, mapping.custom());
         return mapping.format() != null ? formattedReader(t, mapping.format()) : reader(t);
     }
 
@@ -480,12 +577,30 @@ final class RestBindingEmitter {
         String inner = reader(adapter.adapted());
         String adapted = render(adapter.adapted());
         readers.append("    private static ").append(render(t)).append(' ').append(name)
-                .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n")
-                .append(I8).append(adapted).append(" a = ").append(inner).append("(p, e);\n")
+                .append(READER_PARAMETERS)
+                .append(I8).append(adapted).append(" a = ").append(inner).append("(p, e, ctx);\n")
                 .append("        if (a == null) return null;\n")
                 .append("        try { return ").append(field).append(".adaptFromJson(a); }\n")
                 .append("        catch (Exception x) { throw new jakarta.json.bind.JsonbException(")
                 .append("\"Adapter failure on fromJson: \" + x.getMessage(), x); }\n    }\n\n");
+        return name;
+    }
+
+    /**
+     * A reader method of {@code t} that calls a {@code JsonbDeserializer}: like the runtime, it hands it the parser on
+     * the value's first event (a JSON {@code null} included) and the property's type.
+     */
+    private String deserializerReader(TypeMirror t, String deserializer) {
+        String field = instance(deserializer);
+        String key = field + ":" + render(t);
+        String existing = readerNames.get(key);
+        if (existing != null) return existing;
+        String name = "__r" + readerNames.size();
+        readerNames.put(key, name);
+        readers.append("    private static ").append(render(t)).append(' ').append(name).append(READER_PARAMETERS)
+                .append("        return ").append(field).append(".deserialize(p, ")
+                .append("io.vidocq.champollion.jsonb.spi.JsonbContexts.deserialization(ctx), ").append(render(t))
+                .append(".class);\n    }\n\n");
         return name;
     }
 
@@ -499,7 +614,7 @@ final class RestBindingEmitter {
         readerNames.put(key, name);
         String type = t.getKind().isPrimitive() ? boxed(t) : render(t);
         readers.append("    private static ").append(type).append(' ').append(name)
-                .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n")
+                .append(READER_PARAMETERS)
                 .append("        return (").append(type).append(") ").append(codec)
                 .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n    }\n\n");
         return name;
@@ -507,7 +622,12 @@ final class RestBindingEmitter {
 
     /** The field holding an instance of the adapter, created once with {@code new}. */
     private String adapter(Adapter adapter) {
-        return adapters.computeIfAbsent(adapter.className(), k -> "__A" + adapters.size());
+        return instance(adapter.className());
+    }
+
+    /** The field holding an instance of {@code className}, created once with {@code new}. */
+    private String instance(String className) {
+        return instances.computeIfAbsent(className, k -> "__I" + instances.size());
     }
 
     private String binding(TypeElement element) {

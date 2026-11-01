@@ -69,6 +69,12 @@ class RestBindingsCustomisationsTest {
                         @GET public Unnamed unnamed() { return null; }
                         @GET public Injected injected() { return null; }
                         @GET public Celsius celsius() { return null; }
+                        @GET public Wallet wallet() { return null; }
+                        @GET public Purse purse() { return null; }
+                        @GET public Drawing drawing() { return null; }
+                        @GET public Circle circle() { return null; }
+                        @GET public Open open() { return null; }
+                        @GET public OpenA openA() { return null; }
                     }
                     """),
             Map.entry("fmt.Event", """
@@ -296,6 +302,82 @@ class RestBindingsCustomisationsTest {
                         public String getOrigin() { return origin; }
                     }
                     """),
+            Map.entry("fmt.MoneySerializer", """
+                    package fmt;
+                    public class MoneySerializer implements jakarta.json.bind.serializer.JsonbSerializer<Money> {
+                        public void serialize(Money m, jakarta.json.stream.JsonGenerator g,
+                                              jakarta.json.bind.serializer.SerializationContext ctx) {
+                            g.writeStartObject();
+                            ctx.serialize("amt", m.amount, g);
+                            ctx.serialize("cur", new Label(m.currency), g);
+                            g.writeEnd();
+                        }
+                    }
+                    """),
+            Map.entry("fmt.MoneyDeserializer", """
+                    package fmt;
+                    public class MoneyDeserializer implements jakarta.json.bind.serializer.JsonbDeserializer<Money> {
+                        public Money deserialize(jakarta.json.stream.JsonParser p,
+                                                 jakarta.json.bind.serializer.DeserializationContext ctx,
+                                                 java.lang.reflect.Type type) {
+                            if (p.currentEvent() == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;
+                            java.math.BigDecimal amount = null;
+                            String currency = null;
+                            while (p.next() == jakarta.json.stream.JsonParser.Event.KEY_NAME) {
+                                String key = p.getString();
+                                if (key.equals("amt")) amount = ctx.deserialize(java.math.BigDecimal.class, p);
+                                else currency = ctx.deserialize(Label.class, p).text();
+                            }
+                            return new Money(amount, type.getTypeName().endsWith("Money") ? currency : "?");
+                        }
+                    }
+                    """),
+            Map.entry("fmt.Wallet", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public class Wallet {
+                        private Money cash;
+                        @JsonbTypeSerializer(MoneySerializer.class)
+                        public Money getCash() { return cash; }
+                        @JsonbTypeDeserializer(MoneyDeserializer.class)
+                        public void setCash(Money cash) { this.cash = cash; }
+                    }
+                    """),
+            Map.entry("fmt.Purse", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public record Purse(@JsonbTypeSerializer(MoneySerializer.class) Money cash) {}
+                    """),
+            Map.entry("fmt.Shape", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    @JsonbTypeInfo(key = "kind", value = {
+                            @JsonbSubtype(alias = "circle", type = Circle.class),
+                            @JsonbSubtype(alias = "square", type = Square.class)})
+                    public sealed interface Shape permits Circle, Square {}
+                    """),
+            Map.entry("fmt.Circle", """
+                    package fmt;
+                    public record Circle(double radius) implements Shape {}
+                    """),
+            Map.entry("fmt.Square", """
+                    package fmt;
+                    public record Square(double side, String color) implements Shape {}
+                    """),
+            Map.entry("fmt.Drawing", """
+                    package fmt;
+                    public record Drawing(String name, java.util.List<Shape> shapes, Shape main, Circle circle) {}
+                    """),
+            Map.entry("fmt.Open", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    @JsonbTypeInfo({@JsonbSubtype(alias = "a", type = OpenA.class)})
+                    public interface Open {}
+                    """),
+            Map.entry("fmt.OpenA", """
+                    package fmt;
+                    public record OpenA(String x) implements Open {}
+                    """),
             Map.entry("fmt.Unnamed", """
                     package fmt;
                     import jakarta.json.bind.annotation.*;
@@ -474,9 +556,47 @@ class RestBindingsCustomisationsTest {
     }
 
     @Test
+    void aSerializerAndADeserializerAreCalledDirectly() throws Exception {
+        Object wallet = bean("fmt.Wallet", Map.of("cash", fmt.newInstance("fmt.Money", new BigDecimal("3.5"), "EUR")));
+        String json = assertSameAsTheRuntime("fmt.Wallet", wallet);
+        assertEquals("{\"cash\":{\"amt\":3.5,\"cur\":{\"text\":\"EUR\"}}}", json);
+        assertSameAsTheRuntime("fmt.Wallet", bean("fmt.Wallet", Map.of()));
+        assertSameRead("fmt.Wallet", "{\"cash\":null}");
+        // Through a Jsonb, the binding hands the serializer the Jsonb's own context.
+        try (var jsonb = fmt.jsonbWithBindings()) {
+            assertEquals(json, jsonb.toJson(wallet));
+            assertEquals(json, jsonb.toJson(jsonb.fromJson(json, fmt.type("fmt.Wallet"))));
+        }
+    }
+
+    @Test
+    void aSealedInterfaceWithTypeInfoDispatchesOnTheValueAndOnTheDiscriminator() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Shape"), fmt.notes()::toString);
+        Object circle = fmt.newInstance("fmt.Circle", 1.5);
+        Object square = fmt.newInstance("fmt.Square", 2.0, "red");
+        Object drawing = fmt.newInstance("fmt.Drawing", "d", java.util.Arrays.asList(circle, square, null), square,
+                circle);
+        String json = assertSameAsTheRuntime("fmt.Drawing", drawing);
+        assertTrue(json.contains("{\"kind\":\"square\",\"side\":2.0,\"color\":\"red\"}"), json);
+        assertSameAsTheRuntime("fmt.Circle", circle);
+        assertSameAsTheRuntime("fmt.Shape", square);
+        assertBothFail("fmt.Shape", "{\"kind\":\"triangle\"}");
+        assertBothFail("fmt.Shape", "{\"radius\":1.0,\"kind\":\"circle\"}");
+    }
+
+    @Test
+    void anOpenInterfaceWithTypeInfoKeepsTheRuntimeButItsSubtypeIsBound() throws Exception {
+        assertFalse(fmt.hasBinding("fmt.Open"));
+        assertTrue(fmt.noted("fmt.Open", "not a sealed interface"), fmt.notes()::toString);
+        assertSameAsTheRuntime("fmt.OpenA", fmt.newInstance("fmt.OpenA", "x"));
+    }
+
+    @Test
     void whatTheGeneratedCodeCannotCallKeepsTheRuntime() {
         assertFalse(fmt.hasBinding("fmt.Unnamed"));
         assertTrue(fmt.noted("fmt.Unnamed", "-parameters"), fmt.notes()::toString);
+        assertFalse(fmt.hasBinding("fmt.Purse"));
+        assertTrue(fmt.noted("fmt.Purse", "record component"), fmt.notes()::toString);
         assertFalse(fmt.hasBinding("fmt.Injected"));
         assertTrue(fmt.noted("fmt.Injected", "a CDI bean"), fmt.notes()::toString);
     }

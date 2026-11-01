@@ -67,6 +67,11 @@ final class RuntimeBindingRegistry {
     private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> globalSerializers = new java.util.LinkedHashMap<>();
     private final ChampollionSerializationContext serContext = new ChampollionSerializationContext(this);
 
+    /** The context this registry gives the {@code JsonbSerializer}s it calls, generated bindings included. */
+    jakarta.json.bind.serializer.SerializationContext serializationContext() {
+        return serContext;
+    }
+
     /** The adapters registered with {@code JsonbConfig.withAdapters}, by their {@code Original} type. */
     @SuppressWarnings("rawtypes")
     void setGlobalAdapters(java.util.Map<Class<?>, jakarta.json.bind.adapter.JsonbAdapter> map) {
@@ -161,7 +166,7 @@ final class RuntimeBindingRegistry {
         @SuppressWarnings("rawtypes")
         JsonbBinding staticBinding = staticBindings.get(type);
         if (staticBinding != null) {
-            return staticBinding::write;
+            return (g, value) -> staticBinding.write(g, value, serContext);
         }
         BindingWriter built = Builtins.lookup(type);
         if (built != null) return built;

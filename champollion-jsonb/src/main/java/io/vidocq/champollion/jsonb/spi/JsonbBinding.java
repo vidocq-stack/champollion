@@ -19,6 +19,8 @@
  */
 package io.vidocq.champollion.jsonb.spi;
 
+import jakarta.json.bind.serializer.DeserializationContext;
+import jakarta.json.bind.serializer.SerializationContext;
 import jakarta.json.stream.JsonGenerator;
 import jakarta.json.stream.JsonParser;
 
@@ -60,4 +62,22 @@ public interface JsonbBinding<T> {
 
     /** Deserializes a value from {@code parser}. */
     T read(JsonParser parser);
+
+    /**
+     * Serializes {@code value}, with the context of the {@code Jsonb} that writes it: a generated binding hands it to
+     * the {@code JsonbSerializer}s it calls. {@code context} may be {@code null} (a caller without one), and a
+     * binding that needs none ignores it: the default calls {@link #write(JsonGenerator, Object)}.
+     */
+    default void write(JsonGenerator generator, T value, SerializationContext context) {
+        write(generator, value);
+    }
+
+    /**
+     * Deserializes a value, with the context of the {@code Jsonb} that reads it: a generated binding hands it to the
+     * {@code JsonbDeserializer}s it calls. {@code context} may be {@code null}; the default calls
+     * {@link #read(JsonParser)}.
+     */
+    default T read(JsonParser parser, DeserializationContext context) {
+        return read(parser);
+    }
 }

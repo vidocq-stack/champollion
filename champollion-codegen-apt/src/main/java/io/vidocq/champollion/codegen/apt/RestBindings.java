@@ -62,10 +62,15 @@ final class RestBindings {
     private static final String JSONB_DATE_FORMAT = JSONB_ANNOTATIONS + "JsonbDateFormat";
     private static final String JSONB_NUMBER_FORMAT = JSONB_ANNOTATIONS + "JsonbNumberFormat";
     private static final String JSONB_TYPE_ADAPTER = JSONB_ANNOTATIONS + "JsonbTypeAdapter";
+    private static final String JSONB_TYPE_INFO = JSONB_ANNOTATIONS + "JsonbTypeInfo";
     private static final String JSONB_ADAPTER = "jakarta.json.bind.adapter.JsonbAdapter";
+    private static final String JSONB_TYPE_SERIALIZER = JSONB_ANNOTATIONS + "JsonbTypeSerializer";
+    private static final String JSONB_TYPE_DESERIALIZER = JSONB_ANNOTATIONS + "JsonbTypeDeserializer";
+    private static final String JSONB_SERIALIZER = "jakarta.json.bind.serializer.JsonbSerializer";
+    private static final String JSONB_DESERIALIZER = "jakarta.json.bind.serializer.JsonbDeserializer";
     /** The JSON-B annotations the generated code implements on a property. */
     private static final Set<String> PROPERTY_ANNOTATIONS = Set.of(JSONB_PROPERTY, JSONB_TRANSIENT, JSONB_NILLABLE,
-            JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT, JSONB_TYPE_ADAPTER);
+            JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT, JSONB_TYPE_ADAPTER, JSONB_TYPE_SERIALIZER, JSONB_TYPE_DESERIALIZER);
     /** The JSON-B annotations the generated code implements on a type or a package: they apply to its properties. */
     private static final Set<String> TYPE_ANNOTATIONS = Set.of(JSONB_NILLABLE, JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
     /** The types {@code @JsonbDateFormat} formats (JSON-B 3.0 §3.5; durations and periods stay ISO 8601). */
@@ -113,13 +118,20 @@ final class RestBindings {
      */
     record Adapter(String className, TypeMirror adapted) {}
 
-    /** How a property's value is mapped in one direction: through an adapter, a format, or as its type. */
-    record Mapping(Adapter adapter, Format format) {
+    /**
+     * How a property's value is mapped in one direction: through an adapter, a {@code JsonbSerializer} or
+     * {@code JsonbDeserializer} ({@code custom}, the class created once with {@code new}), a format, or as its type.
+     */
+    record Mapping(Adapter adapter, Format format, String custom) {
 
-        static final Mapping PLAIN = new Mapping(null, null);
+        static final Mapping PLAIN = new Mapping(null, null, null);
 
-        /** The type the JSON holds: the adapted type, or the property's. */
+        /**
+         * The type the binding maps: the adapted type, or the property's; {@code null} when a serializer or a
+         * deserializer maps the value itself.
+         */
         TypeMirror jsonType(TypeMirror propertyType) {
+            if (custom != null) return null;
             return adapter != null ? adapter.adapted() : propertyType;
         }
     }
@@ -152,7 +164,8 @@ final class RestBindings {
 
         /** The types the binding maps for this property, on write and on read. */
         List<TypeMirror> jsonTypes() {
-            return List.of(out.jsonType(type), in.jsonType(type));
+            return java.util.stream.Stream.of(out.jsonType(type), in.jsonType(type)).filter(java.util.Objects::nonNull)
+                    .toList();
         }
     }
 
@@ -171,9 +184,26 @@ final class RestBindings {
         }
     }
 
-    /** A type a binding is generated for; {@code creator} is {@code null} when the binding calls {@code new T()}. */
+    /** A {@code @JsonbSubtype} of a polymorphic base: its alias and its record. */
+    record Variant(String alias, TypeElement type) {}
+
+    /**
+     * The {@code @JsonbTypeInfo} a model takes part in. For the base, {@code variants} lists its subtypes and the
+     * binding dispatches to theirs; for a subtype, {@code alias} is the discriminator its binding writes and checks.
+     */
+    record Polymorphism(String key, String alias, List<Variant> variants) {
+
+        boolean isBase() {
+            return alias == null;
+        }
+    }
+
+    /**
+     * A type a binding is generated for; {@code creator} is {@code null} when the binding calls {@code new T()},
+     * {@code polymorphism} when the type has no {@code @JsonbTypeInfo}.
+     */
     record Model(TypeElement type, boolean isRecord, boolean subclassable, List<Property> properties,
-                 Creator creator) {
+                 Creator creator, Polymorphism polymorphism) {
 
         String packageName() {
             return packageOf(type);
@@ -318,7 +348,7 @@ final class RestBindings {
         }
         TypeElement element = (TypeElement) declared.asElement();
         if (LEAVES.contains(name) || element.getKind() == ElementKind.ENUM || JAVA_LANG_OBJECT.equals(name)) return;
-        if (element.getKind() != ElementKind.RECORD && element.getKind() != ElementKind.CLASS) return;
+        if (!isBindable(element)) return;
         if (name.startsWith("java.") || name.startsWith("jakarta.")) return;
         pending.add(element);
     }
@@ -334,6 +364,7 @@ final class RestBindings {
         if (!compiled.contains(type)) {
             return "not compiled with the resources (a dependency's type, or an incremental build)";
         }
+        if (hasAnnotation(type, JSONB_TYPE_INFO)) return polymorphicBase(type);
         String where = placement(type);
         if (where == null) where = typeAnnotations(type);
         if (where != null) return where;
@@ -352,11 +383,112 @@ final class RestBindings {
             if (unsupported != null) return unsupported;
             creator.params().forEach(param -> reach(param.type()));
         }
-        models.put(type, new Model(type, isRecord, subclassable, List.copyOf(properties), creator));
+        Polymorphism polymorphism = isRecord ? subtypePolymorphism(type, properties) : null;
+        if (isRecord && polymorphism == null && lastReason != null) return lastReason;
+        models.put(type, new Model(type, isRecord, subclassable, List.copyOf(properties), creator, polymorphism));
         for (Property p : properties) p.jsonTypes().forEach(this::reach);
         // An instance of a subclass reaches the runtime, which uses the subclass's binding when it has one.
         if (subclassable) reachSubclasses(type);
         return null;
+    }
+
+    /**
+     * Models the polymorphic base {@code type}, which carries {@code @JsonbTypeInfo}: a sealed interface whose permitted
+     * subtypes are records, each listed by a {@code @JsonbSubtype}, so the binding knows every class a value can have.
+     * {@code null}, or why it keeps the runtime.
+     */
+    private String polymorphicBase(TypeElement type) {
+        if (type.getKind() != ElementKind.INTERFACE || !type.getModifiers().contains(Modifier.SEALED)) {
+            return "@JsonbTypeInfo on a type that is not a sealed interface: its subtypes are not all known";
+        }
+        if (!typeInfoChain(type).equals(List.of(type))) return "@JsonbTypeInfo on several levels";
+        AnnotationMirror info = annotationOf(type, JSONB_TYPE_INFO);
+        String key = "@type";
+        List<Variant> variants = new ArrayList<>();
+        for (var e : env.getElementUtils().getElementValuesWithDefaults(info).entrySet()) {
+            String name = e.getKey().getSimpleName().toString();
+            if (name.equals("key")) key = (String) e.getValue().getValue();
+            if (name.equals(VALUE)) variants = variants(e.getValue());
+        }
+        Set<TypeElement> listed = new java.util.HashSet<>();
+        for (Variant v : variants) listed.add(v.type());
+        for (TypeMirror permitted : type.getPermittedSubclasses()) {
+            TypeElement sub = (TypeElement) ((DeclaredType) permitted).asElement();
+            if (sub.getKind() != ElementKind.RECORD) return "permitted subtype " + sub.getQualifiedName() + " is no record";
+            if (!listed.remove(sub)) return "permitted subtype " + sub.getQualifiedName() + " has no @JsonbSubtype";
+        }
+        if (!listed.isEmpty()) return "a @JsonbSubtype that is not a permitted subtype";
+        variants.forEach(v -> pending.add(v.type()));
+        models.put(type, new Model(type, false, false, List.of(), null, new Polymorphism(key, null, variants)));
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Variant> variants(javax.lang.model.element.AnnotationValue value) {
+        List<Variant> variants = new ArrayList<>();
+        for (var v : (List<? extends javax.lang.model.element.AnnotationValue>) value.getValue()) {
+            AnnotationMirror subtype = (AnnotationMirror) v.getValue();
+            String alias = null;
+            TypeElement type = null;
+            for (var e : subtype.getElementValues().entrySet()) {
+                if (e.getKey().getSimpleName().contentEquals("alias")) alias = (String) e.getValue().getValue();
+                else type = (TypeElement) ((DeclaredType) e.getValue().getValue()).asElement();
+            }
+            variants.add(new Variant(alias, type));
+        }
+        return variants;
+    }
+
+    /**
+     * The {@code @JsonbTypeInfo} the record {@code type} takes part in through the interfaces it implements, as the
+     * runtime finds it: {@code null} when none, or when its binding cannot honour it ({@link #lastReason} then says
+     * why; it is {@code null} otherwise).
+     */
+    private Polymorphism subtypePolymorphism(TypeElement type, List<Property> properties) {
+        lastReason = null;
+        List<TypeElement> chain = typeInfoChain(type);
+        if (chain.isEmpty()) return null;
+        if (chain.size() > 1) return refuse("@JsonbTypeInfo on several levels of its interfaces");
+        TypeElement bearer = chain.getFirst();
+        AnnotationMirror info = annotationOf(bearer, JSONB_TYPE_INFO);
+        String key = "@type";
+        List<Variant> variants = List.of();
+        for (var e : env.getElementUtils().getElementValuesWithDefaults(info).entrySet()) {
+            String name = e.getKey().getSimpleName().toString();
+            if (name.equals("key")) key = (String) e.getValue().getValue();
+            if (name.equals(VALUE)) variants = variants(e.getValue());
+        }
+        Variant own = variants.stream().filter(v -> env.getTypeUtils().isAssignable(type.asType(), v.type().asType()))
+                .findFirst().orElse(null);
+        if (own == null || own.type() != type) {
+            return refuse("not listed by its own @JsonbSubtype in " + bearer.getQualifiedName());
+        }
+        String discriminator = key;
+        if (properties.stream().anyMatch(p -> p.jsonName().equals(discriminator))) {
+            return refuse("a property is named like the @JsonbTypeInfo key \"" + discriminator + "\"");
+        }
+        return new Polymorphism(key, own.alias(), List.of());
+    }
+
+    private Polymorphism refuse(String why) {
+        lastReason = why;
+        return null;
+    }
+
+    /** The types of {@code type}'s supertypes, itself included, that carry {@code @JsonbTypeInfo}: the runtime's chain. */
+    private List<TypeElement> typeInfoChain(TypeElement type) {
+        List<TypeElement> chain = new ArrayList<>();
+        Deque<TypeElement> todo = new ArrayDeque<>(List.of(type));
+        Set<TypeElement> seen = new java.util.HashSet<>();
+        while (!todo.isEmpty()) {
+            TypeElement t = todo.poll();
+            if (!seen.add(t)) continue;
+            if (hasAnnotation(t, JSONB_TYPE_INFO)) chain.add(t);
+            for (TypeMirror i : t.getInterfaces()) todo.add((TypeElement) ((DeclaredType) i).asElement());
+            TypeElement parent = superclassOf(t);
+            if (parent != null) todo.add(parent);
+        }
+        return chain;
     }
 
     /**
@@ -365,6 +497,9 @@ final class RestBindings {
      * {@link #nillable}.
      */
     private String typeAnnotations(TypeElement type) {
+        if (type.getKind() == ElementKind.CLASS && !typeInfoChain(type).isEmpty()) {
+            return "it implements an interface carrying @JsonbTypeInfo, which only the runtime implements for a class";
+        }
         for (TypeElement level : hierarchy(type)) {
             String onType = unsupportedAnnotation(level.getAnnotationMirrors());
             if (onType != null) return (level == type ? "the class" : "superclass " + level.getQualifiedName())
@@ -432,8 +567,12 @@ final class RestBindings {
                     .filter(f -> f.getSimpleName().contentEquals(name)).<Element>map(f -> f).findFirst()
                     .orElse(component);
             List<Element> lookup = present(component.getAccessor(), field);
+            if (hasAnnotation(members, JSONB_TYPE_SERIALIZER) || hasAnnotation(members, JSONB_TYPE_DESERIALIZER)) {
+                return "component " + name + ": a serializer or deserializer on a record component, which the"
+                        + " runtime does not call";
+            }
             // The runtime takes a component's adapter from its accessor only.
-            Mapping mapping = mapping(type, component.asType(), lookup, present(component.getAccessor()));
+            Mapping mapping = mapping(type, component.asType(), lookup, present(component.getAccessor()), null);
             if (mapping == null) return "component " + name + ": " + lastReason;
             properties.add(new Property(jsonName(members, name), component.asType(), new Member(Access.METHOD,
                     name + "()"), new Member(Access.COMPONENT, name), nillable(type, lookup), mapping, mapping));
@@ -694,9 +833,10 @@ final class RestBindings {
         // On write, the runtime looks at the getter then the field; on read, at the setter, the getter, the field.
         List<Element> writeLookup = present(m.getter(), m.field());
         List<Element> readLookup = present(m.setter(), m.getter(), m.field());
-        Mapping out = mapping(owner, t, writeLookup, writeLookup);
+        Mapping out = mapping(owner, t, writeLookup, writeLookup, JSONB_TYPE_SERIALIZER);
         // An adapter is looked for on the setter and the field, then on the getter and the field.
-        Mapping in = out == null ? null : mapping(owner, t, readLookup, present(m.setter(), m.field(), m.getter()));
+        Mapping in = out == null ? null
+                : mapping(owner, t, readLookup, present(m.setter(), m.field(), m.getter()), JSONB_TYPE_DESERIALIZER);
         if (in == null) return PROPERTY + m.name() + ": " + lastReason;
         properties.add(new Property(jsonName(members, m.name()), t, new Member(m.read(), m.readMember()),
                 new Member(m.write(), m.writeMember()), nillable(owner, writeLookup), out, in));
@@ -734,20 +874,66 @@ final class RestBindings {
     private String lastReason;
 
     /**
-     * How a property of {@code type} is mapped in one direction: the adapter on the first of {@code adapterLookup}
-     * carrying one (it wins over a format, as in the runtime), else the format that applies. {@code null} when the
-     * adapter cannot be called from generated code; {@link #lastReason} says why.
+     * How a property of {@code type} is mapped in one direction, in the runtime's order: the adapter on the first of
+     * {@code customLookup} carrying one, else the {@code customAnnotation} ({@code @JsonbTypeSerializer} on write,
+     * {@code @JsonbTypeDeserializer} on read; {@code null} for none) on the first carrying it, else the format that
+     * applies. {@code null} when what applies cannot be called from generated code; {@link #lastReason} says why.
      */
     private Mapping mapping(TypeElement owner, TypeMirror type, List<Element> formatLookup,
-                            List<Element> adapterLookup) {
-        AnnotationMirror annotation = adapterLookup.stream().map(m -> annotationOf(m, JSONB_TYPE_ADAPTER))
-                .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+                            List<Element> customLookup, String customAnnotation) {
+        AnnotationMirror annotation = first(customLookup, JSONB_TYPE_ADAPTER);
         if (annotation != null) {
             Adapter adapter = adapter(annotation, type, owner);
-            return adapter == null ? null : new Mapping(adapter, null);
+            return adapter == null ? null : new Mapping(adapter, null, null);
+        }
+        annotation = customAnnotation == null ? null : first(customLookup, customAnnotation);
+        if (annotation != null) {
+            String custom = custom(annotation, type, owner);
+            return custom == null ? null : new Mapping(null, null, custom);
         }
         Format format = format(owner, type, formatLookup);
-        return format == null ? Mapping.PLAIN : new Mapping(null, format);
+        return format == null ? Mapping.PLAIN : new Mapping(null, format, null);
+    }
+
+    /** The {@code annotation} on the first of {@code members} carrying it, or {@code null}. */
+    private static AnnotationMirror first(List<Element> members, String annotation) {
+        return members.stream().map(m -> annotationOf(m, annotation)).filter(java.util.Objects::nonNull).findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * The {@code JsonbSerializer} or {@code JsonbDeserializer} {@code annotation} names, when the binding can create it
+     * with {@code new} and call it on a {@code propertyType}; else {@code null}, and {@link #lastReason} says why.
+     */
+    private String custom(AnnotationMirror annotation, TypeMirror propertyType, TypeElement owner) {
+        TypeElement custom = (TypeElement) ((DeclaredType) annotationValue(annotation)).asElement();
+        String name = custom.getQualifiedName().toString();
+        boolean serializer = JSONB_TYPE_SERIALIZER.equals(nameOf(annotation));
+        lastReason = "@" + simpleNameOf(annotation) + "(" + name + ".class): ";
+        if (propertyType.getKind() != TypeKind.DECLARED || !((DeclaredType) propertyType).getTypeArguments().isEmpty()) {
+            return fail("a primitive, array or generic property, whose type the runtime hands it");
+        }
+        String unusable = instantiable(custom, packageOf(owner));
+        if (unusable != null) return fail(unusable);
+        TypeMirror handled = typeArgument(custom, serializer ? JSONB_SERIALIZER : JSONB_DESERIALIZER);
+        if (handled == null) return fail("its type argument is not a concrete type");
+        boolean callable = serializer ? env.getTypeUtils().isAssignable(propertyType, handled)
+                : env.getTypeUtils().isAssignable(handled, propertyType);
+        return callable ? name : fail("it handles " + handled + ", not " + propertyType);
+    }
+
+    /** The type argument of the {@code generic} interface {@code type} implements, or {@code null}. */
+    private static TypeMirror typeArgument(TypeElement type, String generic) {
+        for (TypeElement c = type; c != null; c = superclassOf(c)) {
+            for (TypeMirror i : c.getInterfaces()) {
+                DeclaredType d = (DeclaredType) i;
+                if (generic.equals(erasureName(d)) && d.getTypeArguments().size() == 1
+                        && isConcrete(d.getTypeArguments().getFirst())) {
+                    return d.getTypeArguments().getFirst();
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -758,21 +944,21 @@ final class RestBindings {
         TypeElement adapter = (TypeElement) ((DeclaredType) annotationValue(annotation)).asElement();
         String name = adapter.getQualifiedName().toString();
         lastReason = "@JsonbTypeAdapter(" + name + ".class): ";
-        if (propertyType.getKind().isPrimitive()) return failAdapter("a primitive property");
-        if (OPTIONAL.equals(erasureName(propertyType))) return failAdapter("an Optional property");
+        if (propertyType.getKind().isPrimitive()) return fail("a primitive property");
+        if (OPTIONAL.equals(erasureName(propertyType))) return fail("an Optional property");
         String unusable = instantiable(adapter, packageOf(owner));
-        if (unusable != null) return failAdapter(unusable);
+        if (unusable != null) return fail(unusable);
         List<? extends TypeMirror> args = adapterArguments(adapter);
-        if (args == null) return failAdapter("its JsonbAdapter type arguments are not concrete types");
+        if (args == null) return fail("its JsonbAdapter type arguments are not concrete types");
         if (!env.getTypeUtils().isSameType(args.get(0), propertyType)) {
-            return failAdapter("it adapts " + args.get(0) + ", not " + propertyType);
+            return fail("it adapts " + args.get(0) + ", not " + propertyType);
         }
         String unsupported = supported(args.get(1));
-        if (unsupported != null) return failAdapter("its adapted type: " + unsupported);
+        if (unsupported != null) return fail("its adapted type: " + unsupported);
         return new Adapter(name, args.get(1));
     }
 
-    private <T> T failAdapter(String why) {
+    private <T> T fail(String why) {
         lastReason += why;
         return null;
     }
@@ -839,7 +1025,7 @@ final class RestBindings {
 
     private static Object annotationValue(AnnotationMirror a) {
         return a.getElementValues().entrySet().stream()
-                .filter(e -> e.getKey().getSimpleName().contentEquals("value"))
+                .filter(e -> e.getKey().getSimpleName().contentEquals(VALUE))
                 .map(e -> e.getValue().getValue()).findFirst().orElseThrow();
     }
 
@@ -976,8 +1162,7 @@ final class RestBindings {
         TypeElement element = (TypeElement) declared.asElement();
         if (element.getKind() == ElementKind.ENUM) return enumReason(element, name);
         if (COLLECTIONS.contains(name) || OPTIONAL.equals(name) || MAP.equals(name)) return "nested container " + type;
-        boolean bindable = element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS;
-        if (!bindable || name.startsWith("java.") || name.startsWith("jakarta.")) return TYPE + name;
+        if (!isBindable(element) || name.startsWith("java.") || name.startsWith("jakarta.")) return TYPE + name;
         pending.add(element);
         return null;   // provisionally: dropModelsReferencingSkipped checks it got a binding
     }
@@ -1008,6 +1193,13 @@ final class RestBindings {
     }
 
     private String missingBinding(Model model) {
+        if (model.polymorphism() != null && model.polymorphism().isBase()) {
+            for (Variant v : model.polymorphism().variants()) {
+                String reason = unreachable(List.of(v.type().asType()), model.packageName());
+                if (reason == null) reason = unbound(List.of(v.type().asType()));
+                if (reason != null) return "@JsonbSubtype \"" + v.alias() + "\" is " + reason;
+            }
+        }
         if (model.creator() != null) {
             for (Param param : model.creator().params()) {
                 String reason = unreachable(List.of(param.type()), model.packageName());
@@ -1079,11 +1271,14 @@ final class RestBindings {
             return found;
         }
         TypeElement element = (TypeElement) declared.asElement();
-        if ((element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS)
-                && !LEAVES.contains(name)) {
-            found.add(element);
-        }
+        if (isBindable(element) && !LEAVES.contains(name)) found.add(element);
         return found;
+    }
+
+    /** A record, a class, or an interface carrying {@code @JsonbTypeInfo}: a type that may get a binding. */
+    static boolean isBindable(TypeElement element) {
+        return element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS
+                || element.getKind() == ElementKind.INTERFACE && hasAnnotation(element, JSONB_TYPE_INFO);
     }
 
     // ===== Helpers =====

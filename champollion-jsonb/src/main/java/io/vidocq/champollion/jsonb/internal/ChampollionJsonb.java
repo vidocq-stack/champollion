@@ -313,7 +313,7 @@ public final class ChampollionJsonb implements Jsonb {
         // Lookup-first: static binding available for this type?
         JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, object));
         if (staticBinding != null) {
-            staticBinding.write(g, object);
+            staticBinding.write(g, object, writeRegistry.serializationContext());
             return;
         }
         BindingWriter w = writeRegistry.writerFor(runtimeType);
@@ -505,9 +505,19 @@ public final class ChampollionJsonb implements Jsonb {
         // Lookup-first: static binding for this type?
         JsonbBinding staticBinding = staticBindings.get(rawClassOf(runtimeType, null));
         if (staticBinding != null) {
-            return staticBinding.read(p);
+            return staticBinding.read(p, readRegistry.deserializationContext());
         }
         return readRegistry.readerFor(runtimeType).read(p);
+    }
+
+    /** The context this instance gives the {@code JsonbSerializer}s it calls. */
+    jakarta.json.bind.serializer.SerializationContext serializationContext() {
+        return writeRegistry.serializationContext();
+    }
+
+    /** The context this instance gives the {@code JsonbDeserializer}s it calls. */
+    jakarta.json.bind.serializer.DeserializationContext deserializationContext() {
+        return readRegistry.deserializationContext();
     }
 
     /** Releases the parser this instance keeps between two reads. */

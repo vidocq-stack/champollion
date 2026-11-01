@@ -76,4 +76,23 @@ public final class LeafCodecs {
                 : RuntimeReadRegistry.builtinReader(type);
         return r == null ? null : r::read;
     }
+
+    /**
+     * The contexts of a {@code Jsonb} of the default configuration, created on first use: for a generated binding
+     * called without the context of the {@code Jsonb} that uses it. Generated bindings serve the default
+     * configuration only, so its contexts map values the same way.
+     */
+    private static final class DefaultContexts {
+        static final ChampollionJsonb JSONB = (ChampollionJsonb) new ChampollionJsonbBuilder().build();
+    }
+
+    /** The serialization context of a default {@code Jsonb}. */
+    public static jakarta.json.bind.serializer.SerializationContext defaultSerializationContext() {
+        return DefaultContexts.JSONB.serializationContext();
+    }
+
+    /** The deserialization context of a default {@code Jsonb}. */
+    public static jakarta.json.bind.serializer.DeserializationContext defaultDeserializationContext() {
+        return DefaultContexts.JSONB.deserializationContext();
+    }
 }

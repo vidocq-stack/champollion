@@ -67,6 +67,11 @@ final class RuntimeReadRegistry {
     private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> globalDeserializers = new java.util.LinkedHashMap<>();
     private final ChampollionDeserializationContext deserContext = new ChampollionDeserializationContext(this);
 
+    /** The context this registry gives the {@code JsonbDeserializer}s it calls, generated bindings included. */
+    jakarta.json.bind.serializer.DeserializationContext deserializationContext() {
+        return deserContext;
+    }
+
     @SuppressWarnings("rawtypes")
     void setGlobalDeserializers(java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> map) {
         this.globalDeserializers.clear();
@@ -172,7 +177,7 @@ final class RuntimeReadRegistry {
         // Static-first, as at the root and as on the write side: a generated binding replaces the introspective
         // reader of its type. Both consume the value's leading event themselves.
         io.vidocq.champollion.jsonb.spi.JsonbBinding<?> staticBinding = staticBindings.get(type);
-        if (staticBinding != null) return staticBinding::read;
+        if (staticBinding != null) return p -> staticBinding.read(p, deserContext);
         BindingReader b = Builtins.lookup(type);
         if (b != null) return b;
         if (type.isEnum()) return enumReader(type);

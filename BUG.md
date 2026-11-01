@@ -698,3 +698,17 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Correctif** : constructors and static factories carrying `@JsonbCreator` are both found; the binding calls the
   creator (or the type keeps the runtime, with a note, when it cannot).
 - **Vérification** : `RestBindingsCustomisationsTest.aCreatorFactoryWinsOverTheNoArgumentConstructor`.
+
+## BUG-20261101-10 — APT: a record implementing a `@JsonbTypeInfo` interface lost its discriminator
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-serializers-polymorphism`)
+- **Module touché** : `champollion-codegen-apt` (`RestBindings`)
+- **Symptôme** : `record Circle(double radius) implements Shape`, with `@JsonbTypeInfo` on `Shape`, returned by a
+  resource: the runtime writes `{"@type":"circle","radius":1.5}`, but the binding generated for `Circle` wrote
+  `{"radius":1.5}` and, being static, replaced the runtime's mapping.
+- **Cause** : the type-level annotations were looked for on the class and its superclasses only; a record's
+  `@JsonbTypeInfo` comes from the interfaces it implements.
+- **Correctif** : the processor builds the runtime's `@JsonbTypeInfo` chain (interfaces included). A record listed by
+  its `@JsonbSubtype` writes and checks its discriminator; a class with such a chain keeps the runtime.
+- **Vérification** : `RestBindingsCustomisationsTest` (`Circle` alone, and through the sealed `Shape`).
