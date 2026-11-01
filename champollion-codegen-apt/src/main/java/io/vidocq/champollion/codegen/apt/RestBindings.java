@@ -74,7 +74,9 @@ final class RestBindings {
     private static final Set<String> PROPERTY_ANNOTATIONS = Set.of(JSONB_PROPERTY, JSONB_TRANSIENT, JSONB_NILLABLE,
             JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT, JSONB_TYPE_ADAPTER, JSONB_TYPE_SERIALIZER, JSONB_TYPE_DESERIALIZER);
     /** The JSON-B annotations the generated code implements on a type or a package: they apply to its properties. */
-    private static final Set<String> TYPE_ANNOTATIONS = Set.of(JSONB_NILLABLE, JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
+    private static final String JSONB_PROPERTY_ORDER = JSONB_ANNOTATIONS + "JsonbPropertyOrder";
+    private static final Set<String> TYPE_ANNOTATIONS = Set.of(JSONB_NILLABLE, JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT,
+            JSONB_PROPERTY_ORDER);
     /** The types {@code @JsonbDateFormat} formats (JSON-B 3.0 §3.5; durations and periods stay ISO 8601). */
     private static final Set<String> FORMATTED_DATES = Set.of("java.time.Instant", "java.time.LocalDate",
             "java.time.LocalTime", "java.time.LocalDateTime", "java.time.OffsetDateTime", "java.time.OffsetTime",
@@ -532,6 +534,29 @@ final class RestBindings {
     }
 
     /**
+     * Puts first, in their order, the properties {@code @JsonbPropertyOrder} names on {@code type} or its closest
+     * superclass carrying it, as the runtime does; the others keep the default order (by class from the top, then
+     * lexicographically).
+     */
+    @SuppressWarnings("unchecked")
+    private static void applyPropertyOrder(TypeElement type, List<Property> properties) {
+        AnnotationMirror order = null;
+        for (TypeElement level : hierarchy(type).reversed()) {
+            order = annotationOf(level, JSONB_PROPERTY_ORDER);
+            if (order != null) break;
+        }
+        if (order == null) return;
+        List<Property> ordered = new ArrayList<>();
+        for (var v : (List<? extends javax.lang.model.element.AnnotationValue>) annotationValue(order)) {
+            String name = (String) v.getValue();
+            properties.stream().filter(p -> p.jsonName().equals(name) && !ordered.contains(p)).findFirst()
+                    .ifPresent(ordered::add);
+        }
+        properties.removeAll(ordered);
+        properties.addAll(0, ordered);
+    }
+
+    /**
      * The {@code @JsonbTypeInfo} the record {@code type} takes part in through the interfaces it implements, as the
      * runtime finds it: {@code null} when none, or when its binding cannot honour it ({@link #lastReason} then says
      * why; it is {@code null} otherwise).
@@ -639,6 +664,9 @@ final class RestBindings {
     }
 
     private String recordProperties(TypeElement type, List<Property> properties) {
+        if (hasAnnotation(type, JSONB_PROPERTY_ORDER)) {
+            return "@JsonbPropertyOrder on a record, which the runtime writes in its components' order";
+        }
         ExecutableElement canonical = canonicalConstructor(type);
         if (canonical == null || canonical.getModifiers().contains(Modifier.PRIVATE)) {
             return "no accessible canonical constructor";
@@ -697,6 +725,7 @@ final class RestBindings {
             own.sort(Comparator.comparing(Property::jsonName));
             properties.addAll(own);
         }
+        applyPropertyOrder(type, properties);
         return defaultAccessors(type);
     }
 

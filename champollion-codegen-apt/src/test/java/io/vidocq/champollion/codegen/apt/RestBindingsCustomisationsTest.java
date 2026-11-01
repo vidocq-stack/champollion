@@ -636,6 +636,15 @@ class RestBindingsCustomisationsTest {
         assertSameRead("fmt.Unnamed", "{\"name\":\"n\"}");
     }
 
+    /** {@code @JsonbPropertyOrder} on a class or a superclass: the listed properties first, as the runtime writes. */
+    @Test
+    void aPropertyOrderPutsItsPropertiesFirst() throws Exception {
+        Object ordered = fmt.type("fmt.Ordered").getDeclaredConstructor().newInstance();
+        for (String f : List.of("a", "b", "c")) fmt.type("fmt.Ordered").getField(f).set(ordered, f.toUpperCase());
+        String json = assertSameAsTheRuntime("fmt.Ordered", ordered);
+        assertEquals("{\"b\":\"B\",\"a\":\"A\",\"c\":\"C\"}", json);
+    }
+
     @Test
     void whatTheGeneratedCodeCannotCallKeepsTheRuntime() {
         assertFalse(fmt.hasBinding("fmt.Purse"));
@@ -656,9 +665,6 @@ class RestBindingsCustomisationsTest {
     void theAnnotationsOfATypeOrAPackageTheGeneratedCodeDoesNotImplementKeepTheRuntime() {
         assertFalse(fmt.hasBinding("fmt.vis.Visible"));
         assertTrue(fmt.noted("fmt.vis.Visible", "package fmt.vis carries @JsonbVisibility"), fmt.notes()::toString);
-        assertFalse(fmt.hasBinding("fmt.Ordered"));
-        assertTrue(fmt.noted("fmt.Ordered", "superclass fmt.OrderedBase carries @JsonbPropertyOrder"),
-                fmt.notes()::toString);
         assertFalse(fmt.hasBinding("fmt.Implementing"));
         assertTrue(fmt.noted("fmt.Implementing", "fmt.Dated.getOn() it implements"), fmt.notes()::toString);
     }
