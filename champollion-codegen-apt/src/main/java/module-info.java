@@ -25,6 +25,8 @@ import javax.annotation.processing.Processor;
  */
 module io.vidocq.champollion.codegen.apt {
     requires java.compiler;
+    // The tree API reads the method bodies for the entities given a JAX-RS Response: optional, see ResponseEntities.
+    requires static jdk.compiler;
     requires io.vidocq.champollion.jsonb;
 
     exports io.vidocq.champollion.codegen.apt;
