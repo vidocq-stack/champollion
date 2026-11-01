@@ -73,7 +73,9 @@ public class JsonResource {
     @Path("/instance")
     @Produces(MediaType.TEXT_PLAIN)
     public String instance() throws Exception {
-        return io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class, DecoratingAdapter::new)
-                .get().adaptToJson("alice");
+        String source = io.vidocq.champollion.jsonb.spi.JsonbInstances.sourceFor(DecoratingAdapter.class) != null
+                ? "registry:" : "runtime:";
+        return source + io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class,
+                DecoratingAdapter::new).get().adaptToJson("alice");
     }
 }

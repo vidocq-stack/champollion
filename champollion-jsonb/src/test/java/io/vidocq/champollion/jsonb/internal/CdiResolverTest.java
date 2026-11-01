@@ -46,6 +46,7 @@ class CdiResolverTest {
 
     private static final ClassDesc CDI = ClassDesc.of("jakarta.enterprise.inject.spi.CDI");
     private static final ClassDesc INSTANCE = ClassDesc.of("jakarta.enterprise.inject.Instance");
+    private static final ClassDesc HANDLE = ClassDesc.of("jakarta.enterprise.inject.Instance$Handle");
     private static final ClassDesc SCOPED = ClassDesc.of("jakarta.enterprise.context.ApplicationScoped");
     private static final ClassDesc BEAN = ClassDesc.of("app.Adapter");
     private static final String FROM_CDI = "the CDI bean";
@@ -71,6 +72,7 @@ class CdiResolverTest {
             classes = Map.of(
                     "jakarta.enterprise.inject.spi.CDI", cdi(container),
                     "jakarta.enterprise.inject.Instance", instance(container),
+                    "jakarta.enterprise.inject.Instance$Handle", handle(container),
                     "jakarta.enterprise.context.ApplicationScoped", scoped(),
                     "app.Adapter", bean());
         }
@@ -133,7 +135,28 @@ class CdiResolverTest {
                         code.iconst_0().ireturn();
                     }
                 })
-                .withMethodBody("isAmbiguous", bool, ClassFile.ACC_PUBLIC, code -> code.iconst_0().ireturn()));
+                .withMethodBody("isAmbiguous", bool, ClassFile.ACC_PUBLIC, code -> code.iconst_0().ireturn())
+                .withMethodBody("getHandle", MethodTypeDesc.of(HANDLE), ClassFile.ACC_PUBLIC,
+                        code -> code.new_(HANDLE).dup()
+                                .invokespecial(HANDLE, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void).areturn()));
+    }
+
+    /** {@code Instance.Handle}: its {@code get()} answers as {@code Instance.get()}, {@code destroy()} does nothing. */
+    private static byte[] handle(Container container) {
+        return ClassFile.of().build(HANDLE, cls -> cls
+                .withFlags(AccessFlag.PUBLIC)
+                .withMethodBody(ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, ClassFile.ACC_PUBLIC, code -> code
+                        .aload(0).invokespecial(ConstantDescs.CD_Object, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void)
+                        .return_())
+                .withMethodBody("get", MethodTypeDesc.of(ConstantDescs.CD_Object), ClassFile.ACC_PUBLIC,
+                        code -> {
+                            if (container == Container.BROKEN) {
+                                throwNew(code, ClassDesc.of("java.lang.RuntimeException"));
+                            } else {
+                                code.ldc(FROM_CDI).areturn();
+                            }
+                        })
+                .withMethodBody("destroy", ConstantDescs.MTD_void, ClassFile.ACC_PUBLIC, code -> code.return_()));
     }
 
     private static byte[] scoped() {

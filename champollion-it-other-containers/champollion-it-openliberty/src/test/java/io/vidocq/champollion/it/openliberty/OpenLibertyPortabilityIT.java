@@ -73,6 +73,7 @@ class OpenLibertyPortabilityIT {
      */
     @Test
     void aGeneratedBindingGetsTheAdapterFromTheContainer() throws Exception {
-        assertEquals("<ALICE>", send(HttpRequest.newBuilder(URI.create(BASE + "/json/instance")).GET()));
+        // Served by the registry champollion-jsonb-cdi installs, its extension having run on Liberty.
+        assertEquals("registry:<ALICE>", send(HttpRequest.newBuilder(URI.create(BASE + "/json/instance")).GET()));
     }
 }

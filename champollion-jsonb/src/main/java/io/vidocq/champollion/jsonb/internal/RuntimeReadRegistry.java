@@ -66,6 +66,13 @@ final class RuntimeReadRegistry {
     @SuppressWarnings("rawtypes")
     private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbDeserializer> globalDeserializers = new java.util.LinkedHashMap<>();
     private final ChampollionDeserializationContext deserContext = new ChampollionDeserializationContext(this);
+    /** The CDI instances this registry obtained through {@code CDI.current()}, destroyed when its Jsonb closes. */
+    private final CdiResolver.Handles cdiHandles = new CdiResolver.Handles();
+
+    /** Destroys the CDI instances this registry obtained. */
+    void closeCdiInstances() {
+        cdiHandles.destroy();
+    }
 
     /** The context this registry gives the {@code JsonbDeserializer}s it calls, generated bindings included. */
     jakarta.json.bind.serializer.DeserializationContext deserializationContext() {
@@ -386,20 +393,20 @@ final class RuntimeReadRegistry {
         }
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.serializer.JsonbDeserializer> dClass = ann.value();
-        jakarta.json.bind.serializer.JsonbDeserializer deser;
+        java.util.function.Supplier<? extends jakarta.json.bind.serializer.JsonbDeserializer> deser;
         try {
             // §5 — CDI resolution if a container is available, otherwise newInstance.
-            deser = CdiResolver.resolve(dClass);
+            deser = CdiResolver.supplier(dClass, cdiHandles);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbDeserializer " + dClass, e);
         }
         if (advanceParser) {
             return java.util.Optional.of((BindingReader.UserDeserializer) parser -> {
                 parser.next();
-                return deser.deserialize(parser, deserContext, targetType);
+                return deser.get().deserialize(parser, deserContext, targetType);
             });
         }
-        return java.util.Optional.of((BindingReader.UserDeserializer) parser -> deser.deserialize(parser, deserContext, targetType));
+        return java.util.Optional.of((BindingReader.UserDeserializer) parser -> deser.get().deserialize(parser, deserContext, targetType));
     }
 
     /** Variant of {@link #readerFor(Type)} without adapter but preserving {@link java.lang.reflect.ParameterizedType}s. */
@@ -2058,10 +2065,10 @@ final class RuntimeReadRegistry {
     private java.util.Optional<BindingReader> adapterReaderFromAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter ann) {
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
-        jakarta.json.bind.adapter.JsonbAdapter adapter;
+        java.util.function.Supplier<? extends jakarta.json.bind.adapter.JsonbAdapter> adapter;
         try {
             // §5 — CDI resolution if a container is available, otherwise newInstance.
-            adapter = CdiResolver.resolve(adapterClass);
+            adapter = CdiResolver.supplier(adapterClass, cdiHandles);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
         }
@@ -2070,7 +2077,7 @@ final class RuntimeReadRegistry {
         return java.util.Optional.of(parser -> {
             Object adapted = inner.read(parser);
             if (adapted == null) return null;
-            try { return adapter.adaptFromJson(adapted); }
+            try { return adapter.get().adaptFromJson(adapted); }
             catch (Exception ex) { throw new JsonbException("Adapter failure on fromJson: " + ex.getMessage(), ex); }
         });
     }

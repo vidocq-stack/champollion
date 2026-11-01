@@ -33,6 +33,13 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- The CDI side: its build compatible extension and its per-container registry. -->
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb-cdi</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.jboss.weld.se</groupId>
             <artifactId>weld-se-core</artifactId>

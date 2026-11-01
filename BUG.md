@@ -743,3 +743,22 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   `docs/tck-proposals.md`).
 - **Vérification** : `RecordCustomisationsTest.aPropertyOrderOnARecordPutsItsComponentsFirst`; the generated
   binding does the same (`RestBindingsCustomisationsTest`).
+
+## BUG-20261101-12 — JSON-B: CDI adapters were kept forever, and shared across containers
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-cdi-instances`)
+- **Module touché** : `champollion-jsonb` (`CdiResolver`, the registries), new `champollion-jsonb-cdi`
+- **Symptôme** : an adapter, serializer or deserializer resolved from CDI was resolved once per property, when the
+  `Jsonb` built its mapping, and kept for the life of that `Jsonb`: a `@Dependent` one was never destroyed, and a
+  `Jsonb` shared across containers (Cassini's is JVM-wide) went on using the first container's instance after it
+  stopped.
+- **Repro minimal** : one `Jsonb`, two Weld containers one after the other, a `@Dependent` adapter with a
+  `@PreDestroy`: the second container gets the first one's instance, never destroyed.
+- **Cause** : `CdiResolver.resolve` returned `CDI.current().select(type).get()`, captured by the writer and the reader.
+- **Correctif** : the writers and readers ask, on each call, the registry `champollion-jsonb-cdi` installs per
+  container (instances destroyed when it stops); without one, the instance obtained from `CDI.current()` is kept
+  through its `Instance.Handle` and destroyed when the `Jsonb` closes.
+- **Vérification** : `JsonbCdiRegistryTest` (two containers in one JVM, a `@Dependent` adapter destroyed on
+  shutdown, the runtime's path, the `Jsonb` closing without the registry); `champollion-it-weld` and
+  `champollion-it-openliberty` (the registry serves on Weld and on Liberty).

@@ -44,6 +44,12 @@
             <artifactId>champollion-jsonb</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- The CDI side: its build compatible extension and its per-container registry. -->
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb-cdi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>jakarta.enterprise</groupId>
             <artifactId>jakarta.enterprise.cdi-api</artifactId>

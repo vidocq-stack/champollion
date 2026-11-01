@@ -66,6 +66,13 @@ final class RuntimeBindingRegistry {
     @SuppressWarnings("rawtypes")
     private final java.util.Map<Class<?>, jakarta.json.bind.serializer.JsonbSerializer> globalSerializers = new java.util.LinkedHashMap<>();
     private final ChampollionSerializationContext serContext = new ChampollionSerializationContext(this);
+    /** The CDI instances this registry obtained through {@code CDI.current()}, destroyed when its Jsonb closes. */
+    private final CdiResolver.Handles cdiHandles = new CdiResolver.Handles();
+
+    /** Destroys the CDI instances this registry obtained. */
+    void closeCdiInstances() {
+        cdiHandles.destroy();
+    }
 
     /** The context this registry gives the {@code JsonbSerializer}s it calls, generated bindings included. */
     jakarta.json.bind.serializer.SerializationContext serializationContext() {
@@ -292,16 +299,16 @@ final class RuntimeBindingRegistry {
         }
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.serializer.JsonbSerializer> serClass = ann.value();
-        jakarta.json.bind.serializer.JsonbSerializer ser;
+        java.util.function.Supplier<? extends jakarta.json.bind.serializer.JsonbSerializer> ser;
         try {
             // §5 — CDI resolution if a container is available, otherwise newInstance.
-            ser = CdiResolver.resolve(serClass);
+            ser = CdiResolver.supplier(serClass, cdiHandles);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbSerializer " + serClass, e);
         }
         return java.util.Optional.of((g, value) -> {
             if (value == null) { g.writeNull(); return; }
-            ser.serialize(value, g, serContext);
+            ser.get().serialize(value, g, serContext);
         });
     }
 
@@ -558,10 +565,10 @@ final class RuntimeBindingRegistry {
     private java.util.Optional<BindingWriter> adapterWriterFromAnnotation(jakarta.json.bind.annotation.JsonbTypeAdapter ann) {
         if (ann == null) return java.util.Optional.empty();
         Class<? extends jakarta.json.bind.adapter.JsonbAdapter> adapterClass = ann.value();
-        jakarta.json.bind.adapter.JsonbAdapter adapter;
+        java.util.function.Supplier<? extends jakarta.json.bind.adapter.JsonbAdapter> adapter;
         try {
             // §5 — CDI resolution if a container is available, otherwise newInstance.
-            adapter = CdiResolver.resolve(adapterClass);
+            adapter = CdiResolver.supplier(adapterClass, cdiHandles);
         } catch (ReflectiveOperationException e) {
             throw new JsonbException("Cannot instantiate JsonbAdapter " + adapterClass, e);
         }
@@ -569,7 +576,7 @@ final class RuntimeBindingRegistry {
         BindingWriter inner = writerForGeneric(adaptedGeneric);
         return java.util.Optional.of((g, value) -> {
             Object adapted;
-            try { adapted = adapter.adaptToJson(value); }
+            try { adapted = adapter.get().adaptToJson(value); }
             catch (Exception ex) { throw new JsonbException("Adapter failure on toJson: " + ex.getMessage(), ex); }
             if (adapted == null) g.writeNull();
             else inner.write(g, adapted);

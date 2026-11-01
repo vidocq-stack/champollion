@@ -92,5 +92,7 @@ class WeldPortabilityTest {
         var adapter = io.vidocq.champollion.jsonb.spi.JsonbInstances.of(DecoratingAdapter.class, DecoratingAdapter::new)
                 .get();
         assertEquals("<ALICE>", adapter.adaptToJson("alice"));
+        assertTrue(io.vidocq.champollion.jsonb.spi.JsonbInstances.sourceFor(DecoratingAdapter.class) != null,
+                "served by the registry champollion-jsonb-cdi installs, not by CDI.current()");
     }
 }

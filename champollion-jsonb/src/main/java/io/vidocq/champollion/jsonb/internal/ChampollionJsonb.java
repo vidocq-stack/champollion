@@ -523,5 +523,8 @@ public final class ChampollionJsonb implements Jsonb {
     /** Releases the parser this instance keeps between two reads. */
     @Override public void close() {
         parserSlot.set(null);
+        // The adapters, serializers and deserializers it obtained from CDI.current(), @Dependent ones included.
+        writeRegistry.closeCdiInstances();
+        readRegistry.closeCdiInstances();
     }
 }
