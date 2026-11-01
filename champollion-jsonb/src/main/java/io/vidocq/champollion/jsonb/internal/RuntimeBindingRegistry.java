@@ -49,7 +49,6 @@ import java.util.UUID;
  */
 final class RuntimeBindingRegistry {
 
-    /** Suffix of the class that carries the annotations of a package. */
     /** The value of a JSON-B format annotation that asks for the default format. */
     private static final String DEFAULT_FORMAT = "##default";
 
