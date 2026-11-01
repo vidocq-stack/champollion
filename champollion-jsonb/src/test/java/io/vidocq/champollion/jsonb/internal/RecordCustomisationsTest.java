@@ -53,6 +53,9 @@ class RecordCustomisationsTest {
     @JsonbNumberFormat("#0.0")
     public record TypeNumber(double ratio) {}
 
+    @jakarta.json.bind.annotation.JsonbPropertyOrder({"c", "a"})
+    public record Ordered(String a, String b, String c) {}
+
     public static class Counted {
         private double value;
 
@@ -138,6 +141,12 @@ class RecordCustomisationsTest {
         var fields = jsonb.fromJson("{\"on\":\"03/04/1862\",\"count\":\"1,234\"}", Fields.class);
         assertEquals(LocalDate.of(1862, 4, 3), fields.on);
         assertEquals(1234L, fields.count);
+    }
+
+    /** {@code @JsonbPropertyOrder} applies to a record: the listed components first, the others in their order. */
+    @Test
+    void aPropertyOrderOnARecordPutsItsComponentsFirst() {
+        assertEquals("{\"c\":\"C\",\"a\":\"A\",\"b\":\"B\"}", jsonb.toJson(new Ordered("A", "B", "C")));
     }
 
     @Test

@@ -664,9 +664,6 @@ final class RestBindings {
     }
 
     private String recordProperties(TypeElement type, List<Property> properties) {
-        if (hasAnnotation(type, JSONB_PROPERTY_ORDER)) {
-            return "@JsonbPropertyOrder on a record, which the runtime writes in its components' order";
-        }
         ExecutableElement canonical = canonicalConstructor(type);
         if (canonical == null || canonical.getModifiers().contains(Modifier.PRIVATE)) {
             return "no accessible canonical constructor";
@@ -678,6 +675,7 @@ final class RestBindings {
             String reason = componentProperty(type, component, properties);
             if (reason != null) return COMPONENT + component.getSimpleName() + ": " + reason;
         }
+        applyPropertyOrder(type, properties);
         return null;
     }
 

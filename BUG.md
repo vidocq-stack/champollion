@@ -729,3 +729,17 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Hypothèse** : a shared, contended structure on the write path of one `Jsonb` used by several threads (a lock,
   a buffer the instance keeps, a hot `AtomicReference`/`ConcurrentHashMap` entry); the same before and after the
   instance cache of BENCH-20261101-02, so not the adapters' lookup.
+## BUG-20261101-11 — JSON-B: `@JsonbPropertyOrder` on a record was ignored
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-response-entities`)
+- **Module touché** : `champollion-jsonb` (`RuntimeBindingRegistry`)
+- **Symptôme** : `@JsonbPropertyOrder({"c", "a"}) record Ordered(String a, String b, String c)` was written
+  `{"a":…,"b":…,"c":…}`: the record path never applied the annotation.
+- **Cause** : `resolveRecord` and `propertiesFromRecord` built the components in declaration order and stopped
+  there; `applyPropertyOrder` only ran for beans.
+- **Correctif** : the components the annotation names come first, in its order, the others in their declaration
+  order. JSON-B 3.1's TCK checks it (`RecordPropertyOrderTest.testCustomPropertyOrderOnRecord`, see
+  `docs/tck-proposals.md`).
+- **Vérification** : `RecordCustomisationsTest.aPropertyOrderOnARecordPutsItsComponentsFirst`; the generated
+  binding does the same (`RestBindingsCustomisationsTest`).

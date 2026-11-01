@@ -131,8 +131,15 @@ class RestBindingsTest {
                     """),
             Map.entry("shop.Dated", """
                     package shop;
-                    @jakarta.json.bind.annotation.JsonbPropertyOrder({"day"})
+                    @jakarta.json.bind.annotation.JsonbVisibility(AllVisible.class)
                     public record Dated(java.time.LocalDate day) {}
+                    """),
+            Map.entry("shop.AllVisible", """
+                    package shop;
+                    public class AllVisible implements jakarta.json.bind.config.PropertyVisibilityStrategy {
+                        public boolean isVisible(java.lang.reflect.Field f) { return true; }
+                        public boolean isVisible(java.lang.reflect.Method m) { return true; }
+                    }
                     """),
             Map.entry("shop.Shelf", """
                     package shop;
@@ -306,7 +313,7 @@ class RestBindingsTest {
         assertFalse(hasBinding("shop.Ignored"), "not reached by a resource method");
         assertFalse(hasBinding("shop.Shape"), "abstract");
         assertFalse(hasBinding("shop.Renamed"), "a getter overridden in a subclass");
-        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbPropertyOrder")),
+        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbVisibility")),
                 notes::toString);
         assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Renamed") && n.contains("several classes")),
                 notes::toString);
