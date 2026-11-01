@@ -32,6 +32,12 @@ public class BenchOrderResource {
         return BenchOrder.sample(1);
     }
 
+    @GET
+    @Path("/priced")
+    public BenchPriced priced() {
+        return BenchPriced.sample(1);
+    }
+
     @POST
     public void post(BenchOrder order) {
         // the entity parameter is what matters

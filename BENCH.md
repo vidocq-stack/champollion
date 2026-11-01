@@ -644,3 +644,35 @@ introspective baseline (MethodHandles + cache).
   own generated binding instead of the reflective path.
 - **Notes** : the end-to-end HTTP measure of the same change (a plain-POJO endpoint through the real CLI) is in the
   Vidocq repository's `BENCH.md` (+3 % requests per second: there, JSON is a small part of a request).
+
+## BENCH-20261101-02 — Adapters through JsonbInstances: per-call lookup vs instance kept per container generation
+
+- **Date** : 2026-11-01
+- **Commit** : branch `feat/jsonb-cdi-instances` (before: cd5620b; after: the generation cache of this entry's commit)
+- **JVM** : Temurin 25 LTS (2025-09-16)
+- **Hardware** : Apple M5 Max / 18 cores / 128 GB RAM
+- **OS** : macOS (Darwin 27.0.0) arm64
+- **Commande exacte** :
+  ```bash
+  ./mvnw -pl champollion-bench package -DskipTests
+  java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 1
+  java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 8 -p lines=20
+  ```
+- **Workload** : `BenchPriced`, a record whose price and line amounts go through a `@JsonbTypeAdapter`
+  (`CentsAdapter`), written by its generated binding; no CDI container (the bench JVM has none), so the adapter comes
+  from the binding's fallback.
+- **Résultats** :
+  ```
+  before (lookup of the container's source on each call, under a lock)
+  JsonbRestBindingBench.write_generated_adapters   1 line   1 thread  thrpt  5  10,190 ± 0,886  ops/us
+  JsonbRestBindingBench.write_generated_adapters  20 lines  1 thread  thrpt  5   1,483 ± 0,080  ops/us
+  JsonbRestBindingBench.write_generated_adapters  20 lines  8 threads thrpt  5   0,715 ± 0,019  ops/us
+  after (instance kept per binding until a container starts or stops; lock-free when none runs)
+  JsonbRestBindingBench.write_generated_adapters   1 line   1 thread  thrpt  5  10,587 ± 0,253  ops/us
+  JsonbRestBindingBench.write_generated_adapters  20 lines  1 thread  thrpt  5   1,515 ± 0,051  ops/us
+  JsonbRestBindingBench.write_generated_adapters  20 lines  8 threads thrpt  5   0,721 ± 0,009  ops/us
+  ```
+- **Comparaison** : +4 % / +2 % on one thread, +1 % on eight: within the error. Without a container the lookup was
+  already short; the cache matters when a container runs, where each call took the lock, walked the loaders and
+  asked the registry — a path this JMH bench cannot start (no CDI container in it).
+- **Notes** : the eight-thread figure being below the one-thread one is not this change's: the same before and after.

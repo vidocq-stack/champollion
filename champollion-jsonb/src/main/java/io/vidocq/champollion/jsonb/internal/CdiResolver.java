@@ -102,10 +102,7 @@ final class CdiResolver {
         // Resolved now, as before, so that a class that cannot be created fails when the mapping is built.
         T own = served == null ? resolve(beanClass, handles) : null;
         var fallback = new java.util.concurrent.atomic.AtomicReference<>(own);
-        return () -> {
-            var current = io.vidocq.champollion.jsonb.spi.JsonbInstances.sourceFor(beanClass);
-            T bean = current == null ? null : current.get(beanClass);
-            if (bean != null) return bean;
+        return io.vidocq.champollion.jsonb.spi.JsonbInstances.cached(beanClass, () -> {
             T kept = fallback.get();
             if (kept == null) {
                 try {
@@ -116,7 +113,7 @@ final class CdiResolver {
                 kept = fallback.get();
             }
             return kept;
-        };
+        });
     }
 
     /** The CDI handles of the instances a {@code Jsonb} obtained through {@code CDI.current()}, destroyed on close. */

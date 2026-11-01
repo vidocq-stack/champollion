@@ -104,4 +104,24 @@ class JsonbCdiRegistryTest {
             assertEquals(1, DependentAdapter.DESTROYED.get(), "destroyed with the Jsonb that obtained it");
         }
     }
+
+    /**
+     * Two containers alive at once for the same application loader, both with a bean of the adapter: nothing tells
+     * which one serves, so JSON-B says so instead of picking one; once one stops, the other serves.
+     */
+    @Test
+    void twoContainersAliveForOneLoaderAreAnErrorNotAGuess() {
+        Supplier<DependentAdapter> generated = JsonbInstances.of(DependentAdapter.class, DependentAdapter::new);
+        try (WeldContainer a = start("alive-a")) {
+            DependentAdapter fromA;
+            try (WeldContainer b = start("alive-b")) {
+                jakarta.json.bind.JsonbException e = org.junit.jupiter.api.Assertions.assertThrows(
+                        jakarta.json.bind.JsonbException.class, generated::get);
+                org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().contains("2 running CDI containers"),
+                        e.getMessage());
+            }
+            fromA = generated.get();
+            assertEquals("<z>", fromA.adaptToJson("z"), "the remaining container serves");
+        }
+    }
 }

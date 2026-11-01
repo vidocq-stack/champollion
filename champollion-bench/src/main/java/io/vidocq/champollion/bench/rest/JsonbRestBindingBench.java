@@ -45,6 +45,7 @@ public class JsonbRestBindingBench {
     public int lines;
 
     private BenchOrder order;
+    private BenchPriced priced;
     private String json;
     private Jsonb generated;
     private Jsonb reflective;
@@ -52,6 +53,7 @@ public class JsonbRestBindingBench {
     @Setup(Level.Trial)
     public void setup() {
         order = BenchOrder.sample(lines);
+        priced = BenchPriced.sample(lines);
         generated = JsonbBuilder.newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider").build();
         reflective = ((ChampollionJsonbBuilder) JsonbBuilder
                 .newBuilder("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider"))
@@ -72,5 +74,6 @@ public class JsonbRestBindingBench {
     @Benchmark public void write_generated(Blackhole bh)  { bh.consume(generated.toJson(order)); }
     @Benchmark public void write_reflective(Blackhole bh) { bh.consume(reflective.toJson(order)); }
     @Benchmark public void read_generated(Blackhole bh)   { bh.consume(generated.fromJson(json, BenchOrder.class)); }
+    @Benchmark public void write_generated_adapters(Blackhole bh) { bh.consume(generated.toJson(priced)); }
     @Benchmark public void read_reflective(Blackhole bh)  { bh.consume(reflective.fromJson(json, BenchOrder.class)); }
 }

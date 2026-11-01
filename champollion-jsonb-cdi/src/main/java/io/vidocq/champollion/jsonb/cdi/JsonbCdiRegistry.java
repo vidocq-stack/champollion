@@ -67,6 +67,11 @@ public class JsonbCdiRegistry implements JsonbInstances.Source {
     }
 
     @Override
+    public boolean serves(Class<?> type) {
+        return handles.containsKey(type) || beans.select(type).isResolvable();
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public <T> T get(Class<T> type) {
         Instance.Handle<?> handle = handles.get(type);
