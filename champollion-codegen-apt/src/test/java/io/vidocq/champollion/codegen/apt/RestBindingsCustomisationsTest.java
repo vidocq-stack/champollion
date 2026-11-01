@@ -650,8 +650,8 @@ class RestBindingsCustomisationsTest {
         for (String f : List.of("a", "b", "c")) fmt.type("fmt.Ordered").getField(f).set(ordered, f.toUpperCase());
         String json = assertSameAsTheRuntime("fmt.Ordered", ordered);
         assertEquals("{\"b\":\"B\",\"a\":\"A\",\"c\":\"C\"}", json);
-        String record = assertSameAsTheRuntime("fmt.OrderedRecord", fmt.newInstance("fmt.OrderedRecord", "A", "B", "C"));
-        assertEquals("{\"c\":\"C\",\"a\":\"A\",\"b\":\"B\"}", record);
+        String recordJson = assertSameAsTheRuntime("fmt.OrderedRecord", fmt.newInstance("fmt.OrderedRecord", "A", "B", "C"));
+        assertEquals("{\"c\":\"C\",\"a\":\"A\",\"b\":\"B\"}", recordJson);
     }
 
     @Test
