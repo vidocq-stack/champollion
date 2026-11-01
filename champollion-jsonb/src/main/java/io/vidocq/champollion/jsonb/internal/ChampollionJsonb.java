@@ -137,6 +137,7 @@ public final class ChampollionJsonb implements Jsonb {
         }
         this.staticBindings = generated;
         this.writeRegistry.setStaticBindings(this.staticBindings);
+        this.readRegistry.setStaticBindings(this.staticBindings);
     }
 
     /**

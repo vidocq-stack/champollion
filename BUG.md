@@ -565,3 +565,39 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
     `: module M does not open package P to io.vidocq.champollion.jsonb — add `opens P;` to its module-info.java`.
     Reported by the vidocq-tutorial session (finding R3); Vidocq's `vidocq:check-module-info` now reports the same
     packages at build time (Vidocq BUG-20261031-04).
+
+## BUG-20261101-01 — JSON-B runtime: a record holding an `Optional` of itself overflows the stack
+
+- **Date** : 2026-11-01
+- **Statut** : OPEN
+- **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.resolveRecord` → `writerFor` → `parameterizedWriter`
+- **Symptôme** : `toJson` of `record Entry(..., Optional<Entry> next)` throws `StackOverflowError`
+  (`typeInfoOfDirectParents` / `findTypeInfo` / `resolveClass` repeated): resolving the writer of `Entry` resolves the
+  writer of `Optional<Entry>` eagerly, which resolves `Entry` again before the first resolution is cached.
+- **Reproduction minimale** : found by `RestBindingsTest` (`champollion-codegen-apt`) while comparing a generated binding
+  with the runtime; the test now uses a non-recursive type and checks the recursive one
+  (`aSelfReferencingRecordRoundTrips`) on the generated binding alone, which handles it.
+- **Hypothèse de cause** : the writer of a component is resolved when the record's writer is built, not at first use;
+  a self-reference needs a lazy (or placeholder) writer, as `ClassValue` does not guard re-entrant computation.
+
+## BUG-20261101-02 — JSON-B: the types a Vidocq REST resource exchanges are bound by reflection, and need `opens`
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-build-time-bindings`)
+- **Module touché** : `champollion-codegen-apt` (`JsonbStaticProcessor`, new `RestBindings`, `RestBindingEmitter`),
+  `champollion-jsonb` (`JsonbLeaf`, `LeafCodecs`, `RuntimeReadRegistry`)
+- **Symptôme** : the processor generated bindings for `@JsonbStatic` records only; nothing marks the DTOs of a Vidocq
+  application, so JSON-B bound them by reflection at run time, and their packages had to be opened to Champollion
+  (Vidocq BUG-20261030-24, BUG-20261031-04, champollion BUG-20261031-01).
+- **Correctif** : the processor also reads the JAX-RS resources of the compilation (`@Path` classes, their resource
+  methods' return types and entity parameters, through collections, maps, optionals and `CompletionStage`), follows the
+  types their properties hold, and generates a binding for each record and final Object-rooted class whose mapping it
+  can reproduce: properties from components, public getters/setters or public fields, `@JsonbProperty`,
+  `@JsonbTransient`, `@JsonbNillable`, enums, collections, `Map<String, V>`, `Optional`, the native types (through the
+  new exported `JsonbLeaf`, the runtime's own codecs), and the bindings of the types they hold. A type outside that
+  (non-final class, a superclass, another JSON-B annotation, an array…) keeps the runtime mapping, with a compiler note
+  saying why. The read side of the runtime now uses a generated binding below the root too, as the write side did.
+  Processor option `champollion.jsonb.rest=false` turns it off.
+- **Vérification** : `RestBindingsTest` compares each generated binding with the runtime (same JSON text, equal
+  objects read back) on records, final classes with accessors or public fields, nested and cross-package types, every
+  native type, nulls; `JsonbStaticBindingTest` (reads below the root), `JsonbLeafTest`.

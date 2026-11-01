@@ -225,6 +225,34 @@ class JsonbStaticBindingTest {
         }
 
         @Test
+        void elements_of_a_list_are_read_by_the_static_binding() throws Exception {
+            CoordStaticBinding.readCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            List<Coord> coords = jsonb.fromJson("[{\"x\":1,\"y\":2},{\"x\":3,\"y\":4}]", typeOf("coords"));
+            assertEquals(List.of(new Coord(1, 2), new Coord(3, 4)), coords);
+            assertEquals(2, CoordStaticBinding.readCalls,
+                    "Each element of a List<Coord> must be read by the static binding, not the runtime registry.");
+        }
+
+        @Test
+        void values_of_a_map_are_read_by_the_static_binding() throws Exception {
+            CoordStaticBinding.readCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            java.util.Map<String, Coord> byName = jsonb.fromJson("{\"a\":{\"x\":1,\"y\":2}}", typeOf("coordsByName"));
+            assertEquals(java.util.Map.of("a", new Coord(1, 2)), byName);
+            assertEquals(1, CoordStaticBinding.readCalls);
+        }
+
+        @Test
+        void a_record_component_is_read_by_the_static_binding() {
+            CoordStaticBinding.readCalls = 0;
+            var jsonb = jsonbWith(new CoordStaticBinding());
+            Segment s = jsonb.fromJson("{\"from\":{\"x\":1,\"y\":2},\"to\":{\"x\":3,\"y\":4}}", Segment.class);
+            assertEquals(new Segment(new Coord(1, 2), new Coord(3, 4)), s);
+            assertEquals(2, CoordStaticBinding.readCalls);
+        }
+
+        @Test
         void a_type_without_binding_next_to_one_with_still_uses_the_runtime() throws Exception {
             record Pair(String a, String b) {}
             CoordStaticBinding.writeCalls = 0;

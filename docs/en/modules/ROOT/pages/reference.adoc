@@ -50,7 +50,7 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 | `provides jakarta.json.spi.JsonProvider with io.vidocq.champollion.jsonp.internal.ChampollionJsonProvider`
 
 | `io.vidocq.champollion.jsonb`
-| `io.vidocq.champollion.jsonb.spi` (`JsonbBinding`, `@JsonbStatic`, `PrimedJsonParser`)
+| `io.vidocq.champollion.jsonb.spi` (`JsonbBinding`, `@JsonbStatic`, `PrimedJsonParser`, `JsonbLeaf`)
 | `provides jakarta.json.bind.spi.JsonbProvider with io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider`; `uses io.vidocq.champollion.jsonb.spi.JsonbBinding`
 
 | `io.vidocq.champollion.codegen.apt`
@@ -63,11 +63,31 @@ Internal packages (`*.internal`) are **not exported** — do not depend on them,
 [[bound-types-access]]
 === Bound types and `opens` [.tag-new]#NEW#
 
-Without a generated binding (`@JsonbStatic`), Champollion binds a type by reflection. On the module path, the module holding the type must then open its package to `io.vidocq.champollion.jsonb`, or export it when the type and the members bound are public. When it does not, the `JsonbException` names the module, the package and the line to add:
+Without a generated binding (`@JsonbStatic`, or <<rest-bindings,the binding of a type a REST resource exchanges>>), Champollion binds a type by reflection. On the module path, the module holding the type must then open its package to `io.vidocq.champollion.jsonb`, or export it when the type and the members bound are public. When it does not, the `JsonbException` names the module, the package and the line to add:
 
 ----
 Failed to read property author: module com.example.lib does not open package com.example.lib.book to io.vidocq.champollion.jsonb — add `opens com.example.lib.book;` to its module-info.java
 ----
+
+[[rest-bindings]]
+=== Bindings for the types REST resources exchange [.tag-new]#NEW#
+
+With `champollion-codegen-apt` on the processor path, the types a JAX-RS resource of the compilation takes or returns get a generated binding, with no annotation: the return type and the entity parameter of each resource method (`@GET`, `@POST`…), through `List`, `Set`, `Collection`, `Map<String, V>`, `Optional` and `CompletionStage`, then the types their properties hold. JSON-B maps them without reflection, so their packages need no `opens` for JSON-B. In a Vidocq application, the processor is on the processor path already.
+
+A binding is generated for:
+
+* a record: its components, in declaration order;
+* a `final` class that extends `Object` and has a no-argument constructor: its public getters and setters, or public fields, in lexicographical order;
+
+whose properties are primitives, the types JSON-B maps natively (`String`, boxed numbers, `BigDecimal`, `BigInteger`, `UUID`, `URI`, the `java.time` types), enums, other such types, and `List`/`Set`/`Collection`/`Optional`/`Map<String, V>` of them; with `@JsonbProperty`, `@JsonbTransient` and `@JsonbNillable`. The output is the runtime's, character for character: the native values go through `JsonbLeaf`, the runtime's own codecs, and a configuration that changes the mapping (naming strategy, null values, date format, adapters…) makes the runtime serve every type, as for `@JsonbStatic`.
+
+Any other type keeps the reflective mapping, and the compiler says why in a note, for instance:
+
+----
+Champollion: com.example.shop.Legacy keeps the reflective JSON-B mapping at run time: not final: an instance of a subclass would be written without its own properties
+----
+
+The usual reasons: a class that is not `final` (make it a record, or `final`), a superclass, another JSON-B annotation (`@JsonbDateFormat`, `@JsonbTypeAdapter`, `@JsonbCreator`…), an array, a type of a dependency. The processor option `-Achampollion.jsonb.rest=false` turns the generation off.
 
 == Supported JSON-B annotations
 
