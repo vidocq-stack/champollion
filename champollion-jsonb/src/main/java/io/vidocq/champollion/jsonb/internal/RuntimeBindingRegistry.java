@@ -50,7 +50,6 @@ import java.util.UUID;
 final class RuntimeBindingRegistry {
 
     /** Suffix of the class that carries the annotations of a package. */
-    private static final String PACKAGE_INFO = ".package-info";
     /** The value of a JSON-B format annotation that asks for the default format. */
     private static final String DEFAULT_FORMAT = "##default";
 
@@ -731,22 +730,10 @@ final class RuntimeBindingRegistry {
     private static <A extends java.lang.annotation.Annotation> A packageAnnotation(Class<?> type, Class<A> annotationType) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             var pkg = c.getPackage();
-            A ann = pkg == null ? null : loadedPackage(c, pkg).getAnnotation(annotationType);
+            A ann = pkg == null ? null : pkg.getAnnotation(annotationType);
             if (ann != null) return ann;
         }
         return null;
-    }
-
-    /** Loads the package-info class of {@code pkg} so that its annotations are visible, and returns {@code pkg}. */
-    private static Package loadedPackage(Class<?> member, Package pkg) {
-        ClassLoader cl = member.getClassLoader();
-        if (cl == null) cl = ClassLoader.getSystemClassLoader();
-        try {
-            Class.forName(pkg.getName() + PACKAGE_INFO, false, cl);
-        } catch (ClassNotFoundException | LinkageError _) {
-            // No loadable package-info: the package simply carries no annotation.
-        }
-        return pkg;
     }
 
     static boolean isDateLikeType(Class<?> rawType) {
@@ -1172,29 +1159,12 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * Reads the {@code @JsonbVisibility} declared on the class package-info.
-     * Uses several strategies to work around ClassLoader / module-path cases
-     * where {@code Class.getPackage().getAnnotation()} may return null if the
-     * package-info has not yet been loaded.
+     * Reads the {@code @JsonbVisibility} declared on the package of the class. {@link Package#getAnnotation} loads the
+     * package-info class through the package's own class loader, module path included.
      */
     private jakarta.json.bind.config.PropertyVisibilityStrategy packageVisibility(Class<?> type) {
         var pkg = type.getPackage();
         if (pkg == null) return null;
-        ClassLoader cl = type.getClassLoader();
-        if (cl == null) cl = ClassLoader.getSystemClassLoader();
-        // 1) Explicitly load package-info and read the annotation directly.
-        try {
-            Class<?> pkgInfo = Class.forName(pkg.getName() + PACKAGE_INFO, false, cl);
-            var pann = pkgInfo.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
-            if (pann != null) {
-                return pann.value().getDeclaredConstructor().newInstance();
-            }
-        } catch (ClassNotFoundException _) {
-            // no package-info class: the next lookups may still find the annotation
-        } catch (Exception e) {
-            throw new JsonbException("Cannot instantiate package @JsonbVisibility", e);
-        }
-        // 2) Package.getAnnotation (works only after loading)
         var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
         if (pann != null) {
             try { return pann.value().getDeclaredConstructor().newInstance(); }

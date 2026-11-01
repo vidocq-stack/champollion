@@ -812,7 +812,6 @@ final class RuntimeReadRegistry {
         } while (c != null && c != Object.class);
         var pkg = type.getPackage();
         if (pkg != null) {
-            loadPackageInfo(pkg, type.getClassLoader());
             var pann = pkg.getAnnotation(jakarta.json.bind.annotation.JsonbVisibility.class);
             if (pann != null) {
                 try { return pann.value().getDeclaredConstructor().newInstance(); }
@@ -1002,8 +1001,6 @@ final class RuntimeReadRegistry {
     private static jakarta.json.bind.annotation.JsonbNumberFormat packageNumberFormat(Class<?> c) {
         var pkg = c.getPackage();
         if (pkg == null) return null;
-        ClassLoader cl = c.getClassLoader();
-        loadPackageInfo(pkg, cl == null ? ClassLoader.getSystemClassLoader() : cl);
         return pkg.getAnnotation(jakarta.json.bind.annotation.JsonbNumberFormat.class);
     }
 
@@ -1056,15 +1053,6 @@ final class RuntimeReadRegistry {
      */
     private static void makeAccessible(java.lang.reflect.AccessibleObject member) {
         member.trySetAccessible();
-    }
-
-    /** Loads the {@code package-info} class of {@code pkg}, so that the annotations of the package can be read. */
-    private static void loadPackageInfo(Package pkg, ClassLoader loader) {
-        try {
-            Class.forName(pkg.getName() + ".package-info", false, loader);
-        } catch (ClassNotFoundException | LinkageError _) {
-            // No (loadable) package-info: the package carries no annotation.
-        }
     }
 
     /** Finds a field (any visibility) on the class or its parents. */

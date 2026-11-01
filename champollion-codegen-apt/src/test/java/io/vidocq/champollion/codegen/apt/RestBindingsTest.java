@@ -19,35 +19,19 @@
  */
 package io.vidocq.champollion.codegen.apt;
 
-import io.vidocq.champollion.jsonb.spi.JsonbBinding;
-import jakarta.json.Json;
 import jakarta.json.bind.Jsonb;
-import jakarta.json.bind.JsonbBuilder;
 import jakarta.json.bind.JsonbException;
-import jakarta.json.stream.JsonGenerator;
-import jakarta.json.stream.JsonParser;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaFileObject;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
-import java.io.StringReader;
-import java.io.StringWriter;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.net.URI;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
