@@ -181,17 +181,16 @@ final class GenericTypes {
             return c.isArray() ? mentionsAny(c.getComponentType(), classes) : classes.contains(c);
         }
         if (type instanceof java.lang.reflect.ParameterizedType p) {
-            if (mentionsAny(p.getRawType(), classes)) return true;
-            for (Type argument : p.getActualTypeArguments()) {
-                if (mentionsAny(argument, classes)) return true;
-            }
-            return false;
+            return mentionsAny(p.getRawType(), classes) || anyMentions(p.getActualTypeArguments(), classes);
         }
         if (type instanceof java.lang.reflect.GenericArrayType a) return mentionsAny(a.getGenericComponentType(), classes);
-        if (type instanceof java.lang.reflect.WildcardType w) {
-            for (Type bound : w.getUpperBounds()) {
-                if (mentionsAny(bound, classes)) return true;
-            }
+        if (type instanceof java.lang.reflect.WildcardType w) return anyMentions(w.getUpperBounds(), classes);
+        return false;
+    }
+
+    private static boolean anyMentions(Type[] types, java.util.Set<Class<?>> classes) {
+        for (Type t : types) {
+            if (mentionsAny(t, classes)) return true;
         }
         return false;
     }

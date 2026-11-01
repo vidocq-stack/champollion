@@ -251,22 +251,13 @@ final class RestBindings {
             return "not compiled with the resources (a dependency's type, or an incremental build)";
         }
         String where = placement(type);
+        if (where == null) where = classAnnotations(type);
         if (where != null) return where;
-        for (AnnotationMirror a : type.getAnnotationMirrors()) {
-            if (nameOf(a).startsWith(JSONB_ANNOTATIONS)) {
-                return "the class carries @" + simpleNameOf(a) + ", a customisation only the runtime implements";
-            }
-        }
         List<Property> properties = new ArrayList<>();
         String reason = type.getKind() == ElementKind.RECORD ? recordProperties(type, properties)
                 : classProperties(type, properties);
+        if (reason == null) reason = unsupportedProperty(properties);
         if (reason != null) return reason;
-        Set<String> names = new java.util.HashSet<>();
-        for (Property p : properties) {
-            if (!names.add(p.jsonName())) return "two properties have the JSON name \"" + p.jsonName() + "\"";
-            String unsupported = supported(p.type());
-            if (unsupported != null) return QUOTED_PROPERTY + p.jsonName() + "\": " + unsupported;
-        }
         // The runtime's default order: a class's properties lexicographically (JSON-B 3.0 §4.4, one declaring class
         // here), a record's components in their declaration order.
         boolean isRecord = type.getKind() == ElementKind.RECORD;
@@ -275,6 +266,24 @@ final class RestBindings {
         for (Property p : properties) reach(p.type());
         // An instance of a subclass reaches the runtime, which uses the subclass's binding when it has one.
         if (subclassable) reachSubclasses(type);
+        return null;
+    }
+
+    /** A JSON-B annotation on the class itself, which only the runtime implements; {@code null} when none. */
+    private static String classAnnotations(TypeElement type) {
+        return type.getAnnotationMirrors().stream().filter(a -> nameOf(a).startsWith(JSONB_ANNOTATIONS)).findFirst()
+                .map(a -> "the class carries @" + simpleNameOf(a) + ", a customisation only the runtime implements")
+                .orElse(null);
+    }
+
+    /** Two properties with one JSON name, or a property type the generated code cannot map; {@code null} when none. */
+    private String unsupportedProperty(List<Property> properties) {
+        Set<String> names = new java.util.HashSet<>();
+        for (Property p : properties) {
+            if (!names.add(p.jsonName())) return "two properties have the JSON name \"" + p.jsonName() + "\"";
+            String unsupported = supported(p.type());
+            if (unsupported != null) return QUOTED_PROPERTY + p.jsonName() + "\": " + unsupported;
+        }
         return null;
     }
 

@@ -124,7 +124,6 @@ final class RuntimeBindingRegistry {
 
     private final ClassValue<BindingWriter> cache = new ComputedClassValue<>(this::resolveClass);
 
-    /** The writer of the raw class {@code type}, computed once per class by {@link #cache}. */
     /**
      * The classes whose writer is being built, by any thread. A member whose type names one of them gets a writer
      * resolved at its first use: a type that holds itself ({@code record Node(List<Node> children)}) would otherwise
@@ -133,6 +132,7 @@ final class RuntimeBindingRegistry {
      */
     private final java.util.Set<Class<?>> resolving = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** The writer of the raw class {@code type}, computed once per class by {@link #cache}. */
     private BindingWriter resolveClass(Class<?> type) {
         boolean added = resolving.add(type);
         try {
@@ -145,18 +145,14 @@ final class RuntimeBindingRegistry {
     /** The writer of a member of type {@code t}: lazy when {@code t} names a class whose writer is being built. */
     private BindingWriter memberWriter(Type t) {
         if (!GenericTypes.mentionsAny(t, resolving)) return writerFor(t);
-        return new BindingWriter() {
-            private volatile BindingWriter resolved;
-
-            @Override
-            public void write(jakarta.json.stream.JsonGenerator g, Object value) {
-                BindingWriter w = resolved;
-                if (w == null) {
-                    w = writerFor(t);
-                    resolved = w;
-                }
-                w.write(g, value);
+        var resolved = new java.util.concurrent.atomic.AtomicReference<BindingWriter>();
+        return (g, value) -> {
+            BindingWriter w = resolved.get();
+            if (w == null) {
+                w = writerFor(t);
+                resolved.set(w);
             }
+            w.write(g, value);
         };
     }
 

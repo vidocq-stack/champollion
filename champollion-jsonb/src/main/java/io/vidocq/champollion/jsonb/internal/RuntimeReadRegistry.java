@@ -157,18 +157,14 @@ final class RuntimeReadRegistry {
     /** The reader of a member of type {@code t}: lazy when {@code t} names a class whose reader is being built. */
     private BindingReader memberReader(Type t) {
         if (!GenericTypes.mentionsAny(t, resolving)) return readerFor(t);
-        return new BindingReader() {
-            private volatile BindingReader resolved;
-
-            @Override
-            public Object read(JsonParser p) {
-                BindingReader r = resolved;
-                if (r == null) {
-                    r = readerFor(t);
-                    resolved = r;
-                }
-                return r.read(p);
+        var resolved = new java.util.concurrent.atomic.AtomicReference<BindingReader>();
+        return p -> {
+            BindingReader r = resolved.get();
+            if (r == null) {
+                r = readerFor(t);
+                resolved.set(r);
             }
+            return r.read(p);
         };
     }
 
