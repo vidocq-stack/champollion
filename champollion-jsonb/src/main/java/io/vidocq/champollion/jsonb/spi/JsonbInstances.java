@@ -49,7 +49,8 @@ public final class JsonbInstances {
 
         private final Class<T> type;
         private final Supplier<T> create;
-        private volatile T instance;
+        private final java.util.concurrent.atomic.AtomicReference<T> instance =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         Lazy(Class<T> type, Supplier<T> create) {
             this.type = type;
@@ -58,10 +59,11 @@ public final class JsonbInstances {
 
         @Override
         public T get() {
-            T current = instance;
+            T current = instance.get();
             if (current == null) {
-                current = resolve();
-                instance = current;
+                // Two first uses may both resolve: the first one kept wins, as for a bean the container scopes.
+                instance.compareAndSet(null, resolve());
+                current = instance.get();
             }
             return current;
         }
