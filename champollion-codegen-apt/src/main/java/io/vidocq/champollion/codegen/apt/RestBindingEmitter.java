@@ -61,6 +61,9 @@ final class RestBindingEmitter {
                         }
                 """;
     private static final String CTX_OPEN = " ctx) {\n";
+    private static final String METHOD_END = "    }\n\n";
+    private static final String START_OBJECT = "        g.writeStartObject();\n";
+    private static final String END = "g.writeEnd();\n";
     private static final String PRIVATE_STATIC = "    private static ";
     private static final String NEW_END = "();\n";
     private static final String CASE = "                case ";
@@ -131,29 +134,7 @@ final class RestBindingEmitter {
         }
         out.append("\n    @Override public Class<").append(type).append("> type() { return ").append(type)
                 .append(".class; }\n\n");
-        out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
-                .append(" value) {\n        write(g, value, null);\n    }\n\n");
-        out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
-                .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
-        out.append("        if (value == null) { g.writeNull(); return; }\n");
-        if (poly != null && poly.isBase()) {
-            out.append(write).append("    }\n\n");
-        } else if (poly != null) {
-            // A subtype writes its discriminator first, then its members: those the base's binding writes too.
-            out.append("        g.writeStartObject();\n");
-            out.append(I8).append(discriminatorKey(poly)).append(" g.write(").append(lit(poly.alias())).append(");\n");
-            out.append("        writeMembers(g, value, ctx);\n");
-            out.append("        g.writeEnd();\n    }\n\n");
-            out.append("    /** Writes the members of {@code value}, after its discriminator. */\n");
-            out.append("    public void writeMembers(jakarta.json.stream.JsonGenerator g, ").append(type)
-                    .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
-            out.append(write);
-            out.append("    }\n\n");
-        } else {
-            out.append("        g.writeStartObject();\n");
-            out.append(write);
-            out.append("        g.writeEnd();\n    }\n\n");
-        }
+        appendWrite(out, type, poly, write);
         out.append(read);
         out.append(readers);
         out.append("""
@@ -184,6 +165,30 @@ final class RestBindingEmitter {
                 }
                 """);
         return out.toString();
+    }
+
+    /** The two {@code write} methods, and a subtype's {@code writeMembers}. */
+    private static void appendWrite(StringBuilder out, String type, Polymorphism poly, StringBuilder write) {
+        out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
+                .append(" value) {\n        write(g, value, null);\n    }\n\n");
+        out.append("    @Override\n    public void write(jakarta.json.stream.JsonGenerator g, ").append(type)
+                .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
+        out.append("        if (value == null) { g.writeNull(); return; }\n");
+        if (poly != null && poly.isBase()) {
+            out.append(write).append(METHOD_END);
+        } else if (poly != null) {
+            // A subtype writes its discriminator first, then its members: those the base's binding writes too.
+            out.append(START_OBJECT);
+            out.append(I8).append(discriminatorKey(poly)).append(" g.write(").append(lit(poly.alias())).append(");\n");
+            out.append("        writeMembers(g, value, ctx);\n");
+            out.append(I8).append(END).append(METHOD_END);
+            out.append("    /** Writes the members of {@code value}, after its discriminator. */\n");
+            out.append("    public void writeMembers(jakarta.json.stream.JsonGenerator g, ").append(type)
+                    .append(" value, ").append(SER_CONTEXT).append(CTX_OPEN);
+            out.append(write).append(METHOD_END);
+        } else {
+            out.append(START_OBJECT).append(write).append(I8).append(END).append(METHOD_END);
+        }
     }
 
     // ===== write =====
@@ -275,7 +280,7 @@ final class RestBindingEmitter {
             writeValue(out, e + ".getValue()", val, indent + I8);
             out.append(indent).append("    }\n");
             out.append(indent).append("}\n");
-            out.append(indent).append("g.writeEnd();\n");
+            out.append(indent).append(END);
         } else {
             out.append(indent).append(binding(element)).append(WRITE_G).append(expr).append(", ctx);\n");
         }
@@ -292,7 +297,7 @@ final class RestBindingEmitter {
         writeValue(out, e, elem, indent + I8);
         out.append(indent).append("    }\n");
         out.append(indent).append("}\n");
-        out.append(indent).append("g.writeEnd();\n");
+        out.append(indent).append(END);
     }
 
     // ===== read =====
@@ -356,7 +361,7 @@ final class RestBindingEmitter {
             out.append(I16).append("g.writeStartObject();\n");
             out.append(I16).append(discriminatorKey(poly)).append(" g.write(").append(lit(v.alias())).append(");\n");
             out.append(I16).append(binding(v.type())).append(".writeMembers(g, v, ctx);\n");
-            out.append(I16).append("g.writeEnd();\n");
+            out.append(I16).append(END);
             out.append("            }\n");
         }
         out.append("            default -> io.vidocq.champollion.jsonb.spi.JsonbContexts.serialization(ctx).serialize(value, g);\n");
@@ -500,54 +505,58 @@ final class RestBindingEmitter {
             r.append("        return io.vidocq.champollion.jsonb.spi.JsonbContexts.deserialization(ctx).deserialize(")
                     .append(key).append(".class, p);\n");
         } else {
-            DeclaredType d = (DeclaredType) t;
-            String erased = RestBindings.erasureName(d);
-            TypeElement element = (TypeElement) d.asElement();
-            if (element.getKind() == ElementKind.ENUM) {
-                r.append(NULL_GIVES_NULL);
-                r.append("        if (e != jakarta.json.stream.JsonParser.Event.VALUE_STRING) throw __expected(\"a string\", e);\n");
-                r.append("        String s = p.getString();\n");
-                r.append("        try { return ").append(key).append(".valueOf(s); }\n");
-                r.append("        catch (IllegalArgumentException x) { throw new jakarta.json.bind.JsonbException(\"No constant \" + s + \" in ")
-                        .append(key).append("\", x); }\n");
-            } else if (RestBindings.COLLECTIONS.contains(erased)) {
-                TypeMirror elem = d.getTypeArguments().get(0);
-                String impl = "java.util.Set".equals(erased) ? "java.util.LinkedHashSet" : "java.util.ArrayList";
-                String elemReader = reader(elem);
-                r.append(NULL_GIVES_NULL);
-                r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_ARRAY) throw __expected(\"an array\", e);\n");
-                r.append(I8).append(impl).append('<').append(render(elem)).append("> c = new ").append(impl)
-                        .append("<>();\n");
-                r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_ARRAY) {\n");
-                r.append("            c.add(e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
-                        .append(elemReader).append(WITH_EVENT);
-                r.append("        }\n        return c;\n");
-            } else if (RestBindings.MAP.equals(erased)) {
-                TypeMirror val = d.getTypeArguments().get(1);
-                String valReader = reader(val);
-                r.append(NULL_GIVES_NULL);
-                r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_OBJECT) throw __expected(\"an object\", e);\n");
-                r.append("        java.util.LinkedHashMap<String, ").append(render(val))
-                        .append("> m = new java.util.LinkedHashMap<>();\n");
-                r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_OBJECT) {\n");
-                r.append("            String k = p.getString();\n");
-                r.append("            e = p.next();\n");
-                r.append("            m.put(k, e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
-                        .append(valReader).append(WITH_EVENT);
-                r.append("        }\n        return m;\n");
-            } else if (RestBindings.OPTIONAL.equals(erased)) {
-                TypeMirror inner = d.getTypeArguments().get(0);
-                String innerReader = reader(inner);
-                r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return java.util.Optional.empty();\n");
-                r.append("        return java.util.Optional.ofNullable(").append(innerReader).append(WITH_EVENT);
-            } else {
-                r.append("        return ").append(binding(element))
-                        .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p), ctx);\n");
-            }
+            readDeclared(r, (DeclaredType) t, key);
         }
-        r.append("    }\n\n");
+        r.append(METHOD_END);
         readers.append(r);
         return name;
+    }
+
+    /** The body of a reader of a declared type: an enum, a container, or a type with a binding. */
+    private void readDeclared(StringBuilder r, DeclaredType d, String key) {
+        String erased = RestBindings.erasureName(d);
+        TypeElement element = (TypeElement) d.asElement();
+        if (element.getKind() == ElementKind.ENUM) {
+            r.append(NULL_GIVES_NULL);
+            r.append("        if (e != jakarta.json.stream.JsonParser.Event.VALUE_STRING) throw __expected(\"a string\", e);\n");
+            r.append("        String s = p.getString();\n");
+            r.append("        try { return ").append(key).append(".valueOf(s); }\n");
+            r.append("        catch (IllegalArgumentException x) { throw new jakarta.json.bind.JsonbException(\"No constant \" + s + \" in ")
+                    .append(key).append("\", x); }\n");
+        } else if (RestBindings.COLLECTIONS.contains(erased)) {
+            TypeMirror elem = d.getTypeArguments().get(0);
+            String impl = "java.util.Set".equals(erased) ? "java.util.LinkedHashSet" : "java.util.ArrayList";
+            String elemReader = reader(elem);
+            r.append(NULL_GIVES_NULL);
+            r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_ARRAY) throw __expected(\"an array\", e);\n");
+            r.append(I8).append(impl).append('<').append(render(elem)).append("> c = new ").append(impl)
+                    .append("<>();\n");
+            r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_ARRAY) {\n");
+            r.append("            c.add(e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
+                    .append(elemReader).append(WITH_EVENT);
+            r.append("        }\n        return c;\n");
+        } else if (RestBindings.MAP.equals(erased)) {
+            TypeMirror val = d.getTypeArguments().get(1);
+            String valReader = reader(val);
+            r.append(NULL_GIVES_NULL);
+            r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_OBJECT) throw __expected(\"an object\", e);\n");
+            r.append("        java.util.LinkedHashMap<String, ").append(render(val))
+                    .append("> m = new java.util.LinkedHashMap<>();\n");
+            r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_OBJECT) {\n");
+            r.append("            String k = p.getString();\n");
+            r.append("            e = p.next();\n");
+            r.append("            m.put(k, e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
+                    .append(valReader).append(WITH_EVENT);
+            r.append("        }\n        return m;\n");
+        } else if (RestBindings.OPTIONAL.equals(erased)) {
+            TypeMirror inner = d.getTypeArguments().get(0);
+            String innerReader = reader(inner);
+            r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return java.util.Optional.empty();\n");
+            r.append("        return java.util.Optional.ofNullable(").append(innerReader).append(WITH_EVENT);
+        } else {
+            r.append("        return ").append(binding(element))
+                    .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p), ctx);\n");
+        }
     }
 
     /** The body of a reader of an array of {@code elem}, read as a list first. */
