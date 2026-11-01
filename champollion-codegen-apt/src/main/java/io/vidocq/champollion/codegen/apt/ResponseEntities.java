@@ -65,7 +65,7 @@ final class ResponseEntities {
         Trees trees;
         try {
             trees = Trees.instance(env);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             return Optional.empty();
         }
         List<TypeMirror> found = new ArrayList<>();

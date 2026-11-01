@@ -269,7 +269,7 @@ final class RestBindings {
         java.util.Optional<List<TypeMirror>> found;
         try {
             found = ResponseEntities.find(env, compiled);
-        } catch (LinkageError e) {   // no jdk.compiler: the entities stay unknown
+        } catch (LinkageError _) {   // no jdk.compiler: the entities stay unknown
             found = java.util.Optional.empty();
         }
         responseEntitiesRead = found.isPresent();
@@ -400,7 +400,7 @@ final class RestBindings {
         TypeElement element = (TypeElement) declared.asElement();
         if (LEAVES.contains(name) || element.getKind() == ElementKind.ENUM || JAVA_LANG_OBJECT.equals(name)) return;
         if (!isBindable(element)) return;
-        if (name.startsWith("java.") || name.startsWith("jakarta.")) return;
+        if (isPlatform(name)) return;
         pending.add(element);
     }
 
@@ -1249,7 +1249,7 @@ final class RestBindings {
         TypeElement element = (TypeElement) declared.asElement();
         if (element.getKind() == ElementKind.ENUM) return enumReason(element, name);
         if (COLLECTIONS.contains(name) || OPTIONAL.equals(name) || MAP.equals(name)) return "nested container " + type;
-        if (!isBindable(element) || name.startsWith("java.") || name.startsWith("jakarta.")) return TYPE + name;
+        if (!isBindable(element) || isPlatform(name)) return TYPE + name;
         pending.add(element);
         return null;   // provisionally: dropModelsReferencingSkipped checks it got a binding
     }
