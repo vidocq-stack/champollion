@@ -762,3 +762,18 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Vérification** : `JsonbCdiRegistryTest` (two containers in one JVM, a `@Dependent` adapter destroyed on
   shutdown, the runtime's path, the `Jsonb` closing without the registry); `champollion-it-weld` and
   `champollion-it-openliberty` (the registry serves on Weld and on Liberty).
+
+## BUG-20261101-14 — JSON-B CDI: Vauban could not create the registry of `champollion-jsonb-cdi` on the module path
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `fix/jsonb-cdi-opens-vauban`)
+- **Module touché** : `champollion-jsonb-cdi` (`module-info.java`)
+- **Symptôme** : a Vidocq application whose tests start it with `@VidocqTest` without the `vidocq:test-path` goal (the
+  Vidocq examples) failed at start: `Cannot reflectively access io.vidocq.champollion.jsonb.cdi.JsonbCdiRegistry on
+  the module path`, from the `Startup` observer of the registry (vidocq#474, `vidocq-runtime-cassini-rest-example`).
+- **Repro minimal** : `vidocq-runtime-cassini-rest-example` with `champollion-jsonb-cdi` in the REST bundle,
+  `./mvnw -pl vidocq-runtime-examples/vidocq-runtime-external-rest-lib,vidocq-runtime-examples/vidocq-runtime-cassini-rest-example package`.
+- **Cause** : the jar ships no generated Vauban provider (it stays portable); `vidocq:generate` writes one into an
+  enriched copy, but a launch that runs the original jar leaves Vauban with reflection, and the package was not open.
+- **Correctif** : `opens io.vidocq.champollion.jsonb.cdi to io.vidocq.vauban.core`, as `mansart-data-cdi` does.
+- **Vérification** : `JsonbCdiModuleTest` (the package is open to Vauban only); `TodoResourceTest` of the example.

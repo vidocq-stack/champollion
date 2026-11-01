@@ -31,6 +31,11 @@ module io.vidocq.champollion.jsonb.cdi {
 
     exports io.vidocq.champollion.jsonb.cdi;
 
+    // Vauban instantiates the registry bean reflectively when no generated provider ships with this jar (an
+    // application that skips vidocq:generate, its @VidocqTest tests included). Open to Vauban only, as
+    // mansart-data-cdi does; other containers run it on the class path.
+    opens io.vidocq.champollion.jsonb.cdi to io.vidocq.vauban.core;
+
     provides jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension
             with io.vidocq.champollion.jsonb.cdi.JsonbCdiExtension;
 }
