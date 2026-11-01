@@ -76,6 +76,7 @@ class RestBindingsCustomisationsTest {
                         @GET public Open open() { return null; }
                         @GET public OpenA openA() { return null; }
                         @GET public Zoo zoo() { return null; }
+                        @GET public OrderedRecord orderedRecord() { return null; }
                     }
                     """),
             Map.entry("fmt.Event", """
@@ -397,6 +398,11 @@ class RestBindingsCustomisationsTest {
                     package fmt;
                     public record Zoo(Animal animal, Vehicle vehicle, java.util.List<Animal> all, Object anything) {}
                     """),
+            Map.entry("fmt.OrderedRecord", """
+                    package fmt;
+                    @jakarta.json.bind.annotation.JsonbPropertyOrder({"c", "a"})
+                    public record OrderedRecord(String a, String b, String c) {}
+                    """),
             Map.entry("fmt.Unnamed", """
                     package fmt;
                     import jakarta.json.bind.annotation.*;
@@ -643,6 +649,8 @@ class RestBindingsCustomisationsTest {
         for (String f : List.of("a", "b", "c")) fmt.type("fmt.Ordered").getField(f).set(ordered, f.toUpperCase());
         String json = assertSameAsTheRuntime("fmt.Ordered", ordered);
         assertEquals("{\"b\":\"B\",\"a\":\"A\",\"c\":\"C\"}", json);
+        String record = assertSameAsTheRuntime("fmt.OrderedRecord", fmt.newInstance("fmt.OrderedRecord", "A", "B", "C"));
+        assertEquals("{\"c\":\"C\",\"a\":\"A\",\"b\":\"B\"}", record);
     }
 
     /**

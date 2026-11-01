@@ -502,7 +502,25 @@ final class RuntimeBindingRegistry {
             }
             props.add(new Property(name, acc, w, nillable));
         }
+        applyRecordPropertyOrder(type, props);
         return (g, value) -> writeObject(g, value, props);
+    }
+
+    /**
+     * {@code @JsonbPropertyOrder} on a record: the components it names first, in its order, the others in their
+     * declaration order (BUG-20261101-11).
+     */
+    private static void applyRecordPropertyOrder(Class<?> type, List<Property> props) {
+        var order = type.getAnnotation(jakarta.json.bind.annotation.JsonbPropertyOrder.class);
+        if (order == null) return;
+        var ordered = new ArrayList<Property>(props.size());
+        for (String n : order.value()) {
+            for (var p : props) {
+                if (p.name.equals(n) && !ordered.contains(p)) ordered.add(p);
+            }
+        }
+        props.removeAll(ordered);
+        props.addAll(0, ordered);
     }
 
     /**
@@ -1613,6 +1631,7 @@ final class RuntimeBindingRegistry {
             BindingWriter w = componentWriter(type, c);
             props.add(new Property(name, acc, w, nillable));
         }
+        applyRecordPropertyOrder(type, props);
         return props;
     }
 
