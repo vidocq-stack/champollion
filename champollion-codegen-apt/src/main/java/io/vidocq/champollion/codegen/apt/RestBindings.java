@@ -61,6 +61,9 @@ final class RestBindings {
     private static final String JSONB_NILLABLE = JSONB_ANNOTATIONS + "JsonbNillable";
     private static final String JSONB_STATIC = "io.vidocq.champollion.jsonb.spi.JsonbStatic";
     private static final String JAVA_LANG_OBJECT = "java.lang.Object";
+    private static final String PROPERTY = "property ";
+    private static final String QUOTED_PROPERTY = "property \"";
+    private static final String TYPE = "type ";
 
     /** The types JSON-B maps natively; {@code JsonbLeaf} hands their codecs to the generated code. */
     static final Set<String> LEAVES = Set.of(
@@ -133,25 +136,39 @@ final class RestBindings {
     /** Collects the types the resources of {@code resources} reach, and models those it can. */
     RestBindings collect(Collection<? extends Element> resources) {
         for (Element element : resources) {
-            TypeElement resource = element instanceof TypeElement t ? t
-                    : element.getEnclosingElement() instanceof TypeElement t ? t : null;
-            if (resource == null) continue;
-            for (ExecutableElement method : ElementFilter.methodsIn(resource.getEnclosedElements())) {
-                if (!isResourceMethod(method)) continue;
-                reach(method.getReturnType());
-                for (VariableElement parameter : method.getParameters()) {
-                    if (isEntityParameter(parameter)) reach(parameter.asType());
-                }
-            }
+            TypeElement resource = resourceOf(element);
+            if (resource != null) reachFrom(resource);
         }
         while (!pending.isEmpty()) {
             TypeElement type = pending.poll();
-            if (models.containsKey(type) || skipped.containsKey(type) || staticBound.containsKey(type)) continue;
-            String reason = model(type);
-            if (reason != null) skipped.put(type, reason);
+            if (!isDecided(type)) {
+                String reason = model(type);
+                if (reason != null) skipped.put(type, reason);
+            }
         }
         dropModelsReferencingSkipped();
         return this;
+    }
+
+    /** The resource class an {@code @Path} element belongs to: the class itself, or the class of a method. */
+    private static TypeElement resourceOf(Element element) {
+        if (element instanceof TypeElement type) return type;
+        return element.getEnclosingElement() instanceof TypeElement type ? type : null;
+    }
+
+    /** Queues what the resource methods of {@code resource} return and take as entity. */
+    private void reachFrom(TypeElement resource) {
+        for (ExecutableElement method : ElementFilter.methodsIn(resource.getEnclosedElements())) {
+            if (isResourceMethod(method)) {
+                reach(method.getReturnType());
+                method.getParameters().stream().filter(RestBindings::isEntityParameter)
+                        .forEach(parameter -> reach(parameter.asType()));
+            }
+        }
+    }
+
+    private boolean isDecided(TypeElement type) {
+        return models.containsKey(type) || skipped.containsKey(type) || staticBound.containsKey(type);
     }
 
     /** The types bindings are generated for. */
@@ -237,7 +254,7 @@ final class RestBindings {
         for (Property p : properties) {
             if (!names.add(p.jsonName())) return "two properties have the JSON name \"" + p.jsonName() + "\"";
             String unsupported = supported(p.type());
-            if (unsupported != null) return "property \"" + p.jsonName() + "\": " + unsupported;
+            if (unsupported != null) return QUOTED_PROPERTY + p.jsonName() + "\": " + unsupported;
         }
         // The runtime's default order: a class's properties lexicographically (JSON-B 3.0 §4.4, one declaring class
         // here), a record's components in their declaration order.
@@ -286,146 +303,195 @@ final class RestBindings {
     }
 
     private String classProperties(TypeElement type, List<Property> properties) {
-        if (!type.getModifiers().contains(Modifier.FINAL)) {
-            return "not final: an instance of a subclass would be written without its own properties";
-        }
-        if (!JAVA_LANG_OBJECT.equals(erasureName(type.getSuperclass()))) {
-            return "it extends " + type.getSuperclass() + "; a binding is generated for Object-rooted classes";
-        }
-        boolean noArg = ElementFilter.constructorsIn(type.getEnclosedElements()).stream()
-                .anyMatch(c -> c.getParameters().isEmpty() && !c.getModifiers().contains(Modifier.PRIVATE));
-        boolean anyConstructor = !ElementFilter.constructorsIn(type.getEnclosedElements()).isEmpty();
-        if (!noArg && anyConstructor) return "no accessible no-argument constructor";
-        for (ExecutableElement c : ElementFilter.constructorsIn(type.getEnclosedElements())) {
-            if (hasJsonbCreator(c)) return "a @JsonbCreator constructor";
-        }
+        String shape = classShape(type);
+        if (shape != null) return shape;
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         for (VariableElement f : ElementFilter.fieldsIn(type.getEnclosedElements())) {
             if (!f.getModifiers().contains(Modifier.STATIC)) fields.put(f.getSimpleName().toString(), f);
         }
         Map<String, ExecutableElement> getters = new LinkedHashMap<>();
         Map<String, ExecutableElement> setters = new LinkedHashMap<>();
-        for (ExecutableElement m : ElementFilter.methodsIn(type.getEnclosedElements())) {
-            if (m.getModifiers().contains(Modifier.STATIC)) continue;
-            if (hasJsonbCreator(m)) return "a @JsonbCreator factory";
-            String n = m.getSimpleName().toString();
-            String property = null;
-            boolean getter = false;
-            if (m.getParameters().isEmpty() && m.getReturnType().getKind() != TypeKind.VOID) {
-                if (n.startsWith("get") && n.length() > 3) property = n.substring(3);
-                else if (n.startsWith("is") && n.length() > 2 && m.getReturnType().getKind() == TypeKind.BOOLEAN) {
-                    property = n.substring(2);
-                }
-                getter = property != null;
-            } else if (m.getParameters().size() == 1 && m.getReturnType().getKind() == TypeKind.VOID
-                    && n.startsWith("set") && n.length() > 3) {
-                property = n.substring(3);
-            }
-            if (property == null || !Character.isUpperCase(property.charAt(0))) continue;
-            if (property.length() > 1 && Character.isUpperCase(property.charAt(1))) {
-                return "accessor " + n + "(): its property name depends on decapitalisation rules";
-            }
-            String name = Character.toLowerCase(property.charAt(0)) + property.substring(1);
-            if (!m.getModifiers().contains(Modifier.PUBLIC)) {
-                return "accessor " + n + "() is not public; JSON-B's visibility rules for it are left to the runtime";
-            }
-            if ((getter ? getters : setters).put(name, m) != null) return "two accessors for property " + name;
-        }
-        var all = new java.util.TreeSet<String>();
-        all.addAll(fields.keySet());
-        all.addAll(getters.keySet());
-        all.addAll(setters.keySet());
-        for (String name : all) {
-            VariableElement f = fields.get(name);
-            ExecutableElement g = getters.get(name);
-            ExecutableElement s = setters.get(name);
-            boolean publicField = f != null && f.getModifiers().contains(Modifier.PUBLIC);
-            if (f != null && f.getModifiers().contains(Modifier.TRANSIENT) && (g != null || s != null || publicField)) {
-                return "field " + name + " is transient; JSON-B leaves its meaning to the implementation";
-            }
-            Access read = g != null ? Access.METHOD : publicField ? Access.FIELD : Access.NONE;
-            Access write = s != null ? Access.METHOD
-                    : publicField && !f.getModifiers().contains(Modifier.FINAL) ? Access.FIELD : Access.NONE;
-            if (read == Access.NONE && write == Access.NONE) continue;   // a private field: not a JSON-B property
-            TypeMirror t = g != null ? g.getReturnType() : s != null ? s.getParameters().get(0).asType() : f.asType();
-            if ((g != null && !same(t, g.getReturnType())) || (s != null && !same(t, s.getParameters().get(0).asType()))
-                    || (f != null && !same(t, f.asType()))) {
-                return "property " + name + " has different types on its field and accessors";
-            }
-            List<Element> members = new ArrayList<>();
-            if (f != null) members.add(f);
-            if (g != null) members.add(g);
-            if (s != null) members.add(s);
-            String annotations = jsonbAnnotations(members);
-            if (annotations != null) return "property " + name + ": " + annotations;
-            if (isTransient(members)) {
-                long marked = members.stream().filter(m -> hasAnnotation(m, JSONB_TRANSIENT)).count();
-                if (marked != members.size() && !(f != null && hasAnnotation(f, JSONB_TRANSIENT))) {
-                    return "property " + name + " is @JsonbTransient on part of its members only";
-                }
-                continue;
-            }
-            properties.add(new Property(jsonName(members, name), t,
-                    read, read == Access.METHOD ? g.getSimpleName() + "()" : name,
-                    write, write == Access.METHOD ? s.getSimpleName().toString() : name,
-                    hasAnnotation(members, JSONB_NILLABLE)));
+        String accessors = accessors(type, getters, setters);
+        if (accessors != null) return accessors;
+        var names = new java.util.TreeSet<String>();
+        names.addAll(fields.keySet());
+        names.addAll(getters.keySet());
+        names.addAll(setters.keySet());
+        for (String name : names) {
+            String reason = classProperty(new Members(name, fields.get(name), getters.get(name), setters.get(name)),
+                    properties);
+            if (reason != null) return reason;
         }
         return null;
     }
 
+    /** Why a class cannot have a binding, whatever its properties; {@code null} when it can. */
+    private static String classShape(TypeElement type) {
+        if (!type.getModifiers().contains(Modifier.FINAL)) {
+            return "not final: an instance of a subclass would be written without its own properties";
+        }
+        if (!JAVA_LANG_OBJECT.equals(erasureName(type.getSuperclass()))) {
+            return "it extends " + type.getSuperclass() + "; a binding is generated for Object-rooted classes";
+        }
+        var constructors = ElementFilter.constructorsIn(type.getEnclosedElements());
+        boolean noArg = constructors.stream()
+                .anyMatch(c -> c.getParameters().isEmpty() && !c.getModifiers().contains(Modifier.PRIVATE));
+        if (!noArg && !constructors.isEmpty()) return "no accessible no-argument constructor";
+        if (constructors.stream().anyMatch(RestBindings::hasJsonbCreator)) return "a @JsonbCreator constructor";
+        return null;
+    }
+
+    /** Sorts the public bean accessors of {@code type} by property; {@code null}, or why they cannot be mapped. */
+    private static String accessors(TypeElement type, Map<String, ExecutableElement> getters,
+                                    Map<String, ExecutableElement> setters) {
+        for (ExecutableElement m : ElementFilter.methodsIn(type.getEnclosedElements())) {
+            String reason = m.getModifiers().contains(Modifier.STATIC) ? null : accessor(m, getters, setters);
+            if (reason != null) return reason;
+        }
+        return null;
+    }
+
+    private static String accessor(ExecutableElement m, Map<String, ExecutableElement> getters,
+                                   Map<String, ExecutableElement> setters) {
+        if (hasJsonbCreator(m)) return "a @JsonbCreator factory";
+        String n = m.getSimpleName().toString();
+        boolean getter = isGetter(m);
+        if (!getter && !isSetter(m)) return null;
+        String property = n.substring(getter && n.startsWith("is") ? 2 : 3);
+        if (!Character.isUpperCase(property.charAt(0))) return null;
+        if (property.length() > 1 && Character.isUpperCase(property.charAt(1))) {
+            return "accessor " + n + "(): its property name depends on decapitalisation rules";
+        }
+        if (!m.getModifiers().contains(Modifier.PUBLIC)) {
+            return "accessor " + n + "() is not public; JSON-B's visibility rules for it are left to the runtime";
+        }
+        String name = Character.toLowerCase(property.charAt(0)) + property.substring(1);
+        Map<String, ExecutableElement> kind = getter ? getters : setters;
+        return kind.put(name, m) == null ? null : "two accessors for property " + name;
+    }
+
+    private static boolean isGetter(ExecutableElement m) {
+        String n = m.getSimpleName().toString();
+        if (!m.getParameters().isEmpty() || m.getReturnType().getKind() == TypeKind.VOID) return false;
+        return n.startsWith("get") && n.length() > 3
+                || n.startsWith("is") && n.length() > 2 && m.getReturnType().getKind() == TypeKind.BOOLEAN;
+    }
+
+    private static boolean isSetter(ExecutableElement m) {
+        String n = m.getSimpleName().toString();
+        return m.getParameters().size() == 1 && m.getReturnType().getKind() == TypeKind.VOID
+                && n.startsWith("set") && n.length() > 3;
+    }
+
+    /** The field and public accessors of one property of a class, any of them {@code null}. */
+    private record Members(String name, VariableElement field, ExecutableElement getter, ExecutableElement setter) {
+
+        boolean publicField() {
+            return field != null && field.getModifiers().contains(Modifier.PUBLIC);
+        }
+
+        Access read() {
+            if (getter != null) return Access.METHOD;
+            return publicField() ? Access.FIELD : Access.NONE;
+        }
+
+        Access write() {
+            if (setter != null) return Access.METHOD;
+            return publicField() && !field.getModifiers().contains(Modifier.FINAL) ? Access.FIELD : Access.NONE;
+        }
+
+        TypeMirror type() {
+            if (getter != null) return getter.getReturnType();
+            if (setter != null) return setter.getParameters().get(0).asType();
+            return field.asType();
+        }
+
+        String readMember() {
+            return getter != null ? getter.getSimpleName() + "()" : name;
+        }
+
+        String writeMember() {
+            return setter != null ? setter.getSimpleName().toString() : name;
+        }
+
+        List<Element> all() {
+            List<Element> members = new ArrayList<>();
+            if (field != null) members.add(field);
+            if (getter != null) members.add(getter);
+            if (setter != null) members.add(setter);
+            return members;
+        }
+    }
+
+    /** Adds the property {@code m} describes, if JSON-B sees one; {@code null}, or why it cannot be mapped. */
+    private String classProperty(Members m, List<Property> properties) {
+        boolean transientField = m.field() != null && m.field().getModifiers().contains(Modifier.TRANSIENT);
+        if (transientField && (m.getter() != null || m.setter() != null || m.publicField())) {
+            return "field " + m.name() + " is transient; JSON-B leaves its meaning to the implementation";
+        }
+        if (m.read() == Access.NONE && m.write() == Access.NONE) return null;   // a private field: no JSON-B property
+        TypeMirror t = m.type();
+        if (!sameTypes(t, m)) return PROPERTY + m.name() + " has different types on its field and accessors";
+        List<Element> members = m.all();
+        String annotations = jsonbAnnotations(members);
+        if (annotations != null) return PROPERTY + m.name() + ": " + annotations;
+        if (isTransient(members)) {
+            boolean everywhere = members.stream().allMatch(e -> hasAnnotation(e, JSONB_TRANSIENT));
+            boolean onField = m.field() != null && hasAnnotation(m.field(), JSONB_TRANSIENT);
+            return everywhere || onField ? null
+                    : PROPERTY + m.name() + " is @JsonbTransient on part of its members only";
+        }
+        properties.add(new Property(jsonName(members, m.name()), t, m.read(), m.readMember(), m.write(),
+                m.writeMember(), hasAnnotation(members, JSONB_NILLABLE)));
+        return null;
+    }
+
+    private boolean sameTypes(TypeMirror t, Members m) {
+        return (m.getter() == null || same(t, m.getter().getReturnType()))
+                && (m.setter() == null || same(t, m.setter().getParameters().get(0).asType()))
+                && (m.field() == null || same(t, m.field().asType()));
+    }
+
     /** Whether {@code type} is mapped by the generated code; {@code null} when it is, else why not. */
     private String supported(TypeMirror type) {
-        switch (type.getKind()) {
-            case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> {
-                return null;
-            }
-            case DECLARED -> {
-                DeclaredType declared = (DeclaredType) type;
-                String name = erasureName(declared);
-                List<? extends TypeMirror> args = declared.getTypeArguments();
-                if (COLLECTIONS.contains(name) || OPTIONAL.equals(name)) {
-                    return args.size() == 1 ? supportedElement(args.get(0)) : "raw " + name;
-                }
-                if (MAP.equals(name)) {
-                    if (args.size() != 2 || !"java.lang.String".equals(erasureName(args.get(0)))) {
-                        return "a map whose keys are not String";
-                    }
-                    return supportedElement(args.get(1));
-                }
-                return supportedElement(type);
-            }
-            default -> {
-                return "type " + type + " (arrays, type variables and wildcards are left to the runtime)";
-            }
+        if (type.getKind().isPrimitive()) return null;
+        if (type.getKind() != TypeKind.DECLARED) {
+            return TYPE + type + " (arrays, type variables and wildcards are left to the runtime)";
         }
+        DeclaredType declared = (DeclaredType) type;
+        String name = erasureName(declared);
+        List<? extends TypeMirror> args = declared.getTypeArguments();
+        if (COLLECTIONS.contains(name) || OPTIONAL.equals(name)) {
+            return args.size() == 1 ? supportedElement(args.get(0)) : "raw " + name;
+        }
+        if (!MAP.equals(name)) return supportedElement(type);
+        if (args.size() != 2 || !"java.lang.String".equals(erasureName(args.get(0)))) {
+            return "a map whose keys are not String";
+        }
+        return supportedElement(args.get(1));
     }
 
     /** A value a container holds, or a single value: a leaf, an enum, or a type that gets a binding. */
     private String supportedElement(TypeMirror type) {
-        if (type.getKind() != TypeKind.DECLARED) {
-            return "type " + type + " inside a container";
-        }
+        if (type.getKind() != TypeKind.DECLARED) return TYPE + type + " inside a container";
         DeclaredType declared = (DeclaredType) type;
         String name = erasureName(declared);
         if (LEAVES.contains(name)) return null;
         TypeElement element = (TypeElement) declared.asElement();
-        if (element.getKind() == ElementKind.ENUM) {
-            for (Element constant : element.getEnclosedElements()) {
-                for (AnnotationMirror a : constant.getAnnotationMirrors()) {
-                    if (nameOf(a).startsWith(JSONB_ANNOTATIONS)) return "enum " + name + " customises its constants";
-                }
-            }
-            return element.getModifiers().contains(Modifier.PRIVATE) ? "private enum " + name : null;
-        }
-        if (COLLECTIONS.contains(name) || OPTIONAL.equals(name) || MAP.equals(name)) {
-            return "nested container " + type;
-        }
-        if (element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS) {
-            if (name.startsWith("java.") || name.startsWith("jakarta.")) return "type " + name;
-            pending.add(element);
-            return null;   // provisionally: dropModelsReferencingSkipped checks it got a binding
-        }
-        return "type " + name;
+        if (element.getKind() == ElementKind.ENUM) return enumReason(element, name);
+        if (COLLECTIONS.contains(name) || OPTIONAL.equals(name) || MAP.equals(name)) return "nested container " + type;
+        boolean bindable = element.getKind() == ElementKind.RECORD || element.getKind() == ElementKind.CLASS;
+        if (!bindable || name.startsWith("java.") || name.startsWith("jakarta.")) return TYPE + name;
+        pending.add(element);
+        return null;   // provisionally: dropModelsReferencingSkipped checks it got a binding
+    }
+
+    /** Why the generated code cannot map an enum, or {@code null}: it writes and reads the constants' names. */
+    private static String enumReason(TypeElement element, String name) {
+        if (element.getModifiers().contains(Modifier.PRIVATE)) return "private enum " + name;
+        boolean customised = element.getEnclosedElements().stream().flatMap(c -> c.getAnnotationMirrors().stream())
+                .anyMatch(a -> nameOf(a).startsWith(JSONB_ANNOTATIONS));
+        return customised ? "enum " + name + " customises its constants" : null;
     }
 
     /** A model whose property needs a type that got no binding keeps the runtime mapping, and so on up. */
@@ -447,20 +513,25 @@ final class RestBindings {
 
     private String missingBinding(Model model) {
         for (Property p : model.properties()) {
-            for (TypeElement used : declaredTypes(p.type())) {
-                if (!accessibleFrom(used, model.packageName())) {
-                    return "property \"" + p.jsonName() + "\" holds " + used.getQualifiedName()
-                            + ", which the binding, in package " + model.packageName() + ", cannot reach";
-                }
-            }
-            for (TypeElement used : referencedTypes(p.type())) {
-                if (!models.containsKey(used) && !staticBound.containsKey(used)) {
-                    return "property \"" + p.jsonName() + "\" holds " + used.getQualifiedName()
-                            + ", which keeps the runtime mapping";
-                }
-            }
+            String reason = unreachable(p, model.packageName());
+            if (reason == null) reason = unbound(p);
+            if (reason != null) return QUOTED_PROPERTY + p.jsonName() + "\" holds " + reason;
         }
         return null;
+    }
+
+    /** A type of the property the binding's package cannot name, or {@code null}. */
+    private static String unreachable(Property p, String pkg) {
+        return declaredTypes(p.type()).stream().filter(used -> !accessibleFrom(used, pkg)).findFirst()
+                .map(used -> used.getQualifiedName() + ", which the binding, in package " + pkg + ", cannot reach")
+                .orElse(null);
+    }
+
+    /** A type of the property that has no binding, or {@code null}. */
+    private String unbound(Property p) {
+        return referencedTypes(p.type()).stream()
+                .filter(used -> !models.containsKey(used) && !staticBound.containsKey(used)).findFirst()
+                .map(used -> used.getQualifiedName() + ", which keeps the runtime mapping").orElse(null);
     }
 
     /** Every declared type {@code type} names, itself and its type arguments, recursively. */
@@ -504,10 +575,10 @@ final class RestBindings {
 
     // ===== Helpers =====
 
-    private ExecutableElement canonicalConstructor(TypeElement record) {
-        List<TypeMirror> types = record.getRecordComponents().stream().map(Element::asType)
+    private ExecutableElement canonicalConstructor(TypeElement recordType) {
+        List<TypeMirror> types = recordType.getRecordComponents().stream().map(Element::asType)
                 .map(t -> env.getTypeUtils().erasure(t)).toList();
-        for (ExecutableElement c : ElementFilter.constructorsIn(record.getEnclosedElements())) {
+        for (ExecutableElement c : ElementFilter.constructorsIn(recordType.getEnclosedElements())) {
             List<TypeMirror> params = c.getParameters().stream().map(Element::asType)
                     .map(t -> env.getTypeUtils().erasure(t)).toList();
             if (params.size() == types.size()) {
@@ -547,21 +618,16 @@ final class RestBindings {
         return hasAnnotation(members, JSONB_TRANSIENT);
     }
 
-    /** The {@code @JsonbProperty} name, the same on every member that sets one, else the property's name. */
+    /** The {@code @JsonbProperty} name the members set (the last non-empty one), else the property's name. */
     private static String jsonName(List<Element> members, String fallback) {
-        String name = null;
-        for (Element m : members) {
-            for (AnnotationMirror a : m.getAnnotationMirrors()) {
-                if (!JSONB_PROPERTY.equals(nameOf(a))) continue;
-                for (var e : a.getElementValues().entrySet()) {
-                    if (e.getKey().getSimpleName().contentEquals("value")) {
-                        String v = (String) e.getValue().getValue();
-                        if (!v.isEmpty()) name = v;
-                    }
-                }
-            }
-        }
-        return name == null ? fallback : name;
+        return members.stream().flatMap(m -> m.getAnnotationMirrors().stream())
+                .filter(a -> JSONB_PROPERTY.equals(nameOf(a)))
+                .flatMap(a -> a.getElementValues().entrySet().stream())
+                .filter(e -> e.getKey().getSimpleName().contentEquals("value"))
+                .map(e -> (String) e.getValue().getValue())
+                .filter(v -> !v.isEmpty())
+                .reduce((first, second) -> second)
+                .orElse(fallback);
     }
 
     private static boolean hasAnnotation(List<Element> members, String annotation) {

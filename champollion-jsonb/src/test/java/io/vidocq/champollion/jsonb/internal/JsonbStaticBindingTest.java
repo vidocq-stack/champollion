@@ -228,8 +228,8 @@ class JsonbStaticBindingTest {
         void elements_of_a_list_are_read_by_the_static_binding() throws Exception {
             CoordStaticBinding.readCalls = 0;
             var jsonb = jsonbWith(new CoordStaticBinding());
-            List<Coord> coords = jsonb.fromJson("[{\"x\":1,\"y\":2},{\"x\":3,\"y\":4}]", typeOf("coords"));
-            assertEquals(List.of(new Coord(1, 2), new Coord(3, 4)), coords);
+            List<Coord> read = jsonb.fromJson("[{\"x\":1,\"y\":2},{\"x\":3,\"y\":4}]", typeOf("coords"));
+            assertEquals(List.of(new Coord(1, 2), new Coord(3, 4)), read);
             assertEquals(2, CoordStaticBinding.readCalls,
                     "Each element of a List<Coord> must be read by the static binding, not the runtime registry.");
         }
