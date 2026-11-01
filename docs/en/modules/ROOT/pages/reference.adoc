@@ -89,6 +89,12 @@ Champollion: com.example.shop.Legacy keeps the reflective JSON-B mapping at run 
 
 The usual reasons: a class that is not `final` (make it a record, or `final`), a superclass, another JSON-B annotation (`@JsonbDateFormat`, `@JsonbTypeAdapter`, `@JsonbCreator`…), an array, a type of a dependency. The processor option `-Achampollion.jsonb.rest=false` turns the generation off.
 
+The generated bindings implement a type of `io.vidocq.champollion.jsonb`, so a named module must read that module (`requires io.vidocq.champollion.jsonb;`, directly or through a `requires transitive`) to get them. A module that does not read it keeps the reflective mapping for all its types, and the compiler says so once:
+
+----
+Champollion: module shop does not read io.vidocq.champollion.jsonb; the types its resources exchange keep the reflective JSON-B mapping at run time
+----
+
 == Supported JSON-B annotations
 
 Standard Jakarta JSON Binding 3.0 annotations — all supported:
