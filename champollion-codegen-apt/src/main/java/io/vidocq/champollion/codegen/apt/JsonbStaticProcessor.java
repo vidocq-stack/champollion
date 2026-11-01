@@ -109,6 +109,7 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
 
     /** Processor option: {@code false} turns off the bindings of the types JAX-RS resources reach. */
     static final String REST_OPTION = "champollion.jsonb.rest";
+    private static final String JSONB_BINDING = "io.vidocq.champollion.jsonb.spi.JsonbBinding";
     /** The bindings generated for the types resources reach, and their type: kept across incremental builds. */
     private static final String REST_BINDINGS_FILE = "META-INF/champollion/rest-bindings";
 
@@ -161,6 +162,17 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
      * and says, as a note, which ones keep the runtime mapping and why.
      */
     private void generateRestBindings(Set<? extends Element> resources) {
+        if (resources.isEmpty()) return;
+        // The generated code implements io.vidocq.champollion.jsonb.spi.JsonbBinding: a named module that does not
+        // read io.vidocq.champollion.jsonb would not compile it. Leave such a module to the runtime mapping.
+        var module = processingEnv.getElementUtils().getModuleOf(resources.iterator().next());
+        if (module != null && !module.isUnnamed()
+                && processingEnv.getElementUtils().getTypeElement(module, JSONB_BINDING) == null) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                    "Champollion: module " + module.getQualifiedName() + " does not read io.vidocq.champollion.jsonb;"
+                            + " the types its resources exchange keep the reflective JSON-B mapping at run time");
+            return;
+        }
         RestBindings found = new RestBindings(processingEnv, compiled).collect(resources);
         java.util.Map<RestBindings.Model, String> names = new java.util.LinkedHashMap<>();
         for (RestBindings.Model model : found.models()) {
