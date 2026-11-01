@@ -306,7 +306,7 @@ class RestBindingsCustomisationsTest {
     }
 
     @Test
-    void anArrayAsTheResultOfAResourceMethod() throws Exception {
+    void anArrayAsTheResultOfAResourceMethod() {
         assertTrue(fmt.hasBinding("fmt.Event"));
         assertFalse(fmt.hasBinding("fmt.Generic"));
         assertTrue(fmt.noted("fmt.Generic", "an array of the generic type"), fmt.notes()::toString);

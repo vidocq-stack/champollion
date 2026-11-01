@@ -395,14 +395,6 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * JSON-B 3.0 §3.3.1 — byte[]:
-     * <ul>
-     *   <li>BYTE (default): array of signed integers [-128..127]</li>
-     *   <li>BASE_64: standard base64 string with padding</li>
-     *   <li>BASE_64_URL: URL-safe base64 string without padding</li>
-     * </ul>
-     */
-    /**
      * The writer of an array of primitives under the default binary data strategy ({@code BYTE}), or {@code null}
      * when {@code arrayType} is no such array: for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf}.
      */
@@ -418,6 +410,14 @@ final class RuntimeBindingRegistry {
         g.writeEnd();
     };
 
+    /**
+     * JSON-B 3.0 §3.3.1 — byte[]:
+     * <ul>
+     *   <li>BYTE (default): array of signed integers [-128..127]</li>
+     *   <li>BASE_64: standard base64 string with padding</li>
+     *   <li>BASE_64_URL: URL-safe base64 string without padding</li>
+     * </ul>
+     */
     private BindingWriter byteArrayWriter() {
         String s = binaryDataStrategy;
         if ("BASE_64".equals(s)) {

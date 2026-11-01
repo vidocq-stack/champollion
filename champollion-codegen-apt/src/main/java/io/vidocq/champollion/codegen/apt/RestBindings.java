@@ -79,6 +79,8 @@ final class RestBindings {
     private static final String PROPERTY = "property ";
     private static final String QUOTED_PROPERTY = "property \"";
     private static final String TYPE = "type ";
+    /** The element of an annotation that holds its main value. */
+    private static final String VALUE = "value";
 
     /** The types JSON-B maps natively; {@code JsonbLeaf} hands their codecs to the generated code. */
     static final Set<String> LEAVES = Set.of(
@@ -624,7 +626,7 @@ final class RestBindings {
         String locale = "##default";
         for (var e : env.getElementUtils().getElementValuesWithDefaults(a).entrySet()) {
             String key = e.getKey().getSimpleName().toString();
-            if (key.equals("value")) pattern = (String) e.getValue().getValue();
+            if (key.equals(VALUE)) pattern = (String) e.getValue().getValue();
             else if (key.equals("locale")) locale = (String) e.getValue().getValue();
         }
         return new Format(date, pattern, locale);
@@ -645,14 +647,14 @@ final class RestBindings {
     private boolean nillable(TypeElement owner, List<Element> lookup) {
         for (Element m : lookup) {
             for (AnnotationMirror a : m.getAnnotationMirrors()) {
-                if (JSONB_NILLABLE.equals(nameOf(a))) return booleanValue(a, "value");
+                if (JSONB_NILLABLE.equals(nameOf(a))) return booleanValue(a, VALUE);
             }
             for (AnnotationMirror a : m.getAnnotationMirrors()) {
                 if (JSONB_PROPERTY.equals(nameOf(a)) && booleanValue(a, "nillable")) return true;
             }
         }
         AnnotationMirror a = applying(owner, List.of(), JSONB_NILLABLE);
-        return a != null && booleanValue(a, "value");
+        return a != null && booleanValue(a, VALUE);
     }
 
     private boolean booleanValue(AnnotationMirror a, String element) {
@@ -883,7 +885,7 @@ final class RestBindings {
         return members.stream().flatMap(m -> m.getAnnotationMirrors().stream())
                 .filter(a -> JSONB_PROPERTY.equals(nameOf(a)))
                 .flatMap(a -> a.getElementValues().entrySet().stream())
-                .filter(e -> e.getKey().getSimpleName().contentEquals("value"))
+                .filter(e -> e.getKey().getSimpleName().contentEquals(VALUE))
                 .map(e -> (String) e.getValue().getValue())
                 .filter(v -> !v.isEmpty())
                 .reduce((first, second) -> second)
