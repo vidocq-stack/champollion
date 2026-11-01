@@ -608,3 +608,39 @@ introspective baseline (MethodHandles + cache).
   killed under the agent sandbox, run executed unsandboxed). The generated source
   bindings keep the RFC 8259 pre-quoted raw-key fast path (`__writeKey` helper +
   `RawJsonKeyWriter` instanceof dispatch), which is what this run validates.
+
+## BENCH-20261101-01 — Generated REST bindings vs the reflective mapping (formats, array, superclass)
+
+- **Date** : 2026-11-01
+- **Commit** : b7d31bc (`feat/jsonb-bindings-formats-creators`)
+- **JVM** : Temurin 25 LTS (2025-09-16)
+- **Hardware** : Apple M5 Max / 18 cores / 128 GB RAM
+- **OS** : macOS (Darwin 27.0.0) arm64
+- **Commande exacte** :
+  ```bash
+  ./mvnw -pl champollion-bench package -DskipTests
+  java -jar champollion-bench/target/benchmarks.jar JsonbRestBindingBench
+  ```
+  (the class's own settings: `-f 2 -wi 3 -w 2s -i 5 -r 3s`, `-Xms1G -Xmx1G -XX:+UseG1GC`)
+- **Workload** : `BenchOrder extends BenchEntity` — a plain class returned by a `@Path` resource, so the processor
+  generates its binding: two inherited properties, a `@JsonbDateFormat` date, a `@JsonbNumberFormat` amount, a
+  `String[]` and a `List<BenchLine>` of records (`lines` = 1 or 20). `generated` is the default `Jsonb` (the binding,
+  found through `ServiceLoader`); `reflective` is the same `Jsonb` with `withStaticBindings(List.of())`. The setup
+  checks both write the same JSON.
+- **Résultats** :
+  ```
+  Benchmark                               (lines)   Mode  Cnt  Score   Error   Units
+  JsonbRestBindingBench.read_generated          1  thrpt   10  1,446 ± 0,021  ops/us
+  JsonbRestBindingBench.read_generated         20  thrpt   10  0,270 ± 0,005  ops/us
+  JsonbRestBindingBench.read_reflective         1  thrpt   10  1,148 ± 0,019  ops/us
+  JsonbRestBindingBench.read_reflective        20  thrpt   10  0,187 ± 0,002  ops/us
+  JsonbRestBindingBench.write_generated         1  thrpt   10  3,304 ± 0,070  ops/us
+  JsonbRestBindingBench.write_generated        20  thrpt   10  1,024 ± 0,003  ops/us
+  JsonbRestBindingBench.write_reflective        1  thrpt   10  2,609 ± 0,041  ops/us
+  JsonbRestBindingBench.write_reflective       20  thrpt   10  0,591 ± 0,006  ops/us
+  ```
+- **Comparaison** : first run of this benchmark. Generated vs reflective: write +27 % (1 line) and +73 % (20 lines),
+  read +26 % (1 line) and +44 % (20 lines). The gap grows with the list: each record of the list goes through its
+  own generated binding instead of the reflective path.
+- **Notes** : the end-to-end HTTP measure of the same change (a plain-POJO endpoint through the real CLI) is in the
+  Vidocq repository's `BENCH.md` (+3 % requests per second: there, JSON is a small part of a request).
