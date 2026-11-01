@@ -569,7 +569,12 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261101-01 — JSON-B runtime: a record holding an `Optional` of itself overflows the stack
 
 - **Date** : 2026-11-01
-- **Statut** : OPEN
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-pojo-hierarchy`): wider than reported — any type holding
+  itself through a member (`Optional<Entry>`, `List<Node>`, `Map<String, Tree>`, a class's `List<Person>`) overflowed,
+  on write and on read. Both registries now keep the set of classes whose writer/reader is being built; a member whose
+  type names one of them gets a writer/reader resolved at its first use (`memberWriter`, `memberReader`,
+  `GenericTypes.mentionsAny`). No `ThreadLocal`: the set is shared, a class another thread is building only makes a
+  member lazy for nothing. `SelfReferencingTypesTest` (3, red before).
 - **Module touché** : `champollion-jsonb` — `RuntimeBindingRegistry.resolveRecord` → `writerFor` → `parameterizedWriter`
 - **Symptôme** : `toJson` of `record Entry(..., Optional<Entry> next)` throws `StackOverflowError`
   (`typeInfoOfDirectParents` / `findTypeInfo` / `resolveClass` repeated): resolving the writer of `Entry` resolves the
@@ -601,3 +606,21 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Vérification** : `RestBindingsTest` compares each generated binding with the runtime (same JSON text, equal
   objects read back) on records, final classes with accessors or public fields, nested and cross-package types, every
   native type, nulls; `JsonbStaticBindingTest` (reads below the root), `JsonbLeafTest`.
+
+## BUG-20261101-03 — JSON-B: the generated bindings skipped non-final classes and classes with a superclass
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-pojo-hierarchy`)
+- **Module touché** : `champollion-codegen-apt` (`RestBindings`)
+- **Symptôme** : BUG-20261101-02 generated bindings for records and final Object-rooted classes only; the classic DTO
+  (`class Product extends BaseEntity`, getters and setters) kept the reflective mapping and its package's `opens`.
+- **Correctif** : any concrete class with a no-argument constructor gets a binding, its inherited properties included
+  (each class of the hierarchy from the top down, lexicographically within a class — the runtime's order); a
+  non-public accessor is ignored as JSON-B's default visibility does, unless it hides a public field; a property
+  declared on several classes of the hierarchy, or an interface default getter, keeps the runtime. The subclasses of a
+  reached class compiled with it get their own binding. Checked against the runtime first: Champollion maps a value
+  by its **declared** type (a `SpecialProduct` under `Product` is written with `Product`'s properties, at the root and
+  as a member), so the binding of the declared type needs no check of the instance's class.
+- **Vérification** : `RestBindingsTest` (POJO hierarchy written and read as the runtime, a subclass under its declared
+  type and as the root, a public accessor inherited from a private class, an overridden getter and an abstract class
+  kept on the runtime with their note).

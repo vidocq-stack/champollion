@@ -89,7 +89,7 @@ final class RestBindings {
                     String writeMember, boolean nillable) {}
 
     /** A type a binding is generated for. */
-    record Model(TypeElement type, boolean isRecord, List<Property> properties) {
+    record Model(TypeElement type, boolean isRecord, boolean subclassable, List<Property> properties) {
 
         String packageName() {
             Element e = type;
@@ -163,6 +163,17 @@ final class RestBindings {
                 reach(method.getReturnType());
                 method.getParameters().stream().filter(RestBindings::isEntityParameter)
                         .forEach(parameter -> reach(parameter.asType()));
+            }
+        }
+    }
+
+    /** Queues the classes of the compilation that extend {@code type}, directly or not. */
+    private void reachSubclasses(TypeElement type) {
+        var erased = env.getTypeUtils().erasure(type.asType());
+        for (TypeElement candidate : compiled) {
+            if (candidate != type && candidate.getKind() == ElementKind.CLASS
+                    && env.getTypeUtils().isSubtype(env.getTypeUtils().erasure(candidate.asType()), erased)) {
+                pending.add(candidate);
             }
         }
     }
@@ -258,9 +269,12 @@ final class RestBindings {
         }
         // The runtime's default order: a class's properties lexicographically (JSON-B 3.0 §4.4, one declaring class
         // here), a record's components in their declaration order.
-        if (type.getKind() != ElementKind.RECORD) properties.sort(Comparator.comparing(Property::jsonName));
-        models.put(type, new Model(type, type.getKind() == ElementKind.RECORD, List.copyOf(properties)));
+        boolean isRecord = type.getKind() == ElementKind.RECORD;
+        boolean subclassable = !isRecord && !type.getModifiers().contains(Modifier.FINAL);
+        models.put(type, new Model(type, isRecord, subclassable, List.copyOf(properties)));
         for (Property p : properties) reach(p.type());
+        // An instance of a subclass reaches the runtime, which uses the subclass's binding when it has one.
+        if (subclassable) reachSubclasses(type);
         return null;
     }
 
@@ -305,21 +319,86 @@ final class RestBindings {
     private String classProperties(TypeElement type, List<Property> properties) {
         String shape = classShape(type);
         if (shape != null) return shape;
+        Set<String> seen = new java.util.HashSet<>();
+        // The runtime's order: the properties of each class of the hierarchy, from the top one down, lexicographically
+        // within a class.
+        for (TypeElement level : hierarchy(type)) {
+            List<Property> own = new ArrayList<>();
+            String reason = levelProperties(level, own);
+            if (reason != null) return reason;
+            for (Property p : own) {
+                if (!seen.add(p.jsonName())) {
+                    return QUOTED_PROPERTY + p.jsonName() + "\" is declared on several classes of the hierarchy";
+                }
+            }
+            own.sort(Comparator.comparing(Property::jsonName));
+            properties.addAll(own);
+        }
+        return defaultAccessors(type);
+    }
+
+    /** The JSON-B properties {@code level} declares itself. */
+    private String levelProperties(TypeElement level, List<Property> own) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
-        for (VariableElement f : ElementFilter.fieldsIn(type.getEnclosedElements())) {
+        for (VariableElement f : ElementFilter.fieldsIn(level.getEnclosedElements())) {
             if (!f.getModifiers().contains(Modifier.STATIC)) fields.put(f.getSimpleName().toString(), f);
         }
         Map<String, ExecutableElement> getters = new LinkedHashMap<>();
         Map<String, ExecutableElement> setters = new LinkedHashMap<>();
-        String accessors = accessors(type, getters, setters);
+        Set<String> hidden = new java.util.HashSet<>();
+        String accessors = accessors(level, getters, setters, hidden);
         if (accessors != null) return accessors;
         var names = new java.util.TreeSet<String>();
         names.addAll(fields.keySet());
         names.addAll(getters.keySet());
         names.addAll(setters.keySet());
         for (String name : names) {
-            String reason = classProperty(new Members(name, fields.get(name), getters.get(name), setters.get(name)),
-                    properties);
+            Members m = new Members(name, fields.get(name), getters.get(name), setters.get(name));
+            if (hidden.contains(name) && m.publicField()) {
+                return PROPERTY + name + " has a public field and a non-public accessor; JSON-B's visibility rules"
+                        + " for it are left to the runtime";
+            }
+            String reason = classProperty(m, own);
+            if (reason != null) return reason;
+        }
+        return null;
+    }
+
+    /** {@code type} and its superclasses but {@code Object}, the top one first. */
+    private static List<TypeElement> hierarchy(TypeElement type) {
+        Deque<TypeElement> chain = new ArrayDeque<>();
+        for (TypeElement t = type; t != null && !JAVA_LANG_OBJECT.equals(t.getQualifiedName().toString());
+             t = superclassOf(t)) {
+            chain.push(t);
+        }
+        return List.copyOf(chain);
+    }
+
+    private static TypeElement superclassOf(TypeElement type) {
+        TypeMirror s = type.getSuperclass();
+        return s.getKind() == TypeKind.DECLARED ? (TypeElement) ((DeclaredType) s).asElement() : null;
+    }
+
+    /** A default getter of an interface the class implements: the runtime may see a property there. */
+    private String defaultAccessors(TypeElement type) {
+        for (TypeElement level : hierarchy(type)) {
+            for (TypeMirror i : env.getTypeUtils().directSupertypes(level.asType())) {
+                String reason = defaultAccessorsOf((TypeElement) ((DeclaredType) i).asElement());
+                if (reason != null) return reason;
+            }
+        }
+        return null;
+    }
+
+    private static String defaultAccessorsOf(TypeElement type) {
+        if (!type.getKind().isInterface()) return null;
+        for (ExecutableElement m : ElementFilter.methodsIn(type.getEnclosedElements())) {
+            if (m.getModifiers().contains(Modifier.DEFAULT) && isGetter(m)) {
+                return "interface " + type.getQualifiedName() + " has a default accessor " + m.getSimpleName() + "()";
+            }
+        }
+        for (TypeMirror parent : type.getInterfaces()) {
+            String reason = defaultAccessorsOf((TypeElement) ((DeclaredType) parent).asElement());
             if (reason != null) return reason;
         }
         return null;
@@ -327,12 +406,6 @@ final class RestBindings {
 
     /** Why a class cannot have a binding, whatever its properties; {@code null} when it can. */
     private static String classShape(TypeElement type) {
-        if (!type.getModifiers().contains(Modifier.FINAL)) {
-            return "not final: an instance of a subclass would be written without its own properties";
-        }
-        if (!JAVA_LANG_OBJECT.equals(erasureName(type.getSuperclass()))) {
-            return "it extends " + type.getSuperclass() + "; a binding is generated for Object-rooted classes";
-        }
         var constructors = ElementFilter.constructorsIn(type.getEnclosedElements());
         boolean noArg = constructors.stream()
                 .anyMatch(c -> c.getParameters().isEmpty() && !c.getModifiers().contains(Modifier.PRIVATE));
@@ -341,18 +414,21 @@ final class RestBindings {
         return null;
     }
 
-    /** Sorts the public bean accessors of {@code type} by property; {@code null}, or why they cannot be mapped. */
+    /**
+     * Sorts the public bean accessors of {@code type} by property; a non-public one, which JSON-B's default
+     * visibility ignores, goes to {@code hidden}. {@code null}, or why the accessors cannot be mapped.
+     */
     private static String accessors(TypeElement type, Map<String, ExecutableElement> getters,
-                                    Map<String, ExecutableElement> setters) {
+                                    Map<String, ExecutableElement> setters, Set<String> hidden) {
         for (ExecutableElement m : ElementFilter.methodsIn(type.getEnclosedElements())) {
-            String reason = m.getModifiers().contains(Modifier.STATIC) ? null : accessor(m, getters, setters);
+            String reason = m.getModifiers().contains(Modifier.STATIC) ? null : accessor(m, getters, setters, hidden);
             if (reason != null) return reason;
         }
         return null;
     }
 
     private static String accessor(ExecutableElement m, Map<String, ExecutableElement> getters,
-                                   Map<String, ExecutableElement> setters) {
+                                   Map<String, ExecutableElement> setters, Set<String> hidden) {
         if (hasJsonbCreator(m)) return "a @JsonbCreator factory";
         String n = m.getSimpleName().toString();
         boolean getter = isGetter(m);
@@ -362,10 +438,11 @@ final class RestBindings {
         if (property.length() > 1 && Character.isUpperCase(property.charAt(1))) {
             return "accessor " + n + "(): its property name depends on decapitalisation rules";
         }
-        if (!m.getModifiers().contains(Modifier.PUBLIC)) {
-            return "accessor " + n + "() is not public; JSON-B's visibility rules for it are left to the runtime";
-        }
         String name = Character.toLowerCase(property.charAt(0)) + property.substring(1);
+        if (!m.getModifiers().contains(Modifier.PUBLIC)) {
+            hidden.add(name);
+            return null;
+        }
         Map<String, ExecutableElement> kind = getter ? getters : setters;
         return kind.put(name, m) == null ? null : "two accessors for property " + name;
     }

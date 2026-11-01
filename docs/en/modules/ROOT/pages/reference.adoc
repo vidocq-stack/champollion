@@ -77,17 +77,17 @@ With `champollion-codegen-apt` on the processor path, the types a JAX-RS resourc
 A binding is generated for:
 
 * a record: its components, in declaration order;
-* a `final` class that extends `Object` and has a no-argument constructor: its public getters and setters, or public fields, in lexicographical order;
+* [.tag-new]#NEW# a class with a no-argument constructor, `final` or not, with superclasses or not: its public getters and setters, or public fields, those it inherits included — the properties of each class of the hierarchy, from the top one down, lexicographically within a class, as the runtime orders them. Like the runtime, the binding of a declared type writes an instance of a subclass with the declared type's properties; a subclass compiled with it gets its own binding too, used when the subclass is the declared type;
 
 whose properties are primitives, the types JSON-B maps natively (`String`, boxed numbers, `BigDecimal`, `BigInteger`, `UUID`, `URI`, the `java.time` types), enums, other such types, and `List`/`Set`/`Collection`/`Optional`/`Map<String, V>` of them; with `@JsonbProperty`, `@JsonbTransient` and `@JsonbNillable`. The output is the runtime's, character for character: the native values go through `JsonbLeaf`, the runtime's own codecs, and a configuration that changes the mapping (naming strategy, null values, date format, adapters…) makes the runtime serve every type, as for `@JsonbStatic`.
 
 Any other type keeps the reflective mapping, and the compiler says why in a note, for instance:
 
 ----
-Champollion: com.example.shop.Legacy keeps the reflective JSON-B mapping at run time: not final: an instance of a subclass would be written without its own properties
+Champollion: com.example.shop.Legacy keeps the reflective JSON-B mapping at run time: abstract
 ----
 
-The usual reasons: a class that is not `final` (make it a record, or `final`), a superclass, another JSON-B annotation (`@JsonbDateFormat`, `@JsonbTypeAdapter`, `@JsonbCreator`…), an array, a type of a dependency. The processor option `-Achampollion.jsonb.rest=false` turns the generation off.
+The usual reasons: an abstract class, another JSON-B annotation (`@JsonbDateFormat`, `@JsonbTypeAdapter`, `@JsonbCreator`…), an array, a property declared on several classes of a hierarchy (an overridden getter), an interface with a default getter, a type of a dependency. The processor option `-Achampollion.jsonb.rest=false` turns the generation off.
 
 The generated bindings implement a type of `io.vidocq.champollion.jsonb`, so a named module must read that module (`requires io.vidocq.champollion.jsonb;`, directly or through a `requires transitive`) to get them. A module that does not read it keeps the reflective mapping for all its types, and the compiler says so once:
 

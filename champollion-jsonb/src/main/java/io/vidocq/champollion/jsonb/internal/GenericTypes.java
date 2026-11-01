@@ -173,4 +173,26 @@ final class GenericTypes {
             return component.getTypeName() + "[]";
         }
     }
+
+    /** Whether {@code type} names one of {@code classes}: itself, an array's component, a type argument or a bound. */
+    static boolean mentionsAny(Type type, java.util.Set<Class<?>> classes) {
+        if (classes.isEmpty()) return false;
+        if (type instanceof Class<?> c) {
+            return c.isArray() ? mentionsAny(c.getComponentType(), classes) : classes.contains(c);
+        }
+        if (type instanceof java.lang.reflect.ParameterizedType p) {
+            if (mentionsAny(p.getRawType(), classes)) return true;
+            for (Type argument : p.getActualTypeArguments()) {
+                if (mentionsAny(argument, classes)) return true;
+            }
+            return false;
+        }
+        if (type instanceof java.lang.reflect.GenericArrayType a) return mentionsAny(a.getGenericComponentType(), classes);
+        if (type instanceof java.lang.reflect.WildcardType w) {
+            for (Type bound : w.getUpperBounds()) {
+                if (mentionsAny(bound, classes)) return true;
+            }
+        }
+        return false;
+    }
 }

@@ -125,7 +125,42 @@ final class RuntimeBindingRegistry {
     private final ClassValue<BindingWriter> cache = new ComputedClassValue<>(this::resolveClass);
 
     /** The writer of the raw class {@code type}, computed once per class by {@link #cache}. */
+    /**
+     * The classes whose writer is being built, by any thread. A member whose type names one of them gets a writer
+     * resolved at its first use: a type that holds itself ({@code record Node(List<Node> children)}) would otherwise
+     * resolve its own writer again before the first resolution is cached, and overflow the stack (BUG-20261101-01).
+     * A class another thread is building only makes a member lazy for nothing.
+     */
+    private final java.util.Set<Class<?>> resolving = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private BindingWriter resolveClass(Class<?> type) {
+        boolean added = resolving.add(type);
+        try {
+            return resolveClassNow(type);
+        } finally {
+            if (added) resolving.remove(type);
+        }
+    }
+
+    /** The writer of a member of type {@code t}: lazy when {@code t} names a class whose writer is being built. */
+    private BindingWriter memberWriter(Type t) {
+        if (!GenericTypes.mentionsAny(t, resolving)) return writerFor(t);
+        return new BindingWriter() {
+            private volatile BindingWriter resolved;
+
+            @Override
+            public void write(jakarta.json.stream.JsonGenerator g, Object value) {
+                BindingWriter w = resolved;
+                if (w == null) {
+                    w = writerFor(t);
+                    resolved = w;
+                }
+                w.write(g, value);
+            }
+        };
+    }
+
+    private BindingWriter resolveClassNow(Class<?> type) {
         // Static-first, as at the root: a generated binding replaces the introspective writer of its type.
         @SuppressWarnings("rawtypes")
         JsonbBinding staticBinding = staticBindings.get(type);
@@ -451,7 +486,7 @@ final class RuntimeBindingRegistry {
             BindingWriter w = customAdapterWriter(c)
                     .or(() -> customDateWriter(c))
                     .or(() -> globalDateWriter(c.getType()))
-                    .orElseGet(() -> writerFor(c.getGenericType()));
+                    .orElseGet(() -> memberWriter(c.getGenericType()));
             // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
@@ -943,7 +978,7 @@ final class RuntimeBindingRegistry {
                 .or(() -> dateWriter(m.getReturnType(), memberForDate, type))
                 .or(() -> globalDateWriter(m.getReturnType()))
                 .or(() -> numberWriter(m.getReturnType(), memberForNumber, type))
-                .orElseGet(() -> writerFor(m.getGenericReturnType()));
+                .orElseGet(() -> memberWriter(m.getGenericReturnType()));
         return new Property(name, getterAccessor(m), w, nillable);
     }
 
@@ -1053,7 +1088,7 @@ final class RuntimeBindingRegistry {
                 .or(() -> dateWriter(f.getType(), f, type))
                 .or(() -> globalDateWriter(f.getType()))
                 .or(() -> numberWriter(f.getType(), f, type))
-                .orElseGet(() -> writerFor(f.getGenericType()));
+                .orElseGet(() -> memberWriter(f.getGenericType()));
         return new Property(name, new FieldAccessor(f), w, nillable);
     }
 
@@ -1550,7 +1585,7 @@ final class RuntimeBindingRegistry {
             BindingWriter w = customAdapterWriter(c)
                     .or(() -> customDateWriter(c))
                     .or(() -> globalDateWriter(c.getType()))
-                    .orElseGet(() -> writerFor(c.getGenericType()));
+                    .orElseGet(() -> memberWriter(c.getGenericType()));
             props.add(new Property(name, acc, w, nillable));
         }
         return props;
@@ -1582,7 +1617,7 @@ final class RuntimeBindingRegistry {
         m.trySetAccessible();
         String name = jsonbNameFromMethod(m, propName);
         boolean nillable = m.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
-        BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> writerFor(m.getGenericReturnType()));
+        BindingWriter w = globalDateWriter(m.getReturnType()).orElseGet(() -> memberWriter(m.getGenericReturnType()));
         return new Property(name, getterAccessor(m), w, nillable);
     }
 
@@ -1590,7 +1625,7 @@ final class RuntimeBindingRegistry {
         f.trySetAccessible();
         String name = jsonbName(f, f.getName());
         boolean nillable = f.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class) || writeNullValues;
-        BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> writerFor(f.getGenericType()));
+        BindingWriter w = globalDateWriter(f.getType()).orElseGet(() -> memberWriter(f.getGenericType()));
         return new Property(name, new FieldAccessor(f), w, nillable);
     }
 

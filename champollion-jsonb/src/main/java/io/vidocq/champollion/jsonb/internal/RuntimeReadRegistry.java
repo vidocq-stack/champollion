@@ -138,8 +138,41 @@ final class RuntimeReadRegistry {
     /** Readers resolved by raw class. */
     private final ClassValue<BindingReader> classCache = new ComputedClassValue<>(this::resolveClass);
 
+    /**
+     * The classes whose reader is being built, by any thread: a member whose type names one of them gets a reader
+     * resolved at its first use, as on the write side (BUG-20261101-01).
+     */
+    private final java.util.Set<Class<?>> resolving = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     /** The reader of the raw class {@code type}, computed once per class by {@link #classCache}. */
     private BindingReader resolveClass(Class<?> type) {
+        boolean added = resolving.add(type);
+        try {
+            return resolveClassNow(type);
+        } finally {
+            if (added) resolving.remove(type);
+        }
+    }
+
+    /** The reader of a member of type {@code t}: lazy when {@code t} names a class whose reader is being built. */
+    private BindingReader memberReader(Type t) {
+        if (!GenericTypes.mentionsAny(t, resolving)) return readerFor(t);
+        return new BindingReader() {
+            private volatile BindingReader resolved;
+
+            @Override
+            public Object read(JsonParser p) {
+                BindingReader r = resolved;
+                if (r == null) {
+                    r = readerFor(t);
+                    resolved = r;
+                }
+                return r.read(p);
+            }
+        };
+    }
+
+    private BindingReader resolveClassNow(Class<?> type) {
         // Static-first, as at the root and as on the write side: a generated binding replaces the introspective
         // reader of its type. Both consume the value's leading event themselves.
         io.vidocq.champollion.jsonb.spi.JsonbBinding<?> staticBinding = staticBindings.get(type);
@@ -451,7 +484,7 @@ final class RuntimeReadRegistry {
             readers[i] = customAdapterReader(comp)
                     .or(() -> customDateReader(comp))
                     .or(() -> globalDateReader(comp.getType()))
-                    .orElseGet(() -> readerFor(comp.getGenericType()));
+                    .orElseGet(() -> memberReader(comp.getGenericType()));
             if (!isJsonbTransient(comp)) indexByName.put(jsonbName(comp), i);
         }
         return indexByName;
@@ -653,7 +686,7 @@ final class RuntimeReadRegistry {
         BindingReader dateR = dateReaderFor(paramType, m, getter, type);
         if (dateR != null) return dateR;
         BindingReader numR = numberReaderFor(paramType, m, getter, type);
-        return numR != null ? numR : readerFor(valueType);
+        return numR != null ? numR : memberReader(valueType);
     }
 
     /**
@@ -696,7 +729,7 @@ final class RuntimeReadRegistry {
         Type fieldType = GenericTypes.resolve(f.getGenericType(), type);
         return customAdapterReader(f, null)
                 .or(() -> customDeserializerReader(f, null, fieldType))
-                .orElseGet(() -> readerFor(fieldType));
+                .orElseGet(() -> memberReader(fieldType));
     }
 
     /**
@@ -1314,7 +1347,7 @@ final class RuntimeReadRegistry {
                     // InstantiationCustomizationTest.testJsonbDeserializerOnCreatorParameter).
                     .or(() -> customDeserializerReader(param, null, genericParamType, /*advanceParser*/ false))
                     .or(() -> dateReaderForParam(param, paramType))
-                    .orElseGet(() -> readerFor(genericParamType));
+                    .orElseGet(() -> memberReader(genericParamType));
             readers[idx] = paramReader;
             String name = paramJsonbName(params[i]);
             indexByName.put(name, i);
@@ -1356,7 +1389,7 @@ final class RuntimeReadRegistry {
                     out.computeIfAbsent(name, _ -> {
                         makeAccessible(m);
                         return new MethodSetter(m,
-                                readerFor(GenericTypes.resolve(m.getGenericParameterTypes()[0], type)));
+                                memberReader(GenericTypes.resolve(m.getGenericParameterTypes()[0], type)));
                     });
                 }
             }
@@ -1370,7 +1403,7 @@ final class RuntimeReadRegistry {
             if (name != null && !creatorNames.contains(name)) {
                 out.computeIfAbsent(name, _ -> {
                     makeAccessible(f);
-                    return new FieldSetter(f, readerFor(GenericTypes.resolve(f.getGenericType(), type)));
+                    return new FieldSetter(f, memberReader(GenericTypes.resolve(f.getGenericType(), type)));
                 });
             }
         }
@@ -1919,7 +1952,7 @@ final class RuntimeReadRegistry {
             if (prop != null) {
                 makeAccessible(sm);
                 writers.put(prop, new MethodSetter(sm,
-                        readerFor(GenericTypes.resolve(sm.getGenericParameterTypes()[0], concrete))));
+                        memberReader(GenericTypes.resolve(sm.getGenericParameterTypes()[0], concrete))));
             }
         }
         // Public fields not covered by a setter (case Dog.isDog).
@@ -1927,7 +1960,7 @@ final class RuntimeReadRegistry {
             if (isBindableField(f) && !writers.containsKey(f.getName())) {
                 makeAccessible(f);
                 writers.put(f.getName(),
-                        new FieldSetter(f, readerFor(GenericTypes.resolve(f.getGenericType(), concrete))));
+                        new FieldSetter(f, memberReader(GenericTypes.resolve(f.getGenericType(), concrete))));
             }
         }
         return writers;
