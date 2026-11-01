@@ -439,7 +439,7 @@ final class RuntimeReadRegistry {
         RecordComponent[] comps = type.getRecordComponents();
         Class<?>[] paramTypes = new Class<?>[comps.length];
         BindingReader[] readers = new BindingReader[comps.length];
-        Map<String, Integer> indexByName = componentReaders(comps, paramTypes, readers);
+        Map<String, Integer> indexByName = componentReaders(type, comps, paramTypes, readers);
         // §R-1/R-5 — a record's canonical constructor is ALWAYS public.
         // publicLookup() resolves it WITHOUT setAccessible or opens on the consumer side
         // for records IN AN EXPORTED PACKAGE. For internal test or non-exported
@@ -470,15 +470,15 @@ final class RuntimeReadRegistry {
      * Fills the parameter type and the reader of each record component, and returns the index of each
      * component by JSON name ({@code @JsonbTransient} components are read as their default value).
      */
-    private Map<String, Integer> componentReaders(RecordComponent[] comps, Class<?>[] paramTypes,
+    private Map<String, Integer> componentReaders(Class<?> type, RecordComponent[] comps, Class<?>[] paramTypes,
                                                   BindingReader[] readers) {
         Map<String, Integer> indexByName = HashMap.newHashMap(comps.length);
         for (int i = 0; i < comps.length; i++) {
             final RecordComponent comp = comps[i];
             paramTypes[i] = comp.getType();
-            // M4.4f @JsonbTypeAdapter > M4.4d @JsonbDateFormat > M4.7 JSONB_DATE_FORMAT > runtime.
+            // M4.4f @JsonbTypeAdapter > M4.4d @JsonbDateFormat, @JsonbNumberFormat > M4.7 JSONB_DATE_FORMAT > runtime.
             readers[i] = customAdapterReader(comp)
-                    .or(() -> customDateReader(comp))
+                    .or(() -> componentFormatReader(type, comp))
                     .or(() -> globalDateReader(comp.getType()))
                     .orElseGet(() -> memberReader(comp.getGenericType()));
             if (!isJsonbTransient(comp)) indexByName.put(jsonbName(comp), i);
@@ -725,6 +725,8 @@ final class RuntimeReadRegistry {
         Type fieldType = GenericTypes.resolve(f.getGenericType(), type);
         return customAdapterReader(f, null)
                 .or(() -> customDeserializerReader(f, null, fieldType))
+                .or(() -> formatReader(type, f.getType(), f, f))
+                .or(() -> globalDateReader(f.getType()))
                 .orElseGet(() -> memberReader(fieldType));
     }
 
@@ -860,7 +862,15 @@ final class RuntimeReadRegistry {
         return f != null && f.isAnnotationPresent(annotation) ? f : null;
     }
 
-    private BindingReader makeDateReader(Class<?> rawType, RuntimeBindingRegistry.DateFormatSpec spec) {
+    /**
+     * The reader of a date-like type under {@code @JsonbDateFormat(value = pattern, locale = locale)}, as a property
+     * carrying it is read: for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf}.
+     */
+    static BindingReader formattedDateReader(Class<?> type, String pattern, String locale) {
+        return makeDateReader(type, RuntimeBindingRegistry.dateFormatSpec(pattern, locale));
+    }
+
+    private static BindingReader makeDateReader(Class<?> rawType, RuntimeBindingRegistry.DateFormatSpec spec) {
         if (java.util.Date.class.isAssignableFrom(rawType)) {
             return p -> p.next() == JsonParser.Event.VALUE_NULL ? null : parseDate(p.getString(), spec);
         }
@@ -924,17 +934,31 @@ final class RuntimeReadRegistry {
 
     /** Custom numeric reader via @JsonbNumberFormat. */
     private BindingReader numberReaderFor(Class<?> paramType, Method setter, Method getter, Class<?> declaringType) {
+        String prop = RuntimeBindingRegistry.beanSetterOf(setter);
+        Field f = prop == null ? null : findFieldByName(declaringType, prop);
+        return numberReader(paramType, numberFormatOf(declaringType, setter, getter, f));
+    }
+
+    /** The reader of a number formatted by {@code ann}; {@code null} when there is none or the type is no number. */
+    private static BindingReader numberReader(Class<?> paramType, jakarta.json.bind.annotation.JsonbNumberFormat ann) {
+        return ann == null ? null : numberReader(paramType, ann.value(), ann.locale());
+    }
+
+    /**
+     * The reader of a number under {@code @JsonbNumberFormat(value = pattern, locale = locale)}, or {@code null} when
+     * {@code paramType} is no number; for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf} too.
+     */
+    static BindingReader numberReader(Class<?> paramType, String pattern, String locale) {
         Class<?> boxed = paramType.isPrimitive() ? boxOfPrim(paramType) : paramType;
         if (!Number.class.isAssignableFrom(boxed)) return null;
-        var ann = numberFormatOf(setter, getter, declaringType);
-        if (ann == null) return null;
-        java.text.NumberFormat fmt = numberFormat(ann);
+        java.text.NumberFormat fmt = numberFormat(pattern, locale);
         return p -> {
             var ev = p.next();
             if (ev == JsonParser.Event.VALUE_NULL) return null;
             String s = p.getString();
             try {
-                Number parsed = fmt.parse(s);
+                // A NumberFormat is not thread-safe: each read parses with its own copy.
+                Number parsed = ((java.text.NumberFormat) fmt.clone()).parse(s);
                 return convertNumber(parsed, boxed);
             } catch (java.text.ParseException pe) {
                 throw new JsonbException("Number parse error: " + pe.getMessage(), pe);
@@ -942,16 +966,16 @@ final class RuntimeReadRegistry {
         };
     }
 
-    /** {@code @JsonbNumberFormat} of a property, by priority: setter, getter, underlying field, class chain, packages. */
-    private static jakarta.json.bind.annotation.JsonbNumberFormat numberFormatOf(Method setter, Method getter,
-                                                                                Class<?> declaringType) {
+    /**
+     * {@code @JsonbNumberFormat} of a property, by priority: its members in the given order (any {@code null}), the
+     * class chain, the packages.
+     */
+    private static jakarta.json.bind.annotation.JsonbNumberFormat numberFormatOf(
+            Class<?> declaringType, java.lang.reflect.AnnotatedElement... members) {
         var annotation = jakarta.json.bind.annotation.JsonbNumberFormat.class;
-        var ann = setter.getAnnotation(annotation);
-        if (ann == null && getter != null) ann = getter.getAnnotation(annotation);
-        if (ann == null) {
-            String prop = RuntimeBindingRegistry.beanSetterOf(setter);
-            Field f = prop == null ? null : findFieldByName(declaringType, prop);
-            ann = f == null ? null : f.getAnnotation(annotation);
+        jakarta.json.bind.annotation.JsonbNumberFormat ann = null;
+        for (var m : members) {
+            if (ann == null && m != null) ann = m.getAnnotation(annotation);
         }
         for (Class<?> c = declaringType; c != null && c != Object.class && ann == null; c = c.getSuperclass()) {
             ann = c.getAnnotation(annotation);
@@ -972,10 +996,9 @@ final class RuntimeReadRegistry {
     }
 
     /** The format of a {@code @JsonbNumberFormat}: its pattern, or the locale's default one, with its locale. */
-    private static java.text.NumberFormat numberFormat(jakarta.json.bind.annotation.JsonbNumberFormat ann) {
-        String pattern = ann.value();
-        java.util.Locale locale = jakarta.json.bind.annotation.JsonbNumberFormat.DEFAULT_LOCALE.equals(ann.locale())
-                ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(ann.locale());
+    private static java.text.NumberFormat numberFormat(String pattern, String localeTag) {
+        java.util.Locale locale = jakarta.json.bind.annotation.JsonbNumberFormat.DEFAULT_LOCALE.equals(localeTag)
+                ? java.util.Locale.ROOT : java.util.Locale.forLanguageTag(localeTag);
         if ("##default".equals(pattern) || pattern.isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(locale);
             normalizeFrenchGroupSeparator(sym);
@@ -1608,6 +1631,19 @@ final class RuntimeReadRegistry {
         };
     }
 
+    /**
+     * The reader of an array of primitives under the default binary data strategy ({@code BYTE}), or {@code null}
+     * when {@code arrayType} is no such array: for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf}.
+     */
+    static BindingReader primitiveArrayReaderOf(Class<?> arrayType) {
+        Class<?> c = arrayType.getComponentType();
+        if (c == byte.class) return BYTE_ARRAY;
+        return c == null ? null : primitiveArrayReader(c);
+    }
+
+    private static final BindingReader BYTE_ARRAY =
+            parser -> toByteArray(collectArray(parser, q -> { q.next(); return (byte) q.getInt(); }));
+
     /** The reader of an array of a primitive type other than {@code byte}, null for any other component type. */
     private static BindingReader primitiveArrayReader(Class<?> componentType) {
         if (componentType == int.class) {
@@ -1711,7 +1747,7 @@ final class RuntimeReadRegistry {
         if ("BASE_64".equals(s)) return base64Reader(java.util.Base64.getDecoder(), s);
         if ("BASE_64_URL".equals(s)) return base64Reader(java.util.Base64.getUrlDecoder(), s);
         // BYTE (default)
-        return parser -> toByteArray(collectArray(parser, q -> { q.next(); return (byte) q.getInt(); }));
+        return BYTE_ARRAY;
     }
 
     /** Reads a {@code byte[]} from a base64 string, decoded with {@code decoder} ({@code strategy} names it in errors). */
@@ -1910,7 +1946,7 @@ final class RuntimeReadRegistry {
         RecordComponent[] comps = concrete.getRecordComponents();
         Class<?>[] paramTypes = new Class<?>[comps.length];
         BindingReader[] readers = new BindingReader[comps.length];
-        Map<String, Integer> indexByName = componentReaders(comps, paramTypes, readers);
+        Map<String, Integer> indexByName = componentReaders(concrete, comps, paramTypes, readers);
         Constructor<?> ctor;
         try { ctor = concrete.getDeclaredConstructor(paramTypes); }
         catch (NoSuchMethodException e) {
@@ -2035,37 +2071,34 @@ final class RuntimeReadRegistry {
 
 
     /**
-     * Si le composant a {@code @JsonbDateFormat}, retourne un reader custom.
-     * Couvre LocalDate, LocalDateTime, OffsetDateTime, ZonedDateTime, Instant.
+     * The reader of a record component formatted by {@code @JsonbDateFormat} or {@code @JsonbNumberFormat}, on the
+     * accessor or the field (where a component's annotation lands), the record type or its package, as for any
+     * property; empty when no format applies.
      */
-    private static java.util.Optional<BindingReader> customDateReader(RecordComponent c) {
-        var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
-        var fromAccessor = direct == null
-                ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class)
-                : null;
-        var ann = direct != null ? direct : fromAccessor;
-        if (ann == null) return java.util.Optional.empty();
-        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(ann.value());
-        Class<?> raw = c.getType();
-        return java.util.Optional.of(parser -> {
-            JsonParser.Event e = parser.next();
-            if (e == JsonParser.Event.VALUE_NULL) return null;
-            if (e != JsonParser.Event.VALUE_STRING) {
-                throw new JsonbException("@JsonbDateFormat expects a JSON string, got " + e);
-            }
-            return parseFormattedTemporal(raw, parser.getString(), fmt);
-        });
+    private java.util.Optional<BindingReader> componentFormatReader(Class<?> type, RecordComponent c) {
+        Field field = findFieldByName(type, c.getName());
+        Method accessor = c.getAccessor();
+        var annotation = jakarta.json.bind.annotation.JsonbDateFormat.class;
+        java.lang.reflect.AnnotatedElement dateMember = null;
+        if (accessor.isAnnotationPresent(annotation)) dateMember = accessor;
+        else if (field != null && field.isAnnotationPresent(annotation)) dateMember = field;
+        return formatReader(type, c.getType(), dateMember, accessor, field);
     }
 
-    /** A {@code @JsonbDateFormat} value of a record component. */
-    private static Object parseFormattedTemporal(Class<?> raw, String s, java.time.format.DateTimeFormatter fmt) {
-        if (raw == java.time.LocalDate.class) return java.time.LocalDate.parse(s, fmt);
-        if (raw == java.time.LocalDateTime.class) return java.time.LocalDateTime.parse(s, fmt);
-        if (raw == java.time.OffsetDateTime.class) return java.time.OffsetDateTime.parse(s, fmt);
-        if (raw == java.time.ZonedDateTime.class) return java.time.ZonedDateTime.parse(s, fmt);
-        // Instant has no parse(String, DateTimeFormatter): Instant.from reads the parsed fields.
-        if (raw == java.time.Instant.class) return java.time.Instant.from(fmt.parse(s));
-        throw new JsonbException("@JsonbDateFormat unsupported type: " + raw);
+    /**
+     * The reader of a property formatted by {@code @JsonbDateFormat} (on {@code dateMember}, else the type chain or
+     * the packages) or by {@code @JsonbNumberFormat} (on the first of {@code numberMembers} carrying it, else the
+     * type chain or the packages); empty when no format applies.
+     */
+    private static java.util.Optional<BindingReader> formatReader(Class<?> type, Class<?> raw,
+                                                                  java.lang.reflect.AnnotatedElement dateMember,
+                                                                  java.lang.reflect.AnnotatedElement... numberMembers) {
+        if (RuntimeBindingRegistry.isDateLikeType(raw) && raw != java.time.Duration.class
+                && raw != java.time.Period.class) {
+            var spec = RuntimeBindingRegistry.findDateFormatSpec(dateMember, type);
+            if (spec != null) return java.util.Optional.of(makeDateReader(raw, spec));
+        }
+        return java.util.Optional.ofNullable(numberReader(raw, numberFormatOf(type, numberMembers)));
     }
 
     // ===== Customization helpers (M4.4) =====

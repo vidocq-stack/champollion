@@ -20,6 +20,7 @@
 package io.vidocq.champollion.codegen.apt;
 
 import io.vidocq.champollion.codegen.apt.RestBindings.Access;
+import io.vidocq.champollion.codegen.apt.RestBindings.Format;
 import io.vidocq.champollion.codegen.apt.RestBindings.Model;
 import io.vidocq.champollion.codegen.apt.RestBindings.Property;
 
@@ -63,7 +64,7 @@ final class RestBindingEmitter {
     private static final String WITH_EVENT = "(p, e));\n";
     private final Model model;
     private final Map<TypeElement, String> others;
-    /** Leaf codec fields, by the class literal of their type. */
+    /** Leaf codec fields, by the expression creating them. */
     private final Map<String, String> leaves = new LinkedHashMap<>();
     /** Binding fields of the types this one holds, by their binding's name. */
     private final Map<String, String> bindings = new LinkedHashMap<>();
@@ -96,7 +97,7 @@ final class RestBindingEmitter {
                 .append(" implements io.vidocq.champollion.jsonb.spi.JsonbBinding<").append(type).append("> {\n\n");
         for (var e : leaves.entrySet()) {
             out.append("    private static final io.vidocq.champollion.jsonb.spi.JsonbLeaf ").append(e.getValue())
-                    .append(" = io.vidocq.champollion.jsonb.spi.JsonbLeaf.of(").append(e.getKey()).append(");\n");
+                    .append(" = io.vidocq.champollion.jsonb.spi.JsonbLeaf.").append(e.getKey()).append(";\n");
         }
         for (var e : bindings.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
@@ -139,7 +140,7 @@ final class RestBindingEmitter {
         String getter = "value." + p.readMember();
         TypeMirror t = p.type();
         if (t.getKind().isPrimitive()) {
-            out.append(I8).append(key).append(' ').append(leaf(t)).append(WRITE_G).append(getter)
+            out.append(I8).append(key).append(' ').append(leaf(t, p.writeFormat())).append(WRITE_G).append(getter)
                     .append(");\n");
             return;
         }
@@ -155,7 +156,11 @@ final class RestBindingEmitter {
         } else {
             out.append("            if (").append(v).append(" != null) {\n");
             out.append(I16).append(key).append('\n');
-            writeValue(out, v, t, I16);
+            if (p.writeFormat() != null) {
+                out.append(I16).append(leaf(t, p.writeFormat())).append(WRITE_G).append(v).append(");\n");
+            } else {
+                writeValue(out, v, t, I16);
+            }
             out.append("            }");
         }
         if (p.nillable()) out.append(" else { ").append(key).append(" g.writeNull(); }");
@@ -164,8 +169,12 @@ final class RestBindingEmitter {
 
     /** Writes the non-null {@code expr} of type {@code t}. */
     private void writeValue(StringBuilder out, String expr, TypeMirror t, String indent) {
-        if (t.getKind().isPrimitive()) {
+        if (t.getKind().isPrimitive() || RestBindings.isPrimitiveArray(t)) {
             out.append(indent).append(leaf(t)).append(WRITE_G).append(expr).append(");\n");
+            return;
+        }
+        if (t.getKind() == TypeKind.ARRAY) {
+            writeElements(out, expr, ((javax.lang.model.type.ArrayType) t).getComponentType(), indent);
             return;
         }
         DeclaredType d = (DeclaredType) t;
@@ -176,17 +185,7 @@ final class RestBindingEmitter {
         } else if (element.getKind() == ElementKind.ENUM) {
             out.append(indent).append("g.write(").append(expr).append(".name());\n");
         } else if (RestBindings.COLLECTIONS.contains(name)) {
-            TypeMirror elem = d.getTypeArguments().get(0);
-            String e = newVariable();
-            out.append(indent).append("g.writeStartArray();\n");
-            out.append(indent).append("for (").append(render(elem)).append(' ').append(e).append(" : ").append(expr)
-                    .append(") {\n");
-            out.append(indent).append("    if (").append(e).append(" == null) g.writeNull();\n");
-            out.append(indent).append("    else {\n");
-            writeValue(out, e, elem, indent + I8);
-            out.append(indent).append("    }\n");
-            out.append(indent).append("}\n");
-            out.append(indent).append("g.writeEnd();\n");
+            writeElements(out, expr, d.getTypeArguments().get(0), indent);
         } else if (RestBindings.MAP.equals(name)) {
             TypeMirror val = d.getTypeArguments().get(1);
             String e = newVariable();
@@ -203,6 +202,20 @@ final class RestBindingEmitter {
         } else {
             out.append(indent).append(binding(element)).append(WRITE_G).append(expr).append(");\n");
         }
+    }
+
+    /** Writes the elements of the collection or array {@code expr} as a JSON array. */
+    private void writeElements(StringBuilder out, String expr, TypeMirror elem, String indent) {
+        String e = newVariable();
+        out.append(indent).append("g.writeStartArray();\n");
+        out.append(indent).append("for (").append(render(elem)).append(' ').append(e).append(" : ").append(expr)
+                .append(") {\n");
+        out.append(indent).append("    if (").append(e).append(" == null) g.writeNull();\n");
+        out.append(indent).append("    else {\n");
+        writeValue(out, e, elem, indent + I8);
+        out.append(indent).append("    }\n");
+        out.append(indent).append("}\n");
+        out.append(indent).append("g.writeEnd();\n");
     }
 
     // ===== read =====
@@ -261,7 +274,7 @@ final class RestBindingEmitter {
 
     /** Reads the property and stores it through {@code target}, a format with one {@code %s}. */
     private void assignWith(StringBuilder out, Property p, String target) {
-        String reader = reader(p.type());
+        String reader = p.readFormat() != null ? formattedReader(p.type(), p.readFormat()) : reader(p.type());
         if (p.type().getKind().isPrimitive()) {
             // A JSON null cannot go into a primitive: the runtime rejects it, so does the binding.
             String v = newVariable();
@@ -285,9 +298,12 @@ final class RestBindingEmitter {
         StringBuilder r = new StringBuilder();
         r.append("    private static ").append(type).append(' ').append(name)
                 .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n");
-        if (t.getKind().isPrimitive() || RestBindings.LEAVES.contains(RestBindings.erasureName(t))) {
+        if (t.getKind().isPrimitive() || RestBindings.isPrimitiveArray(t)
+                || RestBindings.LEAVES.contains(RestBindings.erasureName(t))) {
             r.append("        return (").append(type).append(") ").append(leaf(t))
                     .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n");
+        } else if (t.getKind() == TypeKind.ARRAY) {
+            readArray(r, ((javax.lang.model.type.ArrayType) t).getComponentType());
         } else {
             DeclaredType d = (DeclaredType) t;
             String erased = RestBindings.erasureName(d);
@@ -339,12 +355,51 @@ final class RestBindingEmitter {
         return name;
     }
 
+    /** The body of a reader of an array of {@code elem}, read as a list first. */
+    private void readArray(StringBuilder r, TypeMirror elem) {
+        String elemReader = reader(elem);
+        r.append(NULL_GIVES_NULL);
+        r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_ARRAY) throw __expected(\"an array\", e);\n");
+        r.append("        java.util.ArrayList<").append(render(elem)).append("> c = new java.util.ArrayList<>();\n");
+        r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_ARRAY) {\n");
+        r.append("            c.add(e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
+                .append(elemReader).append(WITH_EVENT);
+        r.append("        }\n        return c.toArray(new ").append(render(elem)).append("[0]);\n");
+    }
+
     // ===== helpers =====
 
     private String leaf(TypeMirror t) {
-        String literal = (t.getKind().isPrimitive() ? t.getKind().name().toLowerCase(java.util.Locale.ROOT)
+        return leaves.computeIfAbsent("of(" + classLiteral(t) + ")", k -> "__L" + leaves.size());
+    }
+
+    /** The codec of {@code t} under {@code format}, or its plain codec when {@code format} is {@code null}. */
+    private String leaf(TypeMirror t, Format format) {
+        if (format == null) return leaf(t);
+        String factory = (format.date() ? "date(" : "number(") + classLiteral(t) + ", " + lit(format.pattern()) + ", "
+                + lit(format.locale()) + ")";
+        return leaves.computeIfAbsent(factory, k -> "__L" + leaves.size());
+    }
+
+    private static String classLiteral(TypeMirror t) {
+        return (t.getKind().isPrimitive() ? t.getKind().name().toLowerCase(java.util.Locale.ROOT)
                 : RestBindings.erasureName(t)) + ".class";
-        return leaves.computeIfAbsent(literal, k -> "__L" + leaves.size());
+    }
+
+    /** A reader method, like {@link #reader}, of a leaf {@code t} under {@code format}. */
+    private String formattedReader(TypeMirror t, Format format) {
+        String codec = leaf(t, format);
+        String key = codec + ":" + render(t);
+        String existing = readerNames.get(key);
+        if (existing != null) return existing;
+        String name = "__r" + readerNames.size();
+        readerNames.put(key, name);
+        String type = t.getKind().isPrimitive() ? boxed(t) : render(t);
+        readers.append("    private static ").append(type).append(' ').append(name)
+                .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n")
+                .append("        return (").append(type).append(") ").append(codec)
+                .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n    }\n\n");
+        return name;
     }
 
     private String binding(TypeElement element) {
@@ -360,6 +415,7 @@ final class RestBindingEmitter {
     /** The source form of {@code t}, without its type annotations. */
     static String render(TypeMirror t) {
         if (t.getKind().isPrimitive()) return t.getKind().name().toLowerCase(java.util.Locale.ROOT);
+        if (t.getKind() == TypeKind.ARRAY) return render(((javax.lang.model.type.ArrayType) t).getComponentType()) + "[]";
         if (t.getKind() != TypeKind.DECLARED) return t.toString();
         DeclaredType d = (DeclaredType) t;
         String raw = ((TypeElement) d.asElement()).getQualifiedName().toString();

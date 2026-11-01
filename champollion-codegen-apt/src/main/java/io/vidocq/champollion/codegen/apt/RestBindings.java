@@ -59,6 +59,21 @@ final class RestBindings {
     private static final String JSONB_PROPERTY = JSONB_ANNOTATIONS + "JsonbProperty";
     private static final String JSONB_TRANSIENT = JSONB_ANNOTATIONS + "JsonbTransient";
     private static final String JSONB_NILLABLE = JSONB_ANNOTATIONS + "JsonbNillable";
+    private static final String JSONB_DATE_FORMAT = JSONB_ANNOTATIONS + "JsonbDateFormat";
+    private static final String JSONB_NUMBER_FORMAT = JSONB_ANNOTATIONS + "JsonbNumberFormat";
+    /** The JSON-B annotations the generated code implements on a property. */
+    private static final Set<String> PROPERTY_ANNOTATIONS = Set.of(JSONB_PROPERTY, JSONB_TRANSIENT, JSONB_NILLABLE,
+            JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
+    /** The JSON-B annotations the generated code implements on a type or a package: they apply to its properties. */
+    private static final Set<String> TYPE_ANNOTATIONS = Set.of(JSONB_NILLABLE, JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
+    /** The types {@code @JsonbDateFormat} formats (JSON-B 3.0 §3.5; durations and periods stay ISO 8601). */
+    private static final Set<String> FORMATTED_DATES = Set.of("java.time.Instant", "java.time.LocalDate",
+            "java.time.LocalTime", "java.time.LocalDateTime", "java.time.OffsetDateTime", "java.time.OffsetTime",
+            "java.time.ZonedDateTime");
+    /** The types {@code @JsonbNumberFormat} formats, primitives aside. */
+    private static final Set<String> FORMATTED_NUMBERS = Set.of("java.lang.Integer", "java.lang.Long",
+            "java.lang.Double", "java.lang.Float", "java.lang.Short", "java.lang.Byte", "java.math.BigDecimal",
+            "java.math.BigInteger");
     private static final String JSONB_STATIC = "io.vidocq.champollion.jsonb.spi.JsonbStatic";
     private static final String JAVA_LANG_OBJECT = "java.lang.Object";
     private static final String PROPERTY = "property ";
@@ -84,9 +99,15 @@ final class RestBindings {
     /** How a property is read from, or written into, an instance. */
     enum Access { NONE, METHOD, FIELD, COMPONENT }
 
-    /** One JSON property of a modelled type. */
+    /** A {@code @JsonbDateFormat} ({@code date}) or {@code @JsonbNumberFormat} that applies to a property. */
+    record Format(boolean date, String pattern, String locale) {}
+
+    /**
+     * One JSON property of a modelled type; a format, when one applies, may differ on write and on read, where the
+     * runtime looks at the property's members in another order.
+     */
     record Property(String jsonName, TypeMirror type, Access read, String readMember, Access write,
-                    String writeMember, boolean nillable) {}
+                    String writeMember, boolean nillable, Format writeFormat, Format readFormat) {}
 
     /** A type a binding is generated for. */
     record Model(TypeElement type, boolean isRecord, boolean subclassable, List<Property> properties) {
@@ -251,7 +272,7 @@ final class RestBindings {
             return "not compiled with the resources (a dependency's type, or an incremental build)";
         }
         String where = placement(type);
-        if (where == null) where = classAnnotations(type);
+        if (where == null) where = typeAnnotations(type);
         if (where != null) return where;
         List<Property> properties = new ArrayList<>();
         String reason = type.getKind() == ElementKind.RECORD ? recordProperties(type, properties)
@@ -269,11 +290,27 @@ final class RestBindings {
         return null;
     }
 
-    /** A JSON-B annotation on the class itself, which only the runtime implements; {@code null} when none. */
-    private static String classAnnotations(TypeElement type) {
-        return type.getAnnotationMirrors().stream().filter(a -> nameOf(a).startsWith(JSONB_ANNOTATIONS)).findFirst()
-                .map(a -> "the class carries @" + simpleNameOf(a) + ", a customisation only the runtime implements")
-                .orElse(null);
+    /**
+     * A JSON-B annotation on the type, a superclass or one of their packages that only the runtime implements;
+     * {@code null} when none. Those the generated code implements apply to the properties: see {@link #format} and
+     * {@link #nillable}.
+     */
+    private String typeAnnotations(TypeElement type) {
+        for (TypeElement level : hierarchy(type)) {
+            String onType = unsupportedAnnotation(level.getAnnotationMirrors());
+            if (onType != null) return (level == type ? "the class" : "superclass " + level.getQualifiedName())
+                    + " carries " + onType;
+            PackageElement pkg = env.getElementUtils().getPackageOf(level);
+            String onPackage = unsupportedAnnotation(pkg.getAnnotationMirrors());
+            if (onPackage != null) return "package " + pkg.getQualifiedName() + " carries " + onPackage;
+        }
+        return null;
+    }
+
+    private static String unsupportedAnnotation(List<? extends AnnotationMirror> annotations) {
+        return annotations.stream().filter(a -> nameOf(a).startsWith(JSONB_ANNOTATIONS))
+                .filter(a -> !TYPE_ANNOTATIONS.contains(nameOf(a))).findFirst()
+                .map(a -> "@" + simpleNameOf(a) + ", a customisation only the runtime implements").orElse(null);
     }
 
     /** Two properties with one JSON name, or a property type the generated code cannot map; {@code null} when none. */
@@ -319,8 +356,14 @@ final class RestBindings {
             String name = component.getSimpleName().toString();
             // A transient component is not a JSON property: the emitter passes its default to the constructor.
             if (isTransient(members)) continue;
+            // The runtime looks at the accessor, then at the field, where the component's annotations land.
+            Element field = ElementFilter.fieldsIn(type.getEnclosedElements()).stream()
+                    .filter(f -> f.getSimpleName().contentEquals(name)).<Element>map(f -> f).findFirst()
+                    .orElse(component);
+            List<Element> lookup = present(component.getAccessor(), field);
+            Format format = format(type, component.asType(), lookup);
             properties.add(new Property(jsonName(members, name), component.asType(), Access.METHOD, name + "()",
-                    Access.COMPONENT, name, hasAnnotation(members, JSONB_NILLABLE)));
+                    Access.COMPONENT, name, nillable(type, lookup), format, format));
         }
         return null;
     }
@@ -333,7 +376,7 @@ final class RestBindings {
         // within a class.
         for (TypeElement level : hierarchy(type)) {
             List<Property> own = new ArrayList<>();
-            String reason = levelProperties(level, own);
+            String reason = levelProperties(type, level, own);
             if (reason != null) return reason;
             for (Property p : own) {
                 if (!seen.add(p.jsonName())) {
@@ -347,7 +390,7 @@ final class RestBindings {
     }
 
     /** The JSON-B properties {@code level} declares itself. */
-    private String levelProperties(TypeElement level, List<Property> own) {
+    private String levelProperties(TypeElement owner, TypeElement level, List<Property> own) {
         Map<String, VariableElement> fields = new LinkedHashMap<>();
         for (VariableElement f : ElementFilter.fieldsIn(level.getEnclosedElements())) {
             if (!f.getModifiers().contains(Modifier.STATIC)) fields.put(f.getSimpleName().toString(), f);
@@ -367,7 +410,7 @@ final class RestBindings {
                 return PROPERTY + name + " has a public field and a non-public accessor; JSON-B's visibility rules"
                         + " for it are left to the runtime";
             }
-            String reason = classProperty(m, own);
+            String reason = classProperty(owner, m, own);
             if (reason != null) return reason;
         }
         return null;
@@ -510,7 +553,7 @@ final class RestBindings {
     }
 
     /** Adds the property {@code m} describes, if JSON-B sees one; {@code null}, or why it cannot be mapped. */
-    private String classProperty(Members m, List<Property> properties) {
+    private String classProperty(TypeElement owner, Members m, List<Property> properties) {
         boolean transientField = m.field() != null && m.field().getModifiers().contains(Modifier.TRANSIENT);
         if (transientField && (m.getter() != null || m.setter() != null || m.publicField())) {
             return "field " + m.name() + " is transient; JSON-B leaves its meaning to the implementation";
@@ -520,6 +563,8 @@ final class RestBindings {
         if (!sameTypes(t, m)) return PROPERTY + m.name() + " has different types on its field and accessors";
         List<Element> members = m.all();
         String annotations = jsonbAnnotations(members);
+        if (annotations == null) annotations = interfaceAnnotations(owner, m.getter());
+        if (annotations == null) annotations = interfaceAnnotations(owner, m.setter());
         if (annotations != null) return PROPERTY + m.name() + ": " + annotations;
         if (isTransient(members)) {
             boolean everywhere = members.stream().allMatch(e -> hasAnnotation(e, JSONB_TRANSIENT));
@@ -527,9 +572,116 @@ final class RestBindings {
             return everywhere || onField ? null
                     : PROPERTY + m.name() + " is @JsonbTransient on part of its members only";
         }
+        // On write, the runtime looks at the getter then the field; on read, at the setter, the getter, the field.
+        List<Element> writeLookup = present(m.getter(), m.field());
+        List<Element> readLookup = present(m.setter(), m.getter(), m.field());
         properties.add(new Property(jsonName(members, m.name()), t, m.read(), m.readMember(), m.write(),
-                m.writeMember(), hasAnnotation(members, JSONB_NILLABLE)));
+                m.writeMember(), nillable(owner, writeLookup), format(owner, t, writeLookup),
+                format(owner, t, readLookup)));
         return null;
+    }
+
+    /**
+     * A JSON-B annotation on an interface method {@code accessor} implements, which the runtime would apply; the
+     * generated code does not look there. {@code null} when none.
+     */
+    private String interfaceAnnotations(TypeElement owner, ExecutableElement accessor) {
+        if (accessor == null) return null;
+        Deque<TypeMirror> todo = new ArrayDeque<>();
+        for (TypeElement level : hierarchy(owner)) todo.addAll(level.getInterfaces());
+        while (!todo.isEmpty()) {
+            TypeElement i = (TypeElement) ((DeclaredType) todo.poll()).asElement();
+            todo.addAll(i.getInterfaces());
+            for (ExecutableElement im : ElementFilter.methodsIn(i.getEnclosedElements())) {
+                boolean annotated = im.getAnnotationMirrors().stream()
+                        .anyMatch(a -> nameOf(a).startsWith(JSONB_ANNOTATIONS));
+                if (annotated && env.getElementUtils().overrides(accessor, im, owner)) {
+                    return "the interface method " + i.getQualifiedName() + "." + im.getSimpleName()
+                            + "() it implements carries JSON-B annotations";
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<Element> present(Element... members) {
+        return java.util.Arrays.stream(members).filter(java.util.Objects::nonNull).toList();
+    }
+
+    /**
+     * The format that applies to a property of {@code owner} whose type takes one: on the first of {@code lookup}
+     * carrying it, else on {@code owner} or its closest superclass carrying it, else on the package of one of them —
+     * the runtime's order. {@code null} when none applies.
+     */
+    private Format format(TypeElement owner, TypeMirror type, List<Element> lookup) {
+        String name = type.getKind().isPrimitive() ? null : erasureName(type);
+        boolean date = name != null && FORMATTED_DATES.contains(name);
+        boolean number = name == null ? isFormattedPrimitive(type) : FORMATTED_NUMBERS.contains(name);
+        if (!date && !number) return null;
+        AnnotationMirror a = applying(owner, lookup, date ? JSONB_DATE_FORMAT : JSONB_NUMBER_FORMAT);
+        if (a == null) return null;
+        String pattern = "##default";
+        String locale = "##default";
+        for (var e : env.getElementUtils().getElementValuesWithDefaults(a).entrySet()) {
+            String key = e.getKey().getSimpleName().toString();
+            if (key.equals("value")) pattern = (String) e.getValue().getValue();
+            else if (key.equals("locale")) locale = (String) e.getValue().getValue();
+        }
+        return new Format(date, pattern, locale);
+    }
+
+    private static boolean isFormattedPrimitive(TypeMirror type) {
+        return switch (type.getKind()) {
+            case INT, LONG, DOUBLE, FLOAT, SHORT, BYTE -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Whether a null value of the property is written: {@code @JsonbNillable} or {@code @JsonbProperty(nillable =
+     * true)} on the first of {@code lookup} carrying one, else {@code @JsonbNillable} on {@code owner}, a
+     * superclass or one of their packages; else not.
+     */
+    private boolean nillable(TypeElement owner, List<Element> lookup) {
+        for (Element m : lookup) {
+            for (AnnotationMirror a : m.getAnnotationMirrors()) {
+                if (JSONB_NILLABLE.equals(nameOf(a))) return booleanValue(a, "value");
+            }
+            for (AnnotationMirror a : m.getAnnotationMirrors()) {
+                if (JSONB_PROPERTY.equals(nameOf(a)) && booleanValue(a, "nillable")) return true;
+            }
+        }
+        AnnotationMirror a = applying(owner, List.of(), JSONB_NILLABLE);
+        return a != null && booleanValue(a, "value");
+    }
+
+    private boolean booleanValue(AnnotationMirror a, String element) {
+        for (var e : env.getElementUtils().getElementValuesWithDefaults(a).entrySet()) {
+            if (e.getKey().getSimpleName().contentEquals(element)) return (Boolean) e.getValue().getValue();
+        }
+        return false;
+    }
+
+    /** The {@code annotation} on the first of {@code lookup}, else up {@code owner}'s classes, else their packages. */
+    private AnnotationMirror applying(TypeElement owner, List<Element> lookup, String annotation) {
+        for (Element m : lookup) {
+            AnnotationMirror a = annotationOf(m, annotation);
+            if (a != null) return a;
+        }
+        List<TypeElement> chain = hierarchy(owner).reversed();
+        for (TypeElement level : chain) {
+            AnnotationMirror a = annotationOf(level, annotation);
+            if (a != null) return a;
+        }
+        for (TypeElement level : chain) {
+            AnnotationMirror a = annotationOf(env.getElementUtils().getPackageOf(level), annotation);
+            if (a != null) return a;
+        }
+        return null;
+    }
+
+    private static AnnotationMirror annotationOf(Element e, String annotation) {
+        return e.getAnnotationMirrors().stream().filter(a -> annotation.equals(nameOf(a))).findFirst().orElse(null);
     }
 
     private boolean sameTypes(TypeMirror t, Members m) {
@@ -541,8 +693,9 @@ final class RestBindings {
     /** Whether {@code type} is mapped by the generated code; {@code null} when it is, else why not. */
     private String supported(TypeMirror type) {
         if (type.getKind().isPrimitive()) return null;
+        if (type.getKind() == TypeKind.ARRAY) return supportedArray((javax.lang.model.type.ArrayType) type);
         if (type.getKind() != TypeKind.DECLARED) {
-            return TYPE + type + " (arrays, type variables and wildcards are left to the runtime)";
+            return TYPE + type + " (type variables and wildcards are left to the runtime)";
         }
         DeclaredType declared = (DeclaredType) type;
         String name = erasureName(declared);
@@ -555,6 +708,22 @@ final class RestBindings {
             return "a map whose keys are not String";
         }
         return supportedElement(args.get(1));
+    }
+
+    /** An array of primitives, or of what a container may hold but a generic type (Java creates no such array). */
+    private String supportedArray(javax.lang.model.type.ArrayType array) {
+        TypeMirror component = array.getComponentType();
+        if (component.getKind().isPrimitive()) return null;
+        if (component.getKind() == TypeKind.DECLARED && !((DeclaredType) component).getTypeArguments().isEmpty()) {
+            return "an array of the generic type " + component;
+        }
+        return supportedElement(component);
+    }
+
+    /** Whether {@code type} is an array of primitives, which {@code JsonbLeaf} maps. */
+    static boolean isPrimitiveArray(TypeMirror type) {
+        return type.getKind() == TypeKind.ARRAY
+                && ((javax.lang.model.type.ArrayType) type).getComponentType().getKind().isPrimitive();
     }
 
     /** A value a container holds, or a single value: a leaf, an enum, or a type that gets a binding. */
@@ -622,6 +791,9 @@ final class RestBindings {
 
     /** Every declared type {@code type} names, itself and its type arguments, recursively. */
     private static List<TypeElement> declaredTypes(TypeMirror type) {
+        if (type.getKind() == TypeKind.ARRAY) {
+            return declaredTypes(((javax.lang.model.type.ArrayType) type).getComponentType());
+        }
         List<TypeElement> found = new ArrayList<>();
         if (type.getKind() != TypeKind.DECLARED) return found;
         DeclaredType declared = (DeclaredType) type;
@@ -643,6 +815,9 @@ final class RestBindings {
 
     /** The record and class types a property type refers to directly or as a container's argument. */
     static List<TypeElement> referencedTypes(TypeMirror type) {
+        if (type.getKind() == TypeKind.ARRAY) {
+            return referencedTypes(((javax.lang.model.type.ArrayType) type).getComponentType());
+        }
         List<TypeElement> found = new ArrayList<>();
         if (type.getKind() != TypeKind.DECLARED) return found;
         DeclaredType declared = (DeclaredType) type;
@@ -682,13 +857,12 @@ final class RestBindings {
         return env.getTypeUtils().isSameType(a, b);
     }
 
-    /** The JSON-B annotations of {@code members} other than the three the generated code implements, or null. */
+    /** The JSON-B annotations of {@code members} other than those the generated code implements, or null. */
     private static String jsonbAnnotations(List<Element> members) {
         for (Element m : members) {
             for (AnnotationMirror a : m.getAnnotationMirrors()) {
                 String n = nameOf(a);
-                if (n.startsWith(JSONB_ANNOTATIONS) && !n.equals(JSONB_PROPERTY) && !n.equals(JSONB_TRANSIENT)
-                        && !n.equals(JSONB_NILLABLE)) {
+                if (n.startsWith(JSONB_ANNOTATIONS) && !PROPERTY_ANNOTATIONS.contains(n)) {
                     return "@" + simpleNameOf(a) + ", a customisation only the runtime implements";
                 }
             }

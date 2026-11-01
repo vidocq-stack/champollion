@@ -28,10 +28,10 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 /**
- * The codec of a type JSON-B maps natively (numbers, text, {@code java.time}, {@code UUID}, {@code URI}…), as the
- * runtime maps it under the default configuration. A generated {@link JsonbBinding} writes the structure of its type
- * and hands each such value to one of these, so its output is the runtime's, character for character, and it needs
- * no reflection.
+ * The codec of a type JSON-B maps natively (numbers, text, {@code java.time}, {@code UUID}, {@code URI}, arrays of
+ * primitives…), as the runtime maps it under the default configuration. A generated {@link JsonbBinding} writes the
+ * structure of its type and hands each such value to one of these, so its output is the runtime's, character for
+ * character, and it needs no reflection.
  *
  * <p>Create one per property type in a static field: the lookup is done once.</p>
  */
@@ -57,6 +57,31 @@ public final class JsonbLeaf {
             throw new IllegalArgumentException(type.getName() + " is not a type JSON-B maps natively");
         }
         return new JsonbLeaf(w, r);
+    }
+
+    /**
+     * The codec of a date-like {@code type} ({@code java.time}, {@code Date}, {@code Calendar}) carrying
+     * {@code @JsonbDateFormat(value = pattern, locale = locale)}, on its property, its type or its package.
+     *
+     * @throws IllegalArgumentException when {@code type} takes no date format
+     */
+    public static JsonbLeaf date(Class<?> type, String pattern, String locale) {
+        if (!LeafCodecs.isDateLike(type)) {
+            throw new IllegalArgumentException(type.getName() + " takes no @JsonbDateFormat");
+        }
+        return new JsonbLeaf(LeafCodecs.dateWriter(type, pattern, locale), LeafCodecs.dateReader(type, pattern, locale));
+    }
+
+    /**
+     * The codec of a number {@code type}, primitive or not, carrying
+     * {@code @JsonbNumberFormat(value = pattern, locale = locale)}, on its property, its type or its package.
+     *
+     * @throws IllegalArgumentException when {@code type} is no number
+     */
+    public static JsonbLeaf number(Class<?> type, String pattern, String locale) {
+        Function<JsonParser, Object> r = LeafCodecs.numberReader(type, pattern, locale);
+        if (r == null) throw new IllegalArgumentException(type.getName() + " takes no @JsonbNumberFormat");
+        return new JsonbLeaf(LeafCodecs.numberWriter(pattern, locale), r);
     }
 
     /** Writes {@code value}, not {@code null}, as the runtime does. */

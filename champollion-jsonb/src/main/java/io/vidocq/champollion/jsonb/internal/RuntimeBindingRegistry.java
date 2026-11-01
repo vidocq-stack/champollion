@@ -374,16 +374,15 @@ final class RuntimeBindingRegistry {
         for (boolean x : (boolean[]) v) g.write(x);
         g.writeEnd();
     };
+    /** The writers of the arrays of primitives but {@code byte}, by component type. */
+    private static final java.util.Map<Class<?>, BindingWriter> PRIMITIVE_ARRAYS = java.util.Map.of(
+            int.class, INT_ARRAY, long.class, LONG_ARRAY, double.class, DOUBLE_ARRAY, float.class, FLOAT_ARRAY,
+            short.class, SHORT_ARRAY, char.class, CHAR_ARRAY, boolean.class, BOOLEAN_ARRAY);
 
     private BindingWriter arrayWriter(Class<?> componentType) {
         if (componentType == byte.class) return byteArrayWriter();
-        if (componentType == int.class) return INT_ARRAY;
-        if (componentType == long.class) return LONG_ARRAY;
-        if (componentType == double.class) return DOUBLE_ARRAY;
-        if (componentType == float.class) return FLOAT_ARRAY;
-        if (componentType == short.class) return SHORT_ARRAY;
-        if (componentType == char.class) return CHAR_ARRAY;
-        if (componentType == boolean.class) return BOOLEAN_ARRAY;
+        BindingWriter primitives = PRIMITIVE_ARRAYS.get(componentType);
+        if (primitives != null) return primitives;
         BindingWriter elem = writerFor(componentType);
         return (g, v) -> {
             g.writeStartArray();
@@ -403,6 +402,22 @@ final class RuntimeBindingRegistry {
      *   <li>BASE_64_URL: URL-safe base64 string without padding</li>
      * </ul>
      */
+    /**
+     * The writer of an array of primitives under the default binary data strategy ({@code BYTE}), or {@code null}
+     * when {@code arrayType} is no such array: for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf}.
+     */
+    static BindingWriter primitiveArrayWriter(Class<?> arrayType) {
+        Class<?> c = arrayType.getComponentType();
+        if (c == null || !c.isPrimitive()) return null;
+        return c == byte.class ? BYTE_ARRAY : PRIMITIVE_ARRAYS.get(c);
+    }
+
+    private static final BindingWriter BYTE_ARRAY = (g, v) -> {
+        g.writeStartArray();
+        for (byte b : (byte[]) v) g.write(b);
+        g.writeEnd();
+    };
+
     private BindingWriter byteArrayWriter() {
         String s = binaryDataStrategy;
         if ("BASE_64".equals(s)) {
@@ -412,11 +427,7 @@ final class RuntimeBindingRegistry {
             return (g, v) -> g.write(java.util.Base64.getUrlEncoder().encodeToString((byte[]) v));
         }
         // BYTE by default
-        return (g, v) -> {
-            g.writeStartArray();
-            for (byte b : (byte[]) v) g.write(b);
-            g.writeEnd();
-        };
+        return BYTE_ARRAY;
     }
 
     private BindingWriter collectionWriter(BindingWriter elem) {
@@ -476,13 +487,8 @@ final class RuntimeBindingRegistry {
             if (isJsonbTransient(c)) continue;
             Method accessor = c.getAccessor();
             String name = jsonbName(c, c.getName());
-            boolean nillable = isJsonbNillable(c) || writeNullValues;
-            // M4.4f: @JsonbTypeAdapter → apply the adapter before writing.
-            // M4.4d: @JsonbDateFormat on component > M4.7 global JSONB_DATE_FORMAT > runtime ISO.
-            BindingWriter w = customAdapterWriter(c)
-                    .or(() -> customDateWriter(c))
-                    .or(() -> globalDateWriter(c.getType()))
-                    .orElseGet(() -> memberWriter(c.getGenericType()));
+            boolean nillable = componentNillable(type, c);
+            BindingWriter w = componentWriter(type, c);
             // P6.1 — prefer LambdaMetafactory; fallback to reflection setAccessible.
             Accessor acc = tryLambdaAccessor(type, accessor.getName(), c.getType());
             if (acc == null) {
@@ -606,6 +612,10 @@ final class RuntimeBindingRegistry {
         if (!isNumericType(rawType)) return java.util.Optional.empty();
         var spec = findNumberFormatSpec(member, declaringType);
         if (spec == null) return java.util.Optional.empty();
+        return java.util.Optional.of(numberWriter(spec));
+    }
+
+    private static BindingWriter numberWriter(NumberFormatSpec spec) {
         java.text.NumberFormat fmt;
         if (DEFAULT_FORMAT.equals(spec.pattern()) || spec.pattern().isEmpty()) {
             var sym = java.text.DecimalFormatSymbols.getInstance(spec.locale());
@@ -616,10 +626,24 @@ final class RuntimeBindingRegistry {
             normalizeFrenchGroupSeparator(sym);
             fmt = new java.text.DecimalFormat(spec.pattern(), sym);
         }
-        return java.util.Optional.of((g, value) -> {
+        return (g, value) -> {
             if (value == null) g.writeNull();
-            else g.write(fmt.format(value));
-        });
+            // A NumberFormat is not thread-safe: each write formats with its own copy.
+            else g.write(((java.text.NumberFormat) fmt.clone()).format(value));
+        };
+    }
+
+    /**
+     * The writer of a date-like type under {@code @JsonbDateFormat(value = pattern, locale = locale)}, as a property
+     * carrying it is written: for {@link io.vidocq.champollion.jsonb.spi.JsonbLeaf}.
+     */
+    static BindingWriter formattedDateWriter(Class<?> type, String pattern, String locale) {
+        return makeDateWriter(type, dateFormatSpec(pattern, locale));
+    }
+
+    /** The writer of a number under {@code @JsonbNumberFormat(value = pattern, locale = locale)}. */
+    static BindingWriter formattedNumberWriter(String pattern, String locale) {
+        return numberWriter(new NumberFormatSpec(pattern, parseLocale(locale)));
     }
 
     /**
@@ -715,7 +739,12 @@ final class RuntimeBindingRegistry {
 
     static DateFormatSpec findDateFormatSpec(java.lang.reflect.AnnotatedElement member, Class<?> declaringType) {
         var ann = formatAnnotation(member, declaringType, jakarta.json.bind.annotation.JsonbDateFormat.class);
-        return ann == null ? null : new DateFormatSpec(ann.value(), parseLocale(ann.locale()));
+        return ann == null ? null : dateFormatSpec(ann.value(), ann.locale());
+    }
+
+    /** The format of {@code @JsonbDateFormat(value = pattern, locale = locale)}. */
+    static DateFormatSpec dateFormatSpec(String pattern, String locale) {
+        return new DateFormatSpec(pattern, parseLocale(locale));
     }
 
     private static java.util.Locale parseLocale(String tag) {
@@ -745,7 +774,7 @@ final class RuntimeBindingRegistry {
         return false;
     }
 
-    private BindingWriter makeDateWriter(Class<?> rawType, DateFormatSpec spec) {
+    private static BindingWriter makeDateWriter(Class<?> rawType, DateFormatSpec spec) {
         if (java.util.Date.class.isAssignableFrom(rawType)) return utilDateWriter(spec);
         if (java.util.Calendar.class.isAssignableFrom(rawType)) return calendarWriter(spec);
         // Duration / Period: fixed ISO 8601 format — DateTimeFormatter patterns do not apply.
@@ -821,27 +850,25 @@ final class RuntimeBindingRegistry {
     }
 
     /**
-     * If the component has {@code @JsonbDateFormat}, returns a writer that formats
-     * the value via {@link java.time.format.DateTimeFormatter#ofPattern}. Otherwise empty.
+     * The writer of a record component, a property like any other: {@code @JsonbTypeAdapter}, else
+     * {@code @JsonbDateFormat} or {@code @JsonbNumberFormat} on the accessor or the field (where a component's
+     * annotation lands), the record type or its package, else the config's date format, else the type's writer.
      */
-    private static java.util.Optional<BindingWriter> customDateWriter(RecordComponent c) {
-        var direct = c.getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class);
-        var fromAccessor = direct == null
-                ? c.getAccessor().getAnnotation(jakarta.json.bind.annotation.JsonbDateFormat.class)
-                : null;
-        var ann = direct != null ? direct : fromAccessor;
-        if (ann == null) return java.util.Optional.empty();
-        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern(ann.value());
-        Class<?> rawType = c.getType();
-        return java.util.Optional.of((g, value) -> {
-            // Delegates to TemporalAccessor.format when applicable.
-            if (value == null) { g.writeNull(); return; }
-            if (value instanceof java.time.temporal.TemporalAccessor t) {
-                g.write(fmt.format(t));
-            } else {
-                throw new JsonbException("@JsonbDateFormat applied to non-temporal type: " + rawType);
-            }
-        });
+    private BindingWriter componentWriter(Class<?> type, RecordComponent c) {
+        Method accessor = c.getAccessor();
+        Field field = findFieldByName(type, c.getName());
+        var memberForDate = annotatedMember(accessor, field, jakarta.json.bind.annotation.JsonbDateFormat.class);
+        var memberForNumber = annotatedMember(accessor, field, jakarta.json.bind.annotation.JsonbNumberFormat.class);
+        return customAdapterWriter(c)
+                .or(() -> dateWriter(c.getType(), memberForDate, type))
+                .or(() -> globalDateWriter(c.getType()))
+                .or(() -> numberWriter(c.getType(), memberForNumber, type))
+                .orElseGet(() -> memberWriter(c.getGenericType()));
+    }
+
+    /** Whether a null component is written: its accessor or field, else the record type, its package, the config. */
+    private boolean componentNillable(Class<?> type, RecordComponent c) {
+        return computeNillable(c.getAccessor(), findFieldByName(type, c.getName()), type);
     }
 
     private BindingWriter resolvePojo(Class<?> type) {
@@ -1577,11 +1604,8 @@ final class RuntimeBindingRegistry {
                 }
             }
             String name = jsonbName(c, c.getName());
-            boolean nillable = isJsonbNillable(c) || writeNullValues;
-            BindingWriter w = customAdapterWriter(c)
-                    .or(() -> customDateWriter(c))
-                    .or(() -> globalDateWriter(c.getType()))
-                    .orElseGet(() -> memberWriter(c.getGenericType()));
+            boolean nillable = componentNillable(type, c);
+            BindingWriter w = componentWriter(type, c);
             props.add(new Property(name, acc, w, nillable));
         }
         return props;
@@ -1634,16 +1658,6 @@ final class RuntimeBindingRegistry {
         if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class)) return true;
         Method accessor = c.getAccessor();
         return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbTransient.class);
-    }
-
-    /**
-     * True if the component or its accessor carries {@code @JsonbNillable}.
-     * Spec §4.3.3: forces writing the member even when its value is null.
-     */
-    private static boolean isJsonbNillable(RecordComponent c) {
-        if (c.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class)) return true;
-        Method accessor = c.getAccessor();
-        return accessor.isAnnotationPresent(jakarta.json.bind.annotation.JsonbNillable.class);
     }
 
     /** Renaming via {@code @JsonbProperty(name)} on a component; fallback {@code defaultName}. */

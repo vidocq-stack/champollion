@@ -624,3 +624,52 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Vérification** : `RestBindingsTest` (POJO hierarchy written and read as the runtime, a subclass under its declared
   type and as the root, a public accessor inherited from a private class, an overridden getter and an abstract class
   kept on the runtime with their note).
+
+## BUG-20261101-05 — APT: the generated bindings missed the JSON-B annotations of a package or a superclass
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-formats-creators`)
+- **Module touché** : `champollion-codegen-apt` (`RestBindings`)
+- **Symptôme** : the processor looked only at the class itself for type-level JSON-B annotations. A `package-info`
+  carrying `@JsonbNillable`, `@JsonbDateFormat` or `@JsonbVisibility`, or a superclass carrying one, changed what the
+  runtime wrote, but the generated binding ignored it: the two diverged.
+- **Repro minimal** : `@JsonbNillable package shop;` + `record Book(String note)` returned by a resource: the runtime
+  writes `{"note":null}`, the binding `{}`.
+- **Cause** : `classAnnotations` checked `type.getAnnotationMirrors()` only.
+- **Correctif** : every class of the hierarchy and their packages are checked; `@JsonbNillable`, `@JsonbDateFormat`
+  and `@JsonbNumberFormat` there are implemented (they apply to the properties, in the runtime's lookup order), any
+  other JSON-B annotation keeps the runtime mapping with a note. An annotated interface method a getter implements
+  keeps the runtime too. `@JsonbNillable(false)` and `@JsonbProperty(nillable = true)` on a member are honoured.
+- **Vérification** : `RestBindingsCustomisationsTest` (package `@JsonbNillable`/`@JsonbDateFormat`, package
+  `@JsonbVisibility`, superclass `@JsonbPropertyOrder`, annotated interface method).
+
+## BUG-20261101-06 — JSON-B: record components and public fields ignored part of the format annotations
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-formats-creators`)
+- **Module touché** : `champollion-jsonb` (`RuntimeBindingRegistry`, `RuntimeReadRegistry`)
+- **Symptôme** : a record component took `@JsonbDateFormat` from its accessor only: not from the record type or its
+  package, and `@JsonbNumberFormat` not at all; its read ignored the format's locale; `@JsonbNillable` on the record
+  type or package was ignored. A public field without a setter was written with its format but read without it.
+- **Repro minimal** : `@JsonbDateFormat("dd/MM/yyyy") record Dated(LocalDate on)` writes `{"on":"1862-04-03"}`;
+  `record Priced(@JsonbNumberFormat("#0.00") BigDecimal amount)` writes `{"amount":1.50}`; a class with
+  `@JsonbDateFormat("dd/MM/yyyy") public LocalDate on;` cannot read back what it writes.
+- **Cause** : records had their own date writer and reader (`customDateWriter`/`customDateReader`), and the field
+  reader skipped the format lookup.
+- **Correctif** : a record component goes through the bean lookup (accessor or field, then the type chain, then the
+  packages) for both formats and nillability; the field reader applies the formats.
+- **Vérification** : `RecordCustomisationsTest`; JSON-B 3.0 TCK unchanged (295 run, 0 failures, 0 errors, 5 skipped).
+
+## BUG-20261101-07 — JSON-B: a `@JsonbNumberFormat` was shared across threads
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-formats-creators`)
+- **Module touché** : `champollion-jsonb`
+- **Symptôme** : concurrent writes or reads of a property under `@JsonbNumberFormat` could produce or parse wrong
+  numbers.
+- **Repro minimal** : 2,000 virtual threads writing and reading a bean whose `double` getter carries
+  `@JsonbNumberFormat("#,##0.00")`: some round trips give another number.
+- **Cause** : the writer and the reader built one `DecimalFormat` per property and used it from every thread;
+  `DecimalFormat` is not thread-safe.
+- **Correctif** : each write and read formats with its own copy (`clone()`) of the prepared format.
+- **Vérification** : `RecordCustomisationsTest.aNumberFormatIsSafeAcrossThreads` (red before, green after).

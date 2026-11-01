@@ -63,39 +63,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RestBindingsTest {
 
-    /** The JAX-RS annotations the processor looks for, as sources: Champollion does not depend on the API. */
-    private static final Map<String, String> JAXRS = Map.of(
-            "jakarta.ws.rs.HttpMethod", """
-                    package jakarta.ws.rs;
-                    import java.lang.annotation.*;
-                    @Target(ElementType.ANNOTATION_TYPE) @Retention(RetentionPolicy.RUNTIME)
-                    public @interface HttpMethod { String value(); }
-                    """,
-            "jakarta.ws.rs.Path", """
-                    package jakarta.ws.rs;
-                    import java.lang.annotation.*;
-                    @Target({ElementType.TYPE, ElementType.METHOD}) @Retention(RetentionPolicy.RUNTIME)
-                    public @interface Path { String value(); }
-                    """,
-            "jakarta.ws.rs.GET", """
-                    package jakarta.ws.rs;
-                    import java.lang.annotation.*;
-                    @Target(ElementType.METHOD) @Retention(RetentionPolicy.RUNTIME) @HttpMethod("GET")
-                    public @interface GET {}
-                    """,
-            "jakarta.ws.rs.POST", """
-                    package jakarta.ws.rs;
-                    import java.lang.annotation.*;
-                    @Target(ElementType.METHOD) @Retention(RetentionPolicy.RUNTIME) @HttpMethod("POST")
-                    public @interface POST {}
-                    """,
-            "jakarta.ws.rs.PathParam", """
-                    package jakarta.ws.rs;
-                    import java.lang.annotation.*;
-                    @Target(ElementType.PARAMETER) @Retention(RetentionPolicy.RUNTIME)
-                    public @interface PathParam { String value(); }
-                    """);
-
     private static final Map<String, String> SHOP = Map.ofEntries(
             Map.entry("shop.BookResource", """
                     package shop;
@@ -164,8 +131,15 @@ class RestBindingsTest {
                     """),
             Map.entry("shop.Dated", """
                     package shop;
-                    import jakarta.json.bind.annotation.JsonbDateFormat;
-                    public record Dated(@JsonbDateFormat("dd/MM/yyyy") java.time.LocalDate day) {}
+                    import jakarta.json.bind.annotation.JsonbTypeAdapter;
+                    public record Dated(@JsonbTypeAdapter(DayAdapter.class) java.time.LocalDate day) {}
+                    """),
+            Map.entry("shop.DayAdapter", """
+                    package shop;
+                    public class DayAdapter implements jakarta.json.bind.adapter.JsonbAdapter<java.time.LocalDate, String> {
+                        public String adaptToJson(java.time.LocalDate d) { return d.toString(); }
+                        public java.time.LocalDate adaptFromJson(String s) { return java.time.LocalDate.parse(s); }
+                    }
                     """),
             Map.entry("shop.Shelf", """
                     package shop;
@@ -282,84 +256,40 @@ class RestBindingsTest {
                     public record Ignored(String x) {}
                     """));
 
-    private static Path out;
-    private static URLClassLoader loader;
-    private static final List<String> notes = new ArrayList<>();
+    private static GeneratedBindings shop;
     private static Jsonb runtime;
+    private static List<String> notes;
 
     @BeforeAll
     static void compileTheShop(@TempDir Path tmp) throws Exception {
-        out = tmp.resolve("out");
-        Files.createDirectories(out);
-        var compiler = ToolProvider.getSystemJavaCompiler();
-        var diagnostics = new DiagnosticCollector<JavaFileObject>();
-        var fm = compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8);
-        List<JavaFileObject> sources = new ArrayList<>();
-        Map<String, String> all = new LinkedHashMap<>(JAXRS);
-        all.putAll(SHOP);
-        all.forEach((fqn, source) -> sources.add(new SimpleJavaFileObject(
-                URI.create("string:///" + fqn.replace('.', '/') + JavaFileObject.Kind.SOURCE.extension),
-                JavaFileObject.Kind.SOURCE) {
-            @Override public CharSequence getCharContent(boolean ignore) { return source; }
-        }));
-        String cp = System.getProperty("java.class.path");
-        String mp = System.getProperty("jdk.module.path", "");
-        boolean ok = compiler.getTask(null, fm, diagnostics,
-                List.of("-d", out.toString(), "--release", "25",
-                        "-cp", mp.isEmpty() ? cp : cp + java.io.File.pathSeparator + mp,
-                        "-processor", JsonbStaticProcessor.class.getName()),
-                null, sources).call();
-        fm.close();
-        for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
-            if (d.getKind() == Diagnostic.Kind.NOTE) notes.add(d.getMessage(null));
-        }
-        assertTrue(ok, () -> "compilation must succeed: " + diagnostics.getDiagnostics());
-        loader = new URLClassLoader(new URL[] {out.toUri().toURL()}, RestBindingsTest.class.getClassLoader());
-        // The test's loader does not see the generated services file: this Jsonb maps every type by introspection.
-        runtime = JsonbBuilder.create();
+        shop = GeneratedBindings.compile(tmp, SHOP);
+        runtime = shop.runtime();
+        notes = shop.notes();
     }
 
     @AfterAll
     static void close() throws Exception {
-        runtime.close();
-        loader.close();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static JsonbBinding<Object> binding(String type) throws Exception {
-        return (JsonbBinding<Object>) loader.loadClass(type + "$$Binding").getDeclaredConstructor().newInstance();
+        shop.close();
     }
 
     private static boolean hasBinding(String type) {
-        return Files.exists(out.resolve(type.replace('.', '/') + "$$Binding.class"));
+        return shop.hasBinding(type);
     }
 
     private static Object newInstance(String type, Object... args) throws Exception {
-        for (var c : loader.loadClass(type).getDeclaredConstructors()) {
-            if (c.getParameterCount() == args.length) return c.newInstance(args);
-        }
-        throw new AssertionError("no constructor");
+        return shop.newInstance(type, args);
     }
 
     private static Object enumConstant(String type, String name) throws Exception {
-        for (Object c : loader.loadClass(type).getEnumConstants()) {
-            if (((Enum<?>) c).name().equals(name)) return c;
-        }
-        throw new AssertionError(name);
+        return shop.enumConstant(type, name);
     }
 
     private static String writeStatic(String type, Object value) throws Exception {
-        var sw = new StringWriter();
-        try (JsonGenerator g = Json.createGenerator(sw)) {
-            binding(type).write(g, value);
-        }
-        return sw.toString();
+        return shop.writeStatic(type, value);
     }
 
     private static Object readStatic(String type, String json) throws Exception {
-        try (JsonParser p = Json.createParser(new StringReader(json))) {
-            return binding(type).read(p);
-        }
+        return shop.readStatic(type, json);
     }
 
     private static Object book(String note) throws Exception {
@@ -383,7 +313,7 @@ class RestBindingsTest {
         assertFalse(hasBinding("shop.Ignored"), "not reached by a resource method");
         assertFalse(hasBinding("shop.Shape"), "abstract");
         assertFalse(hasBinding("shop.Renamed"), "a getter overridden in a subclass");
-        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbDateFormat")),
+        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbTypeAdapter")),
                 notes::toString);
         assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Renamed") && n.contains("several classes")),
                 notes::toString);
@@ -391,7 +321,7 @@ class RestBindingsTest {
 
     @Test
     void theServicesFileListsThem() throws Exception {
-        String services = Files.readString(out.resolve("META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding"));
+        String services = Files.readString(shop.out().resolve("META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding"));
         assertTrue(services.contains("shop.Book$$Binding"), services);
         assertTrue(services.contains("shop.Author$$Binding"), services);
         assertTrue(services.contains("shop.NewBook$$Binding"), services);
@@ -400,13 +330,13 @@ class RestBindingsTest {
     @Test
     void aRecordIsWrittenAsTheRuntimeWritesIt() throws Exception {
         for (Object book : List.of(book("a note"), book(null))) {
-            assertEquals(runtime.toJson(book, (Type) loader.loadClass("shop.Book")), writeStatic("shop.Book", book));
+            assertEquals(runtime.toJson(book, (Type) shop.type("shop.Book")), writeStatic("shop.Book", book));
         }
     }
 
     @Test
     void aRecordIsReadAsTheRuntimeReadsIt() throws Exception {
-        Class<?> type = loader.loadClass("shop.Book");
+        Class<?> type = shop.type("shop.Book");
         String json = runtime.toJson(book("x"), (Type) type);
         assertEquals(runtime.fromJson(json, type), readStatic("shop.Book", json));
         String partial = "{\"title\":\"T\",\"unknown\":{\"a\":[1,2]},\"tags\":null,\"isbn\":null}";
@@ -418,7 +348,7 @@ class RestBindingsTest {
 
     @Test
     void aFinalClassWithAccessorsIsWrittenAndReadAsTheRuntimeDoes() throws Exception {
-        Class<?> type = loader.loadClass("shop.Author");
+        Class<?> type = shop.type("shop.Author");
         Object author = newInstance("shop.Author", "Sand", 1804);
         assertEquals(runtime.toJson(author, (Type) type), writeStatic("shop.Author", author));
         String json = "{\"born\":1804,\"display\":\"ignored\",\"name\":\"Sand\"}";
@@ -427,7 +357,7 @@ class RestBindingsTest {
 
     @Test
     void aFinalClassWithPublicFieldsIsWrittenAndReadAsTheRuntimeDoes() throws Exception {
-        Class<?> type = loader.loadClass("shop.NewBook");
+        Class<?> type = shop.type("shop.NewBook");
         Object newBook = type.getDeclaredConstructor().newInstance();
         type.getField("title").set(newBook, "Notre-Dame");
         type.getField("authorId").set(newBook, 7L);
@@ -452,7 +382,7 @@ class RestBindingsTest {
     void nestedRecordsSetsDatesAndOtherPackagesAreMappedAsTheRuntimeDoes() throws Exception {
         assertTrue(hasBinding("shop.Catalog$Entry"));
         assertTrue(hasBinding("other.Label"), "a public type of another package");
-        Class<?> type = loader.loadClass("shop.Catalog$Entry");
+        Class<?> type = shop.type("shop.Catalog$Entry");
         Object entry = entry("next");
         String json = runtime.toJson(entry, (Type) type);
         assertEquals(json, writeStatic("shop.Catalog$Entry", entry));
@@ -471,13 +401,13 @@ class RestBindingsTest {
 
     @Test
     void aMissingOptionalComponentIsReadAsTheRuntimeReadsIt() throws Exception {
-        Class<?> type = loader.loadClass("shop.Book");
+        Class<?> type = shop.type("shop.Book");
         assertEquals(runtime.fromJson("{\"title\":\"T\"}", type), readStatic("shop.Book", "{\"title\":\"T\"}"));
     }
 
     @Test
     void aNullForTheBoxedAndThePrimitivePropertyOfAClass() throws Exception {
-        Class<?> type = loader.loadClass("shop.Counter");
+        Class<?> type = shop.type("shop.Counter");
         String boxedNull = "{\"boxed\":null,\"value\":2}";
         assertEquals(runtime.fromJson(boxedNull, type), readStatic("shop.Counter", boxedNull));
         String primitiveNull = "{\"value\":null}";
@@ -492,7 +422,7 @@ class RestBindingsTest {
     }
 
     private static Object product(String type, long id, String name) throws Exception {
-        Object p = loader.loadClass(type).getDeclaredConstructor().newInstance();
+        Object p = shop.type(type).getDeclaredConstructor().newInstance();
         Class<?> c = p.getClass();
         c.getMethod("setId", Long.class).invoke(p, id);
         c.getMethod("setCreatedBy", String.class).invoke(p, "yann");
@@ -511,7 +441,7 @@ class RestBindingsTest {
 
     @Test
     void aClassWithASuperclassIsMappedAsTheRuntimeDoes() throws Exception {
-        Class<?> type = loader.loadClass("shop.Product");
+        Class<?> type = shop.type("shop.Product");
         Object p = product("shop.Product", 1, "pen");
         String json = runtime.toJson(p, (Type) type);
         assertEquals(json, writeStatic("shop.Product", p));
@@ -521,7 +451,7 @@ class RestBindingsTest {
 
     @Test
     void aSubclassInstanceUnderItsDeclaredTypeIsWrittenAsTheRuntimeWritesIt() throws Exception {
-        Class<?> declared = loader.loadClass("shop.Product");
+        Class<?> declared = shop.type("shop.Product");
         Object special = product("shop.SpecialProduct", 2, "gold pen");
         special.getClass().getMethod("setBadge", String.class).invoke(special, "new");
         // The runtime maps a value by the declared type: the subclass's own properties are not written, by either.
@@ -534,7 +464,7 @@ class RestBindingsTest {
     @Test
     void aPropertyInheritedFromAPrivateClassIsMappedAsTheRuntimeDoes() throws Exception {
         assertTrue(hasBinding("shop.Outer$Child"));
-        Class<?> type = loader.loadClass("shop.Outer$Child");
+        Class<?> type = shop.type("shop.Outer$Child");
         Object child = type.getDeclaredConstructor().newInstance();
         assertEquals(runtime.toJson(child, (Type) type), writeStatic("shop.Outer$Child", child));
     }

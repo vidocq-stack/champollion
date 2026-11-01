@@ -82,6 +82,43 @@ class JsonbLeafTest {
     }
 
     @Test
+    void anArrayOfPrimitivesIsTheRuntimesOne() throws Exception {
+        try (var jsonb = JsonbBuilder.create()) {
+            for (Object value : new Object[] {new int[] {1, 2}, new byte[] {-1, 2}, new char[] {'a'},
+                    new boolean[] {true}, new double[] {0.5}, new long[] {7L}, new short[] {3}, new float[] {1.5f}}) {
+                JsonbLeaf leaf = JsonbLeaf.of(value.getClass());
+                String json = jsonb.toJson(value);
+                assertEquals("[" + json + "]", write(leaf, value), value.getClass().getName());
+                assertEquals(json, jsonb.toJson(read(leaf, json)), value.getClass().getName());
+            }
+        }
+        assertThrows(IllegalArgumentException.class, () -> JsonbLeaf.of(String[].class));
+    }
+
+    @Test
+    void aDateFormatIsTheRuntimesOne() {
+        JsonbLeaf leaf = JsonbLeaf.date(LocalDate.class, "d MMMM yyyy", "fr");
+        assertEquals("[\"3 avril 1862\"]", write(leaf, LocalDate.of(1862, 4, 3)));
+        assertEquals(LocalDate.of(1862, 4, 3), read(leaf, "\"3 avril 1862\""));
+        assertNull(read(leaf, "null"));
+        assertThrows(JsonbException.class, () -> read(leaf, "\"1862-04-03\""));
+    }
+
+    @Test
+    void aNumberFormatIsTheRuntimesOne() {
+        JsonbLeaf leaf = JsonbLeaf.number(int.class, "#,##0", "##default");
+        assertEquals("[\"1,234\"]", write(leaf, 1234));
+        assertEquals(1234, read(leaf, "\"1,234\""));
+        assertEquals(new BigDecimal("2.5"), read(JsonbLeaf.number(BigDecimal.class, "#0.00", "##default"), "\"2.50\""));
+    }
+
+    @Test
+    void aFormatOnlyGoesOnATypeThatTakesIt() {
+        assertThrows(IllegalArgumentException.class, () -> JsonbLeaf.date(String.class, "dd", "##default"));
+        assertThrows(IllegalArgumentException.class, () -> JsonbLeaf.number(String.class, "#", "##default"));
+    }
+
+    @Test
     void aTypeJsonbDoesNotMapNativelyHasNone() {
         assertThrows(IllegalArgumentException.class, () -> JsonbLeaf.of(Object.class));
         assertThrows(IllegalArgumentException.class, () -> JsonbLeaf.of(JsonbLeafTest.class));
