@@ -96,6 +96,16 @@ final class CdiResolver {
         return newInstanceFallback(beanClass);
     }
 
+    /**
+     * The CDI bean of {@code beanClass} when it looks like one and a container provides it, as {@link #resolve} finds
+     * it; {@code null} otherwise. For a generated binding, which creates the instance itself when this gives none.
+     */
+    @SuppressWarnings("unchecked")
+    static <T> T bean(Class<T> beanClass) {
+        Cdi cdi = isLikelyManagedBean(beanClass) ? CDI.get(beanClass) : null;
+        return cdi == null ? null : (T) fromContainer(cdi, beanClass);
+    }
+
     /** The CDI bean of {@code beanClass}, or {@code null} when there is no container or no single bean. */
     private static Object fromContainer(Cdi cdi, Class<?> beanClass) {
         Object container;

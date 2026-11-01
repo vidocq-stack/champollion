@@ -123,13 +123,20 @@ final class RestBindings {
      * A {@code @JsonbTypeAdapter} that applies to a property: the binding calls {@code className}'s
      * {@code adaptToJson}/{@code adaptFromJson} and maps the {@code adapted} type.
      */
-    record Adapter(String className, TypeMirror adapted) {}
+    record Adapter(Instance instance, TypeMirror adapted) {}
+
+    /**
+     * An adapter, serializer or deserializer the binding calls: obtained as the runtime obtains it, from the CDI
+     * container when it is a bean there, else created; {@code creatable} when the binding can call its no-argument
+     * constructor.
+     */
+    record Instance(String className, boolean creatable) {}
 
     /**
      * How a property's value is mapped in one direction: through an adapter, a {@code JsonbSerializer} or
      * {@code JsonbDeserializer} ({@code custom}, the class created once with {@code new}), a format, or as its type.
      */
-    record Mapping(Adapter adapter, Format format, String custom) {
+    record Mapping(Adapter adapter, Format format, Instance custom) {
 
         static final Mapping PLAIN = new Mapping(null, null, null);
 
@@ -1011,7 +1018,7 @@ final class RestBindings {
         }
         annotation = customAnnotation == null ? null : first(customLookup, customAnnotation);
         if (annotation != null) {
-            String custom = custom(annotation, type, owner);
+            Instance custom = custom(annotation, type, owner);
             return custom == null ? null : new Mapping(null, null, custom);
         }
         Format format = format(owner, type, formatLookup);
@@ -1028,7 +1035,7 @@ final class RestBindings {
      * The {@code JsonbSerializer} or {@code JsonbDeserializer} {@code annotation} names, when the binding can create it
      * with {@code new} and call it on a {@code propertyType}; else {@code null}, and {@link #lastReason} says why.
      */
-    private String custom(AnnotationMirror annotation, TypeMirror propertyType, TypeElement owner) {
+    private Instance custom(AnnotationMirror annotation, TypeMirror propertyType, TypeElement owner) {
         TypeElement custom = (TypeElement) ((DeclaredType) annotationValue(annotation)).asElement();
         String name = custom.getQualifiedName().toString();
         boolean serializer = JSONB_TYPE_SERIALIZER.equals(nameOf(annotation));
@@ -1036,13 +1043,13 @@ final class RestBindings {
         if (propertyType.getKind() != TypeKind.DECLARED || !((DeclaredType) propertyType).getTypeArguments().isEmpty()) {
             return fail("a primitive, array or generic property, whose type the runtime hands it");
         }
-        String unusable = instantiable(custom, packageOf(owner));
-        if (unusable != null) return fail(unusable);
+        Instance instance = instance(custom, packageOf(owner));
+        if (instance == null) return null;
         TypeMirror handled = typeArgument(custom, serializer ? JSONB_SERIALIZER : JSONB_DESERIALIZER);
         if (handled == null) return fail("its type argument is not a concrete type");
         boolean callable = serializer ? env.getTypeUtils().isAssignable(propertyType, handled)
                 : env.getTypeUtils().isAssignable(handled, propertyType);
-        return callable ? name : fail("it handles " + handled + ", not " + propertyType);
+        return callable ? instance : fail("it handles " + handled + ", not " + propertyType);
     }
 
     /** The type argument of the {@code generic} interface {@code type} implements, or {@code null}. */
@@ -1069,8 +1076,8 @@ final class RestBindings {
         lastReason = "@JsonbTypeAdapter(" + name + ".class): ";
         if (propertyType.getKind().isPrimitive()) return fail("a primitive property");
         if (OPTIONAL.equals(erasureName(propertyType))) return fail("an Optional property");
-        String unusable = instantiable(adapter, packageOf(owner));
-        if (unusable != null) return fail(unusable);
+        Instance instance = instance(adapter, packageOf(owner));
+        if (instance == null) return null;
         List<? extends TypeMirror> args = adapterArguments(adapter);
         if (args.isEmpty()) return fail("its JsonbAdapter type arguments are not concrete types");
         if (!env.getTypeUtils().isSameType(args.get(0), propertyType)) {
@@ -1078,7 +1085,7 @@ final class RestBindings {
         }
         String unsupported = supported(args.get(1));
         if (unsupported != null) return fail("its adapted type: " + unsupported);
-        return new Adapter(name, args.get(1));
+        return new Adapter(instance, args.get(1));
     }
 
     private <T> T fail(String why) {
@@ -1087,24 +1094,38 @@ final class RestBindings {
     }
 
     /**
-     * Why generated code of package {@code pkg} cannot create {@code type} with {@code new}, as the runtime does
-     * outside CDI; {@code null} when it can. A CDI bean (scoped, {@code @Singleton}, or with an {@code @Inject}) is
-     * created by the container at run time: it keeps the runtime.
+     * How generated code of package {@code pkg} obtains {@code type}, as the runtime does: from the CDI container when
+     * it is a bean there, else with its no-argument constructor; {@code null} when it can do neither, and
+     * {@link #lastReason} says why.
      */
-    private static String instantiable(TypeElement type, String pkg) {
-        if (type.getModifiers().contains(Modifier.ABSTRACT)) return "abstract";
-        if (!accessibleFrom(type, pkg)) return "not accessible from package " + pkg;
+    private Instance instance(TypeElement type, String pkg) {
+        String className = type.getQualifiedName().toString();
+        if (type.getModifiers().contains(Modifier.ABSTRACT)) return fail("abstract");
+        if (!accessibleFrom(type, pkg)) return fail("not accessible from package " + pkg);
         if (type.getNestingKind().isNested() && !type.getModifiers().contains(Modifier.STATIC)
                 && !type.getKind().isInterface()) {
-            return "an inner class";
+            return fail("an inner class");
         }
         boolean samePackage = packageOf(type).equals(pkg);
         var constructors = ElementFilter.constructorsIn(type.getEnclosedElements());
         boolean callable = constructors.stream().anyMatch(c -> c.getParameters().isEmpty()
                 && (c.getModifiers().contains(Modifier.PUBLIC) || samePackage && !c.getModifiers().contains(Modifier.PRIVATE)));
-        if (!callable) return "no no-argument constructor the binding can call";
-        if (isLikelyBean(type)) return "a CDI bean, which the container creates at run time";
-        return null;
+        boolean bean = isLikelyBean(type);
+        if (!callable && !bean) return fail("no no-argument constructor the binding can call");
+        if (bean && !isBeanDefining(type)) {
+            // It injects, but nothing makes it a bean in the default (annotated) discovery: the runtime would create it
+            // with new, its injections left null.
+            env.getMessager().printMessage(javax.tools.Diagnostic.Kind.WARNING, "Champollion: " + className
+                    + " has @Inject members but no bean-defining annotation (a scope, @Dependent): unless a beans.xml"
+                    + " makes it a bean, it is created with its constructor and its injections stay null", type);
+        }
+        return new Instance(className, callable);
+    }
+
+    /** A scope or {@code @Singleton} on {@code type}: a bean in the annotated discovery mode. */
+    private static boolean isBeanDefining(TypeElement type) {
+        return type.getAnnotationMirrors().stream().map(RestBindings::nameOf)
+                .anyMatch(n -> n.startsWith("jakarta.enterprise.context.") || "jakarta.inject.Singleton".equals(n));
     }
 
     /** The runtime's test for a CDI bean: a scope, {@code @Singleton}, or an {@code @Inject} member. */

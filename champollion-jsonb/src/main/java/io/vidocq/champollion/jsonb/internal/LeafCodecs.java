@@ -95,4 +95,9 @@ public final class LeafCodecs {
     public static jakarta.json.bind.serializer.DeserializationContext defaultDeserializationContext() {
         return DefaultContexts.JSONB.deserializationContext();
     }
+
+    /** The CDI bean of {@code type}, as the runtime resolves an adapter or a serializer, or {@code null}. */
+    public static <T> T bean(Class<T> type) {
+        return CdiResolver.bean(type);
+    }
 }
