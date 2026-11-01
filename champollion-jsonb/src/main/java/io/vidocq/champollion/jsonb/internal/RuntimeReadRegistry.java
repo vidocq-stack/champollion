@@ -1498,7 +1498,8 @@ final class RuntimeReadRegistry {
         try {
             if (creator instanceof Constructor<?> c) return c.newInstance(args);
             return ((java.lang.reflect.Method) creator).invoke(null, args);
-        } catch (ReflectiveOperationException ex) {
+        } catch (ReflectiveOperationException | IllegalArgumentException ex) {
+            // IllegalArgumentException: a JSON null given to a primitive parameter, among others.
             throw new JsonbException("Failed to invoke @JsonbCreator: " + ex.getMessage(), ex);
         }
     }

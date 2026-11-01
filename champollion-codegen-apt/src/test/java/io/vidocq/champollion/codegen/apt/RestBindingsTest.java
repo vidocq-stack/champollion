@@ -131,15 +131,8 @@ class RestBindingsTest {
                     """),
             Map.entry("shop.Dated", """
                     package shop;
-                    import jakarta.json.bind.annotation.JsonbTypeAdapter;
-                    public record Dated(@JsonbTypeAdapter(DayAdapter.class) java.time.LocalDate day) {}
-                    """),
-            Map.entry("shop.DayAdapter", """
-                    package shop;
-                    public class DayAdapter implements jakarta.json.bind.adapter.JsonbAdapter<java.time.LocalDate, String> {
-                        public String adaptToJson(java.time.LocalDate d) { return d.toString(); }
-                        public java.time.LocalDate adaptFromJson(String s) { return java.time.LocalDate.parse(s); }
-                    }
+                    @jakarta.json.bind.annotation.JsonbPropertyOrder({"day"})
+                    public record Dated(java.time.LocalDate day) {}
                     """),
             Map.entry("shop.Shelf", """
                     package shop;
@@ -313,7 +306,7 @@ class RestBindingsTest {
         assertFalse(hasBinding("shop.Ignored"), "not reached by a resource method");
         assertFalse(hasBinding("shop.Shape"), "abstract");
         assertFalse(hasBinding("shop.Renamed"), "a getter overridden in a subclass");
-        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbTypeAdapter")),
+        assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Dated") && n.contains("@JsonbPropertyOrder")),
                 notes::toString);
         assertTrue(notes.stream().anyMatch(n -> n.contains("shop.Renamed") && n.contains("several classes")),
                 notes::toString);

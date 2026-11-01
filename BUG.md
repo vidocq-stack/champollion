@@ -673,3 +673,28 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   `DecimalFormat` is not thread-safe.
 - **Correctif** : each write and read formats with its own copy (`clone()`) of the prepared format.
 - **Vérification** : `RecordCustomisationsTest.aNumberFormatIsSafeAcrossThreads` (red before, green after).
+
+## BUG-20261101-08 — JSON-B: a JSON `null` for a primitive `@JsonbCreator` parameter leaked an `IllegalArgumentException`
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-creators-adapters`)
+- **Module touché** : `champollion-jsonb` (`RuntimeReadRegistry.invokeCreator`)
+- **Symptôme** : `fromJson("{\"number\":null}", Account.class)` with `@JsonbCreator Account(@JsonbProperty("number")
+  long number)` threw a raw `IllegalArgumentException` instead of a `JsonbException`.
+- **Cause** : the reflective call of the creator wrapped `ReflectiveOperationException` only; passing `null` for a
+  primitive parameter fails with `IllegalArgumentException`.
+- **Correctif** : that exception is wrapped too.
+- **Vérification** : `CreatorParametersTest`; found by the differential test of the generated creators.
+
+## BUG-20261101-09 — APT: a class's static `@JsonbCreator` factory was ignored by its generated binding
+
+- **Date** : 2026-11-01
+- **Statut** : FIXED 2026-11-01 (branch `feat/jsonb-bindings-creators-adapters`)
+- **Module touché** : `champollion-codegen-apt` (`RestBindings`)
+- **Symptôme** : a class with a public no-argument constructor and a static `@JsonbCreator` factory got a binding that
+  read through `new T()` and the setters, while the runtime reads through the factory.
+- **Cause** : the static methods were skipped before the creator check, which only looked at the constructors and
+  instance methods.
+- **Correctif** : constructors and static factories carrying `@JsonbCreator` are both found; the binding calls the
+  creator (or the type keeps the runtime, with a note, when it cannot).
+- **Vérification** : `RestBindingsCustomisationsTest.aCreatorFactoryWinsOverTheNoArgumentConstructor`.

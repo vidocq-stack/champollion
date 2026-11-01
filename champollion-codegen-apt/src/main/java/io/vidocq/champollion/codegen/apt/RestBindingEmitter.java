@@ -20,7 +20,9 @@
 package io.vidocq.champollion.codegen.apt;
 
 import io.vidocq.champollion.codegen.apt.RestBindings.Access;
+import io.vidocq.champollion.codegen.apt.RestBindings.Adapter;
 import io.vidocq.champollion.codegen.apt.RestBindings.Format;
+import io.vidocq.champollion.codegen.apt.RestBindings.Mapping;
 import io.vidocq.champollion.codegen.apt.RestBindings.Model;
 import io.vidocq.champollion.codegen.apt.RestBindings.Property;
 
@@ -66,6 +68,8 @@ final class RestBindingEmitter {
     private final Map<TypeElement, String> others;
     /** Leaf codec fields, by the expression creating them. */
     private final Map<String, String> leaves = new LinkedHashMap<>();
+    /** Adapter fields, by the adapter's class name. */
+    private final Map<String, String> adapters = new LinkedHashMap<>();
     /** Binding fields of the types this one holds, by their binding's name. */
     private final Map<String, String> bindings = new LinkedHashMap<>();
     /** Reader methods, by the type they read. */
@@ -98,6 +102,10 @@ final class RestBindingEmitter {
         for (var e : leaves.entrySet()) {
             out.append("    private static final io.vidocq.champollion.jsonb.spi.JsonbLeaf ").append(e.getValue())
                     .append(" = io.vidocq.champollion.jsonb.spi.JsonbLeaf.").append(e.getKey()).append(";\n");
+        }
+        for (var e : adapters.entrySet()) {
+            out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
+                    .append(" = new ").append(e.getKey()).append("();\n");
         }
         for (var e : bindings.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
@@ -140,14 +148,14 @@ final class RestBindingEmitter {
         String getter = "value." + p.readMember();
         TypeMirror t = p.type();
         if (t.getKind().isPrimitive()) {
-            out.append(I8).append(key).append(' ').append(leaf(t, p.writeFormat())).append(WRITE_G).append(getter)
+            out.append(I8).append(key).append(' ').append(leaf(t, p.out().format())).append(WRITE_G).append(getter)
                     .append(");\n");
             return;
         }
         String v = newVariable();
         out.append("        {\n            ").append(render(t)).append(' ').append(v).append(" = ").append(getter)
                 .append(";\n");
-        if (RestBindings.OPTIONAL.equals(RestBindings.erasureName(t))) {
+        if (p.out().adapter() == null && RestBindings.OPTIONAL.equals(RestBindings.erasureName(t))) {
             TypeMirror inner = ((DeclaredType) t).getTypeArguments().get(0);
             out.append("            if (").append(v).append(" != null && ").append(v).append(".isPresent()) {\n");
             out.append(I16).append(key).append('\n');
@@ -156,15 +164,32 @@ final class RestBindingEmitter {
         } else {
             out.append("            if (").append(v).append(" != null) {\n");
             out.append(I16).append(key).append('\n');
-            if (p.writeFormat() != null) {
-                out.append(I16).append(leaf(t, p.writeFormat())).append(WRITE_G).append(v).append(");\n");
-            } else {
-                writeValue(out, v, t, I16);
-            }
+            writeMapped(out, v, t, p.out());
             out.append("            }");
         }
         if (p.nillable()) out.append(" else { ").append(key).append(" g.writeNull(); }");
         out.append("\n        }\n");
+    }
+
+    /** Writes the non-null {@code v} of the property type {@code t}, through its adapter or its format if any. */
+    private void writeMapped(StringBuilder out, String v, TypeMirror t, Mapping mapping) {
+        Adapter adapter = mapping.adapter();
+        if (adapter != null) {
+            String a = newVariable();
+            out.append(I16).append(render(adapter.adapted())).append(' ').append(a).append(";\n");
+            out.append(I16).append("try { ").append(a).append(" = ").append(adapter(adapter)).append(".adaptToJson(")
+                    .append(v).append("); }\n");
+            out.append(I16).append("catch (Exception x) { throw new jakarta.json.bind.JsonbException(")
+                    .append("\"Adapter failure on toJson: \" + x.getMessage(), x); }\n");
+            out.append(I16).append("if (").append(a).append(" == null) g.writeNull();\n");
+            out.append(I16).append("else {\n");
+            writeValue(out, a, adapter.adapted(), I16 + "    ");
+            out.append(I16).append("}\n");
+        } else if (mapping.format() != null) {
+            out.append(I16).append(leaf(t, mapping.format())).append(WRITE_G).append(v).append(");\n");
+        } else {
+            writeValue(out, v, t, I16);
+        }
     }
 
     /** Writes the non-null {@code expr} of type {@code t}. */
@@ -249,6 +274,7 @@ final class RestBindingEmitter {
     }
 
     private String readClass() {
+        if (model.creator() != null) return readThroughCreator(model.creator());
         String type = model.typeName();
         StringBuilder out = new StringBuilder();
         out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
@@ -258,11 +284,58 @@ final class RestBindingEmitter {
         for (Property p : model.properties()) {
             if (p.write() == Access.NONE) continue;   // read-only: its key is skipped like an unknown one
             out.append("                case ").append(lit(p.jsonName())).append(" -> ");
-            String target = p.write() == Access.FIELD ? "o." + p.writeMember() + " = %s;"
-                    : "o." + p.writeMember() + "(%s);";
-            assignWith(out, p, target);
+            assignWith(out, p, target(p, "o"));
         }
         out.append(LOOP_END);
+        out.append("        return o;\n    }\n\n");
+        return out.toString();
+    }
+
+    /** How a value is stored into property {@code p} of {@code o}: a format with one {@code %s}. */
+    private static String target(Property p, String o) {
+        return p.write() == Access.FIELD ? o + "." + p.writeMember() + " = %s;" : o + "." + p.writeMember() + "(%s);";
+    }
+
+    /**
+     * Reads the creator's parameters and the other writable properties into locals, calls the creator, then sets
+     * the properties present in the document, as the runtime does.
+     */
+    private String readThroughCreator(RestBindings.Creator creator) {
+        String type = model.typeName();
+        StringBuilder out = new StringBuilder();
+        out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
+        out.append(READ_START);
+        List<String> args = new java.util.ArrayList<>();
+        StringBuilder cases = new StringBuilder();
+        for (RestBindings.Param param : creator.params()) {
+            String local = newVariable();
+            args.add(local);
+            out.append(I8).append(render(param.type())).append(' ').append(local).append(" = ")
+                    .append(defaultOf(param.type())).append(";\n");
+            cases.append("                case ").append(lit(param.jsonName())).append(" -> ");
+            assignValue(cases, param.type(), param.jsonName(), reader(param.type()), local + " = %s;");
+        }
+        StringBuilder after = new StringBuilder();
+        for (Property p : model.properties()) {
+            if (p.write() == Access.NONE || creator.takes(p.jsonName())) continue;
+            String local = newVariable();
+            String seen = local + "_set";
+            out.append(I8).append(render(p.type())).append(' ').append(local).append(" = ")
+                    .append(defaultOf(p.type())).append(";\n");
+            out.append("        boolean ").append(seen).append(" = false;\n");
+            cases.append("                case ").append(lit(p.jsonName())).append(" -> ");
+            assignValue(cases, p.type(), p.jsonName(), reader(p.type()), local + " = %s; " + seen + " = true;");
+            after.append("        if (").append(seen).append(") ").append(String.format(target(p, "o"), local))
+                    .append('\n');
+        }
+        out.append(LOOP_START).append(cases).append(LOOP_END);
+        out.append(I8).append(type).append(" o;\n");
+        out.append("        try { o = ").append(creator.call()).append('(').append(String.join(", ", args))
+                .append("); }\n");
+        out.append("        catch (jakarta.json.bind.JsonbException x) { throw x; }\n");
+        out.append("        catch (Exception x) { throw new jakarta.json.bind.JsonbException(")
+                .append(lit("@JsonbCreator of " + type + " failed: ")).append(" + x.getMessage(), x); }\n");
+        out.append(after);
         out.append("        return o;\n    }\n\n");
         return out.toString();
     }
@@ -274,13 +347,17 @@ final class RestBindingEmitter {
 
     /** Reads the property and stores it through {@code target}, a format with one {@code %s}. */
     private void assignWith(StringBuilder out, Property p, String target) {
-        String reader = p.readFormat() != null ? formattedReader(p.type(), p.readFormat()) : reader(p.type());
-        if (p.type().getKind().isPrimitive()) {
+        assignValue(out, p.type(), p.jsonName(), mappedReader(p.type(), p.in()), target);
+    }
+
+    /** Reads a value of type {@code t} with {@code reader} and stores it through {@code target}. */
+    private void assignValue(StringBuilder out, TypeMirror t, String jsonName, String reader, String target) {
+        if (t.getKind().isPrimitive()) {
             // A JSON null cannot go into a primitive: the runtime rejects it, so does the binding.
             String v = newVariable();
-            out.append("{ ").append(boxed(p.type())).append(' ').append(v).append(" = ").append(reader)
+            out.append("{ ").append(boxed(t)).append(' ').append(v).append(" = ").append(reader)
                     .append("(p, p.next()); if (").append(v).append(" == null) throw new jakarta.json.bind.JsonbException(")
-                    .append(lit("null for the primitive property " + p.jsonName())).append("); ")
+                    .append(lit("null for the primitive property " + jsonName)).append("); ")
                     .append(String.format(target, v)).append(" }\n");
         } else {
             out.append("{ ").append(String.format(target, reader + "(p, p.next())")).append(" }\n");
@@ -386,6 +463,32 @@ final class RestBindingEmitter {
                 : RestBindings.erasureName(t)) + ".class";
     }
 
+    /** The reader method of a property of type {@code t}, through its adapter or its format if any. */
+    private String mappedReader(TypeMirror t, Mapping mapping) {
+        if (mapping.adapter() != null) return adaptedReader(t, mapping.adapter());
+        return mapping.format() != null ? formattedReader(t, mapping.format()) : reader(t);
+    }
+
+    /** A reader method of {@code t} that reads the adapted type, then calls the adapter's {@code adaptFromJson}. */
+    private String adaptedReader(TypeMirror t, Adapter adapter) {
+        String field = adapter(adapter);
+        String key = field + ":" + render(t);
+        String existing = readerNames.get(key);
+        if (existing != null) return existing;
+        String name = "__r" + readerNames.size();
+        readerNames.put(key, name);
+        String inner = reader(adapter.adapted());
+        String adapted = render(adapter.adapted());
+        readers.append("    private static ").append(render(t)).append(' ').append(name)
+                .append("(jakarta.json.stream.JsonParser p, jakarta.json.stream.JsonParser.Event e) {\n")
+                .append(I8).append(adapted).append(" a = ").append(inner).append("(p, e);\n")
+                .append("        if (a == null) return null;\n")
+                .append("        try { return ").append(field).append(".adaptFromJson(a); }\n")
+                .append("        catch (Exception x) { throw new jakarta.json.bind.JsonbException(")
+                .append("\"Adapter failure on fromJson: \" + x.getMessage(), x); }\n    }\n\n");
+        return name;
+    }
+
     /** A reader method, like {@link #reader}, of a leaf {@code t} under {@code format}. */
     private String formattedReader(TypeMirror t, Format format) {
         String codec = leaf(t, format);
@@ -400,6 +503,11 @@ final class RestBindingEmitter {
                 .append("        return (").append(type).append(") ").append(codec)
                 .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n    }\n\n");
         return name;
+    }
+
+    /** The field holding an instance of the adapter, created once with {@code new}. */
+    private String adapter(Adapter adapter) {
+        return adapters.computeIfAbsent(adapter.className(), k -> "__A" + adapters.size());
     }
 
     private String binding(TypeElement element) {

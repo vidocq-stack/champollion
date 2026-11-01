@@ -61,9 +61,11 @@ final class RestBindings {
     private static final String JSONB_NILLABLE = JSONB_ANNOTATIONS + "JsonbNillable";
     private static final String JSONB_DATE_FORMAT = JSONB_ANNOTATIONS + "JsonbDateFormat";
     private static final String JSONB_NUMBER_FORMAT = JSONB_ANNOTATIONS + "JsonbNumberFormat";
+    private static final String JSONB_TYPE_ADAPTER = JSONB_ANNOTATIONS + "JsonbTypeAdapter";
+    private static final String JSONB_ADAPTER = "jakarta.json.bind.adapter.JsonbAdapter";
     /** The JSON-B annotations the generated code implements on a property. */
     private static final Set<String> PROPERTY_ANNOTATIONS = Set.of(JSONB_PROPERTY, JSONB_TRANSIENT, JSONB_NILLABLE,
-            JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
+            JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT, JSONB_TYPE_ADAPTER);
     /** The JSON-B annotations the generated code implements on a type or a package: they apply to its properties. */
     private static final Set<String> TYPE_ANNOTATIONS = Set.of(JSONB_NILLABLE, JSONB_DATE_FORMAT, JSONB_NUMBER_FORMAT);
     /** The types {@code @JsonbDateFormat} formats (JSON-B 3.0 §3.5; durations and periods stay ISO 8601). */
@@ -81,6 +83,7 @@ final class RestBindings {
     private static final String TYPE = "type ";
     /** The element of an annotation that holds its main value. */
     private static final String VALUE = "value";
+    private static final String CREATOR_PARAMETER = "@JsonbCreator parameter ";
 
     /** The types JSON-B maps natively; {@code JsonbLeaf} hands their codecs to the generated code. */
     static final Set<String> LEAVES = Set.of(
@@ -105,19 +108,75 @@ final class RestBindings {
     record Format(boolean date, String pattern, String locale) {}
 
     /**
-     * One JSON property of a modelled type; a format, when one applies, may differ on write and on read, where the
-     * runtime looks at the property's members in another order.
+     * A {@code @JsonbTypeAdapter} that applies to a property: the binding calls {@code className}'s
+     * {@code adaptToJson}/{@code adaptFromJson} and maps the {@code adapted} type.
      */
-    record Property(String jsonName, TypeMirror type, Access read, String readMember, Access write,
-                    String writeMember, boolean nillable, Format writeFormat, Format readFormat) {}
+    record Adapter(String className, TypeMirror adapted) {}
+
+    /** How a property's value is mapped in one direction: through an adapter, a format, or as its type. */
+    record Mapping(Adapter adapter, Format format) {
+
+        static final Mapping PLAIN = new Mapping(null, null);
+
+        /** The type the JSON holds: the adapted type, or the property's. */
+        TypeMirror jsonType(TypeMirror propertyType) {
+            return adapter != null ? adapter.adapted() : propertyType;
+        }
+    }
+
+    /** How a property is reached on an instance: the access and the member's name ({@code getX()}, {@code x}…). */
+    record Member(Access access, String name) {}
+
+    /**
+     * One JSON property of a modelled type; its mapping may differ on write ({@code out}) and on read ({@code in}),
+     * where the runtime looks at the property's members in another order.
+     */
+    record Property(String jsonName, TypeMirror type, Member source, Member target, boolean nillable, Mapping out,
+                    Mapping in) {
+
+        Access read() {
+            return source.access();
+        }
+
+        String readMember() {
+            return source.name();
+        }
+
+        Access write() {
+            return target.access();
+        }
+
+        String writeMember() {
+            return target.name();
+        }
+
+        /** The types the binding maps for this property, on write and on read. */
+        List<TypeMirror> jsonTypes() {
+            return List.of(out.jsonType(type), in.jsonType(type));
+        }
+    }
 
     /** A type a binding is generated for. */
-    record Model(TypeElement type, boolean isRecord, boolean subclassable, List<Property> properties) {
+    /** A {@code @JsonbCreator} parameter: the JSON name its {@code @JsonbProperty} gives, and its type. */
+    record Param(String jsonName, TypeMirror type) {}
+
+    /**
+     * The {@code @JsonbCreator} of a class: {@code call} ({@code new T} or {@code T.factory}) takes the parameters;
+     * the binding sets the other properties read afterwards, as the runtime does.
+     */
+    record Creator(String call, List<Param> params) {
+
+        boolean takes(String jsonName) {
+            return params.stream().anyMatch(p -> p.jsonName().equals(jsonName));
+        }
+    }
+
+    /** A type a binding is generated for; {@code creator} is {@code null} when the binding calls {@code new T()}. */
+    record Model(TypeElement type, boolean isRecord, boolean subclassable, List<Property> properties,
+                 Creator creator) {
 
         String packageName() {
-            Element e = type;
-            while (!(e instanceof PackageElement)) e = e.getEnclosingElement();
-            return ((PackageElement) e).getQualifiedName().toString();
+            return packageOf(type);
         }
 
         /** {@code Outer$Inner$$Binding}: a top-level class of the type's package. */
@@ -143,6 +202,8 @@ final class RestBindings {
     private final Set<TypeElement> compiled;
     private final Map<TypeElement, Model> models = new LinkedHashMap<>();
     private final Map<TypeElement, String> skipped = new LinkedHashMap<>();
+    /** The {@code @JsonbCreator} of the classes {@link #classShape} accepted. */
+    private final Map<TypeElement, Creator> creators = new LinkedHashMap<>();
     /** Records annotated {@code @JsonbStatic}: they have their own binding, which the generated code calls. */
     private final Map<TypeElement, String> staticBound = new LinkedHashMap<>();
     private final Deque<TypeElement> pending = new ArrayDeque<>();
@@ -285,8 +346,14 @@ final class RestBindings {
         // here), a record's components in their declaration order.
         boolean isRecord = type.getKind() == ElementKind.RECORD;
         boolean subclassable = !isRecord && !type.getModifiers().contains(Modifier.FINAL);
-        models.put(type, new Model(type, isRecord, subclassable, List.copyOf(properties)));
-        for (Property p : properties) reach(p.type());
+        Creator creator = creators.get(type);
+        if (creator != null) {
+            String unsupported = creatorReason(creator, properties);
+            if (unsupported != null) return unsupported;
+            creator.params().forEach(param -> reach(param.type()));
+        }
+        models.put(type, new Model(type, isRecord, subclassable, List.copyOf(properties), creator));
+        for (Property p : properties) p.jsonTypes().forEach(this::reach);
         // An instance of a subclass reaches the runtime, which uses the subclass's binding when it has one.
         if (subclassable) reachSubclasses(type);
         return null;
@@ -320,8 +387,10 @@ final class RestBindings {
         Set<String> names = new java.util.HashSet<>();
         for (Property p : properties) {
             if (!names.add(p.jsonName())) return "two properties have the JSON name \"" + p.jsonName() + "\"";
-            String unsupported = supported(p.type());
-            if (unsupported != null) return QUOTED_PROPERTY + p.jsonName() + "\": " + unsupported;
+            for (TypeMirror t : p.jsonTypes()) {
+                String unsupported = supported(t);
+                if (unsupported != null) return QUOTED_PROPERTY + p.jsonName() + "\": " + unsupported;
+            }
         }
         return null;
     }
@@ -363,9 +432,11 @@ final class RestBindings {
                     .filter(f -> f.getSimpleName().contentEquals(name)).<Element>map(f -> f).findFirst()
                     .orElse(component);
             List<Element> lookup = present(component.getAccessor(), field);
-            Format format = format(type, component.asType(), lookup);
-            properties.add(new Property(jsonName(members, name), component.asType(), Access.METHOD, name + "()",
-                    Access.COMPONENT, name, nillable(type, lookup), format, format));
+            // The runtime takes a component's adapter from its accessor only.
+            Mapping mapping = mapping(type, component.asType(), lookup, present(component.getAccessor()));
+            if (mapping == null) return "component " + name + ": " + lastReason;
+            properties.add(new Property(jsonName(members, name), component.asType(), new Member(Access.METHOD,
+                    name + "()"), new Member(Access.COMPONENT, name), nillable(type, lookup), mapping, mapping));
         }
         return null;
     }
@@ -459,13 +530,59 @@ final class RestBindings {
     }
 
     /** Why a class cannot have a binding, whatever its properties; {@code null} when it can. */
-    private static String classShape(TypeElement type) {
+    private String classShape(TypeElement type) {
         var constructors = ElementFilter.constructorsIn(type.getEnclosedElements());
+        List<ExecutableElement> annotated = new ArrayList<>(constructors.stream()
+                .filter(RestBindings::hasJsonbCreator).toList());
+        ElementFilter.methodsIn(type.getEnclosedElements()).stream()
+                .filter(m -> m.getModifiers().contains(Modifier.STATIC) && hasJsonbCreator(m)).forEach(annotated::add);
+        if (annotated.size() > 1) return "several @JsonbCreator";
+        if (annotated.size() == 1) return creator(type, annotated.getFirst());
         boolean noArg = constructors.stream()
                 .anyMatch(c -> c.getParameters().isEmpty() && !c.getModifiers().contains(Modifier.PRIVATE));
-        if (!noArg && !constructors.isEmpty()) return "no accessible no-argument constructor";
-        if (constructors.stream().anyMatch(RestBindings::hasJsonbCreator)) return "a @JsonbCreator constructor";
+        return noArg || constructors.isEmpty() ? null : "no accessible no-argument constructor";
+    }
+
+    /** Records the {@code @JsonbCreator} {@code e} of {@code type}; {@code null}, or why the binding cannot call it. */
+    private String creator(TypeElement type, ExecutableElement e) {
+        if (e.getModifiers().contains(Modifier.PRIVATE)) return "a private @JsonbCreator";
+        boolean factory = e.getKind() == ElementKind.METHOD;
+        if (factory && !env.getTypeUtils().isAssignable(e.getReturnType(), type.asType())) {
+            return "a @JsonbCreator factory that does not return " + type.getQualifiedName();
+        }
+        List<Param> params = new ArrayList<>();
+        for (VariableElement parameter : e.getParameters()) {
+            String name = jsonName(List.of(parameter), "");
+            if (name.isEmpty()) {
+                return CREATOR_PARAMETER + parameter.getSimpleName() + " has no @JsonbProperty name: its"
+                        + " JSON name would depend on whether the class is compiled with -parameters";
+            }
+            boolean customised = parameter.getAnnotationMirrors().stream().map(RestBindings::nameOf)
+                    .anyMatch(n -> n.startsWith(JSONB_ANNOTATIONS) && !n.equals(JSONB_PROPERTY));
+            if (customised) return CREATOR_PARAMETER + parameter.getSimpleName() + " is customised";
+            params.add(new Param(name, parameter.asType()));
+        }
+        String call = factory ? type.getQualifiedName() + "." + e.getSimpleName() : "new " + type.getQualifiedName();
+        creators.put(type, new Creator(call, List.copyOf(params)));
         return null;
+    }
+
+    /**
+     * Why the binding cannot read a type through its {@code creator}; {@code null} when it can. The runtime reads
+     * the properties the creator does not take with their plain type: a format or an adapter there keeps the runtime.
+     */
+    private String creatorReason(Creator creator, List<Property> properties) {
+        Set<String> names = new java.util.HashSet<>();
+        for (Param param : creator.params()) {
+            if (!names.add(param.jsonName())) return "two @JsonbCreator parameters named \"" + param.jsonName() + "\"";
+            String unsupported = supported(param.type());
+            if (unsupported != null) return CREATOR_PARAMETER + "\"" + param.jsonName() + "\": " + unsupported;
+        }
+        return properties.stream()
+                .filter(p -> p.write() != Access.NONE && !creator.takes(p.jsonName()) && p.in() != Mapping.PLAIN)
+                .findFirst().map(p -> QUOTED_PROPERTY + p.jsonName() + "\" is customised, and set after the"
+                        + " @JsonbCreator: the runtime reads it without its customisation")
+                .orElse(null);
     }
 
     /**
@@ -577,9 +694,12 @@ final class RestBindings {
         // On write, the runtime looks at the getter then the field; on read, at the setter, the getter, the field.
         List<Element> writeLookup = present(m.getter(), m.field());
         List<Element> readLookup = present(m.setter(), m.getter(), m.field());
-        properties.add(new Property(jsonName(members, m.name()), t, m.read(), m.readMember(), m.write(),
-                m.writeMember(), nillable(owner, writeLookup), format(owner, t, writeLookup),
-                format(owner, t, readLookup)));
+        Mapping out = mapping(owner, t, writeLookup, writeLookup);
+        // An adapter is looked for on the setter and the field, then on the getter and the field.
+        Mapping in = out == null ? null : mapping(owner, t, readLookup, present(m.setter(), m.field(), m.getter()));
+        if (in == null) return PROPERTY + m.name() + ": " + lastReason;
+        properties.add(new Property(jsonName(members, m.name()), t, new Member(m.read(), m.readMember()),
+                new Member(m.write(), m.writeMember()), nillable(owner, writeLookup), out, in));
         return null;
     }
 
@@ -608,6 +728,125 @@ final class RestBindings {
 
     private static List<Element> present(Element... members) {
         return java.util.Arrays.stream(members).filter(java.util.Objects::nonNull).toList();
+    }
+
+    /** Why the last {@link #mapping} or {@link #adapter} call returned {@code null}. */
+    private String lastReason;
+
+    /**
+     * How a property of {@code type} is mapped in one direction: the adapter on the first of {@code adapterLookup}
+     * carrying one (it wins over a format, as in the runtime), else the format that applies. {@code null} when the
+     * adapter cannot be called from generated code; {@link #lastReason} says why.
+     */
+    private Mapping mapping(TypeElement owner, TypeMirror type, List<Element> formatLookup,
+                            List<Element> adapterLookup) {
+        AnnotationMirror annotation = adapterLookup.stream().map(m -> annotationOf(m, JSONB_TYPE_ADAPTER))
+                .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        if (annotation != null) {
+            Adapter adapter = adapter(annotation, type, owner);
+            return adapter == null ? null : new Mapping(adapter, null);
+        }
+        Format format = format(owner, type, formatLookup);
+        return format == null ? Mapping.PLAIN : new Mapping(null, format);
+    }
+
+    /**
+     * The adapter {@code annotation} names, when the binding of a type of {@code owner}'s package can create it with
+     * {@code new} and call it on {@code propertyType}; else {@code null}, and {@link #lastReason} says why.
+     */
+    private Adapter adapter(AnnotationMirror annotation, TypeMirror propertyType, TypeElement owner) {
+        TypeElement adapter = (TypeElement) ((DeclaredType) annotationValue(annotation)).asElement();
+        String name = adapter.getQualifiedName().toString();
+        lastReason = "@JsonbTypeAdapter(" + name + ".class): ";
+        if (propertyType.getKind().isPrimitive()) return failAdapter("a primitive property");
+        if (OPTIONAL.equals(erasureName(propertyType))) return failAdapter("an Optional property");
+        String unusable = instantiable(adapter, packageOf(owner));
+        if (unusable != null) return failAdapter(unusable);
+        List<? extends TypeMirror> args = adapterArguments(adapter);
+        if (args == null) return failAdapter("its JsonbAdapter type arguments are not concrete types");
+        if (!env.getTypeUtils().isSameType(args.get(0), propertyType)) {
+            return failAdapter("it adapts " + args.get(0) + ", not " + propertyType);
+        }
+        String unsupported = supported(args.get(1));
+        if (unsupported != null) return failAdapter("its adapted type: " + unsupported);
+        return new Adapter(name, args.get(1));
+    }
+
+    private <T> T failAdapter(String why) {
+        lastReason += why;
+        return null;
+    }
+
+    /**
+     * Why generated code of package {@code pkg} cannot create {@code type} with {@code new}, as the runtime does
+     * outside CDI; {@code null} when it can. A CDI bean (scoped, {@code @Singleton}, or with an {@code @Inject}) is
+     * created by the container at run time: it keeps the runtime.
+     */
+    private static String instantiable(TypeElement type, String pkg) {
+        if (type.getModifiers().contains(Modifier.ABSTRACT)) return "abstract";
+        if (!accessibleFrom(type, pkg)) return "not accessible from package " + pkg;
+        if (type.getNestingKind().isNested() && !type.getModifiers().contains(Modifier.STATIC)
+                && !type.getKind().isInterface()) {
+            return "an inner class";
+        }
+        boolean samePackage = packageOf(type).equals(pkg);
+        var constructors = ElementFilter.constructorsIn(type.getEnclosedElements());
+        boolean callable = constructors.stream().anyMatch(c -> c.getParameters().isEmpty()
+                && (c.getModifiers().contains(Modifier.PUBLIC) || samePackage && !c.getModifiers().contains(Modifier.PRIVATE)));
+        if (!callable) return "no no-argument constructor the binding can call";
+        if (isLikelyBean(type)) return "a CDI bean, which the container creates at run time";
+        return null;
+    }
+
+    /** The runtime's test for a CDI bean: a scope, {@code @Singleton}, or an {@code @Inject} member. */
+    private static boolean isLikelyBean(TypeElement type) {
+        for (AnnotationMirror a : type.getAnnotationMirrors()) {
+            String n = nameOf(a);
+            if (n.startsWith("jakarta.enterprise.context.") && n.endsWith("Scoped")
+                    || "jakarta.inject.Singleton".equals(n)) {
+                return true;
+            }
+        }
+        return type.getEnclosedElements().stream().anyMatch(e -> hasAnnotation(e, "jakarta.inject.Inject"));
+    }
+
+    /**
+     * The {@code <Original, Adapted>} arguments of the {@code JsonbAdapter} {@code adapter} implements, looked up as
+     * the runtime does (its interfaces, then its superclasses'); {@code null} when they are not concrete types.
+     */
+    private static List<? extends TypeMirror> adapterArguments(TypeElement adapter) {
+        for (TypeElement c = adapter; c != null; c = superclassOf(c)) {
+            for (TypeMirror i : c.getInterfaces()) {
+                DeclaredType d = (DeclaredType) i;
+                if (JSONB_ADAPTER.equals(erasureName(d))) {
+                    List<? extends TypeMirror> args = d.getTypeArguments();
+                    boolean concrete = args.size() == 2 && args.stream().allMatch(RestBindings::isConcrete);
+                    return concrete ? args : null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** A type with no type variable nor wildcard in it. */
+    private static boolean isConcrete(TypeMirror t) {
+        return switch (t.getKind()) {
+            case DECLARED -> ((DeclaredType) t).getTypeArguments().stream().allMatch(RestBindings::isConcrete);
+            case ARRAY -> isConcrete(((javax.lang.model.type.ArrayType) t).getComponentType());
+            default -> t.getKind().isPrimitive();
+        };
+    }
+
+    private static Object annotationValue(AnnotationMirror a) {
+        return a.getElementValues().entrySet().stream()
+                .filter(e -> e.getKey().getSimpleName().contentEquals("value"))
+                .map(e -> e.getValue().getValue()).findFirst().orElseThrow();
+    }
+
+    private static String packageOf(Element element) {
+        Element e = element;
+        while (!(e instanceof PackageElement)) e = e.getEnclosingElement();
+        return ((PackageElement) e).getQualifiedName().toString();
     }
 
     /**
@@ -769,24 +1008,35 @@ final class RestBindings {
     }
 
     private String missingBinding(Model model) {
+        if (model.creator() != null) {
+            for (Param param : model.creator().params()) {
+                String reason = unreachable(List.of(param.type()), model.packageName());
+                if (reason == null) reason = unbound(List.of(param.type()));
+                if (reason != null) return CREATOR_PARAMETER + "\"" + param.jsonName() + "\" holds " + reason;
+            }
+        }
         for (Property p : model.properties()) {
-            String reason = unreachable(p, model.packageName());
-            if (reason == null) reason = unbound(p);
+            // The binding names the property's type, and maps the types the JSON holds (an adapter's, maybe).
+            List<TypeMirror> named = new ArrayList<>(p.jsonTypes());
+            named.add(p.type());
+            String reason = unreachable(named, model.packageName());
+            if (reason == null) reason = unbound(p.jsonTypes());
             if (reason != null) return QUOTED_PROPERTY + p.jsonName() + "\" holds " + reason;
         }
         return null;
     }
 
-    /** A type of the property the binding's package cannot name, or {@code null}. */
-    private static String unreachable(Property p, String pkg) {
-        return declaredTypes(p.type()).stream().filter(used -> !accessibleFrom(used, pkg)).findFirst()
+    /** A type among {@code types} the binding's package cannot name, or {@code null}. */
+    private static String unreachable(List<TypeMirror> types, String pkg) {
+        return types.stream().flatMap(t -> declaredTypes(t).stream()).filter(used -> !accessibleFrom(used, pkg))
+                .findFirst()
                 .map(used -> used.getQualifiedName() + ", which the binding, in package " + pkg + ", cannot reach")
                 .orElse(null);
     }
 
-    /** A type of the property that has no binding, or {@code null}. */
-    private String unbound(Property p) {
-        return referencedTypes(p.type()).stream()
+    /** A type among {@code types} that has no binding, or {@code null}. */
+    private String unbound(List<TypeMirror> types) {
+        return types.stream().flatMap(t -> referencedTypes(t).stream())
                 .filter(used -> !models.containsKey(used) && !staticBound.containsKey(used)).findFirst()
                 .map(used -> used.getQualifiedName() + ", which keeps the runtime mapping").orElse(null);
     }

@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The JSON-B customisations and the shapes the generated code implements beyond plain properties:
  * {@code @JsonbDateFormat}, {@code @JsonbNumberFormat} and {@code @JsonbNillable} on a property, its type, a
- * superclass or a package, and arrays. The bindings write and read what the runtime does; the JSON-B annotations of a
+ * superclass or a package, arrays, {@code @JsonbTypeAdapter} and {@code @JsonbCreator}. The bindings write and read what the runtime does; the JSON-B annotations of a
  * type or a package the generated code does not implement keep the runtime mapping.
  */
 class RestBindingsCustomisationsTest {
@@ -63,6 +63,12 @@ class RestBindingsCustomisationsTest {
                         @GET public Arrays arrays() { return null; }
                         @GET public Event[] events() { return null; }
                         @GET public Generic generic() { return null; }
+                        @GET public Order order() { return null; }
+                        @GET public Account account() { return null; }
+                        @GET public Point point() { return null; }
+                        @GET public Unnamed unnamed() { return null; }
+                        @GET public Injected injected() { return null; }
+                        @GET public Celsius celsius() { return null; }
                     }
                     """),
             Map.entry("fmt.Event", """
@@ -194,6 +200,128 @@ class RestBindingsCustomisationsTest {
                     package fmt;
                     public record Generic(java.util.List<String>[] lists) {}
                     """),
+            Map.entry("fmt.Money", """
+                    package fmt;
+                    public final class Money {
+                        public final java.math.BigDecimal amount;
+                        public final String currency;
+                        public Money(java.math.BigDecimal amount, String currency) {
+                            this.amount = amount;
+                            this.currency = currency;
+                        }
+                        @Override public boolean equals(Object o) {
+                            return o instanceof Money m && m.amount.equals(amount) && m.currency.equals(currency);
+                        }
+                        @Override public int hashCode() { return amount.hashCode(); }
+                    }
+                    """),
+            Map.entry("fmt.MoneyAdapter", """
+                    package fmt;
+                    public class MoneyAdapter implements jakarta.json.bind.adapter.JsonbAdapter<Money, String> {
+                        public String adaptToJson(Money m) { return m.amount + " " + m.currency; }
+                        public Money adaptFromJson(String s) {
+                            if (s.isEmpty()) throw new IllegalArgumentException("empty");
+                            String[] parts = s.split(" ");
+                            return new Money(new java.math.BigDecimal(parts[0]), parts[1]);
+                        }
+                    }
+                    """),
+            Map.entry("fmt.TagsAdapter", """
+                    package fmt;
+                    public class TagsAdapter
+                            implements jakarta.json.bind.adapter.JsonbAdapter<java.util.List<String>, Label> {
+                        public Label adaptToJson(java.util.List<String> tags) { return new Label(String.join(",", tags)); }
+                        public java.util.List<String> adaptFromJson(Label l) { return java.util.List.of(l.text().split(",")); }
+                    }
+                    """),
+            Map.entry("fmt.Label", """
+                    package fmt;
+                    public record Label(String text) {}
+                    """),
+            Map.entry("fmt.Order", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public record Order(String id, @JsonbTypeAdapter(MoneyAdapter.class) Money total,
+                                        @JsonbTypeAdapter(TagsAdapter.class) java.util.List<String> tags) {}
+                    """),
+            Map.entry("fmt.Account", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public class Account {
+                        private final String owner;
+                        private final long number;
+                        private String note;
+                        @JsonbCreator
+                        public Account(@JsonbProperty("owner") String owner, @JsonbProperty("number") long number) {
+                            this.owner = owner;
+                            this.number = number;
+                        }
+                        public String getOwner() { return owner; }
+                        public long getNumber() { return number; }
+                        public String getNote() { return note; }
+                        public void setNote(String note) { this.note = note; }
+                    }
+                    """),
+            Map.entry("fmt.Point", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public final class Point {
+                        private final int x;
+                        private final int y;
+                        private Point(int x, int y) { this.x = x; this.y = y; }
+                        @JsonbCreator
+                        public static Point of(@JsonbProperty("x") int x, @JsonbProperty("y") int y) {
+                            if (x < 0) throw new IllegalArgumentException("negative");
+                            return new Point(x, y);
+                        }
+                        public int getX() { return x; }
+                        public int getY() { return y; }
+                    }
+                    """),
+            Map.entry("fmt.Celsius", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public class Celsius {
+                        private double degrees;
+                        private String origin = "constructor";
+                        public Celsius() { }
+                        @JsonbCreator
+                        public static Celsius of(@JsonbProperty("degrees") double degrees) {
+                            Celsius c = new Celsius();
+                            c.degrees = degrees;
+                            c.origin = "factory";
+                            return c;
+                        }
+                        public double getDegrees() { return degrees; }
+                        public String getOrigin() { return origin; }
+                    }
+                    """),
+            Map.entry("fmt.Unnamed", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public class Unnamed {
+                        private final String name;
+                        @JsonbCreator
+                        public Unnamed(String name) { this.name = name; }
+                        public String getName() { return name; }
+                    }
+                    """),
+            Map.entry("fmt.Injected", """
+                    package fmt;
+                    import jakarta.json.bind.annotation.*;
+                    public record Injected(@JsonbTypeAdapter(ScopedAdapter.class) Money total) {}
+                    """),
+            Map.entry("fmt.ScopedAdapter", """
+                    package fmt;
+                    @jakarta.inject.Singleton
+                    public class ScopedAdapter extends MoneyAdapter {}
+                    """),
+            Map.entry("jakarta.inject.Singleton", """
+                    package jakarta.inject;
+                    import java.lang.annotation.*;
+                    @Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)
+                    public @interface Singleton {}
+                    """),
             Map.entry("fmt.Ordered", """
                     package fmt;
                     public class Ordered extends OrderedBase {
@@ -310,6 +438,55 @@ class RestBindingsCustomisationsTest {
         assertTrue(fmt.hasBinding("fmt.Event"));
         assertFalse(fmt.hasBinding("fmt.Generic"));
         assertTrue(fmt.noted("fmt.Generic", "an array of the generic type"), fmt.notes()::toString);
+    }
+
+    @Test
+    void anAdapterIsCalledDirectly() throws Exception {
+        Object order = fmt.newInstance("fmt.Order", "o1",
+                fmt.newInstance("fmt.Money", new BigDecimal("12.50"), "EUR"), List.of("a", "b"));
+        String json = assertSameAsTheRuntime("fmt.Order", order);
+        assertEquals("{\"id\":\"o1\",\"total\":\"12.50 EUR\",\"tags\":{\"text\":\"a,b\"}}", json);
+        assertSameAsTheRuntime("fmt.Order", fmt.newInstance("fmt.Order", "o2", null, null));
+        assertSameRead("fmt.Order", "{\"total\":null}");
+        assertBothFail("fmt.Order", "{\"total\":\"\"}");
+    }
+
+    @Test
+    void aCreatorConstructorThenTheOtherProperties() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Account"), fmt.notes()::toString);
+        assertSameRead("fmt.Account", "{\"note\":\"n\",\"owner\":\"Ann\",\"number\":7,\"other\":1}");
+        assertSameRead("fmt.Account", "{\"owner\":\"Ann\"}");
+        assertBothFail("fmt.Account", "{\"number\":null}");
+    }
+
+    @Test
+    void aCreatorFactory() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Point"), fmt.notes()::toString);
+        assertSameRead("fmt.Point", "{\"y\":2,\"x\":1}");
+        assertBothFail("fmt.Point", "{\"x\":-1}");
+    }
+
+    /** A class with a no-argument constructor is still created through its factory (BUG-20261101-09). */
+    @Test
+    void aCreatorFactoryWinsOverTheNoArgumentConstructor() throws Exception {
+        assertSameRead("fmt.Celsius", "{\"degrees\":21.5}");
+        assertTrue(fmt.writeStatic("fmt.Celsius", fmt.readStatic("fmt.Celsius", "{}")).contains("factory"));
+    }
+
+    @Test
+    void whatTheGeneratedCodeCannotCallKeepsTheRuntime() {
+        assertFalse(fmt.hasBinding("fmt.Unnamed"));
+        assertTrue(fmt.noted("fmt.Unnamed", "-parameters"), fmt.notes()::toString);
+        assertFalse(fmt.hasBinding("fmt.Injected"));
+        assertTrue(fmt.noted("fmt.Injected", "a CDI bean"), fmt.notes()::toString);
+    }
+
+    /** Both refuse {@code json} with a {@code JsonbException}. */
+    private static void assertBothFail(String type, String json) {
+        org.junit.jupiter.api.Assertions.assertThrows(jakarta.json.bind.JsonbException.class,
+                () -> fmt.readRuntime(type, json));
+        org.junit.jupiter.api.Assertions.assertThrows(jakarta.json.bind.JsonbException.class,
+                () -> fmt.readStatic(type, json));
     }
 
     @Test
