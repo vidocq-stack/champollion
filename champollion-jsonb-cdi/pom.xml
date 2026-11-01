@@ -38,27 +38,16 @@
             <scope>provided</scope>
         </dependency>
         <!-- Supplies the VaubanComponentProvider service type of the generated _VaubanComponents
-             (module-info `provides`). API types only, no code runs outside Vauban; inert on a class
-             path (Weld, Open Liberty). Its Jakarta CDI dependencies are excluded: the container
-             brings the CDI API. Same choice as mansart-data-cdi (mansart#68), but optional: Vauban brings
-             vauban-api where the provider runs, and a non-optional declaration with these exclusions would win
-             Maven's mediation in a consumer and strip the CDI API from its path (the Vauban processor of a Vidocq
-             codegen bundle then fails to load). -->
+             (module-info `provides`). API types only, no code runs outside Vauban. Neither optional nor
+             trimmed of its CDI dependencies, unlike mansart-data-cdi (mansart#68): Weld's reflective
+             discovery loads every class of the bean archive, and gives up the registry when
+             _VaubanComponents cannot load (vauban-api absent); and exclusions on this declaration win
+             Maven's mediation in a consumer, stripping the CDI API from a Vidocq codegen bundle's
+             processor path. The CDI APIs it brings are the ones the container provides. -->
         <dependency>
             <groupId>io.vidocq.vauban</groupId>
             <artifactId>vauban-api</artifactId>
             <version>${vauban.version}</version>
-            <optional>true</optional>
-            <exclusions>
-                <exclusion>
-                    <groupId>jakarta.enterprise</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>jakarta.inject</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.jboss.weld.se</groupId>

@@ -777,7 +777,8 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Cause** : the jar shipped no Vauban components, so Vauban fell back to reflection on a package that is not open.
 - **Correctif** : the Vauban processor runs when the module compiles, as for `mansart-data-cdi` (mansart#68): the jar
   ships its `_VaubanComponents` (`provides io.vidocq.vauban.api.VaubanComponentProvider`), and opens nothing.
-  `vauban-api` is optional: a non-optional declaration, with its CDI exclusions, won Maven's mediation in a Vidocq
+  `vauban-api` is a plain dependency: optional, Weld's reflective discovery could not load `_VaubanComponents` and
+  gave up the registry (`champollion-it-weld`); with CDI exclusions, the declaration won Maven's mediation in a Vidocq
   codegen bundle and stripped the CDI API from the processor path.
 - **Vérification** : `JsonbCdiModuleTest` (provides the components, opens nothing); `TodoResourceTest` of the example;
   `champollion-it-weld` and `champollion-it-openliberty` unchanged.
