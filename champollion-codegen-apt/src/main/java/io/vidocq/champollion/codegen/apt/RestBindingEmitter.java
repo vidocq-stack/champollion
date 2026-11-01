@@ -84,6 +84,8 @@ final class RestBindingEmitter {
     private final Map<String, String> leaves = new LinkedHashMap<>();
     /** Fields of the adapters, serializers and deserializers the binding calls, by class name. */
     private final Map<String, String> instances = new LinkedHashMap<>();
+    /** How each instance is created when the container does not provide it: a constructor reference, or null. */
+    private final Map<String, String> creators = new LinkedHashMap<>();
     /** Binding fields of the types this one holds, by their binding's name. */
     private final Map<String, String> bindings = new LinkedHashMap<>();
     /** Reader methods, by the type they read. */
@@ -125,8 +127,9 @@ final class RestBindingEmitter {
                     .append(" = io.vidocq.champollion.jsonb.spi.JsonbLeaf.").append(e.getKey()).append(";\n");
         }
         for (var e : instances.entrySet()) {
-            out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
-                    .append(" = new ").append(e.getKey()).append(NEW_END);
+            out.append("    private static final java.util.function.Supplier<").append(e.getKey()).append("> ")
+                    .append(e.getValue()).append(" = io.vidocq.champollion.jsonb.spi.JsonbInstances.of(")
+                    .append(e.getKey()).append(".class, ").append(creators.get(e.getKey())).append(");\n");
         }
         for (var e : bindings.entrySet()) {
             out.append("    private static final ").append(e.getKey()).append(' ').append(e.getValue())
@@ -236,7 +239,7 @@ final class RestBindingEmitter {
             writeValue(out, a, adapter.adapted(), I16 + "    ");
             out.append(I16).append("}\n");
         } else if (mapping.custom() != null) {
-            out.append(I16).append(instance(mapping.custom())).append(".serialize(").append(v)
+            out.append(I16).append(instance(mapping.custom())).append(".get().serialize(").append(v)
                     .append(", g, io.vidocq.champollion.jsonb.spi.JsonbContexts.serialization(ctx));\n");
         } else if (mapping.format() != null) {
             out.append(I16).append(leaf(t, mapping.format())).append(WRITE_G).append(v).append(");\n");
@@ -621,8 +624,8 @@ final class RestBindingEmitter {
      * A reader method of {@code t} that calls a {@code JsonbDeserializer}: like the runtime, it hands it the parser on
      * the value's first event (a JSON {@code null} included) and the property's type.
      */
-    private String deserializerReader(TypeMirror t, String deserializer) {
-        String field = instance(deserializer);
+    private String deserializerReader(TypeMirror t, RestBindings.Instance deserializer) {
+        String field = instance(deserializer) + ".get()";
         String key = field + ":" + render(t);
         String existing = readerNames.get(key);
         if (existing != null) return existing;
@@ -653,14 +656,18 @@ final class RestBindingEmitter {
 
     /** The field holding an instance of the adapter, created once with {@code new}. */
     private String adapter(Adapter adapter) {
-        return instance(adapter.className());
+        return instance(adapter.instance()) + ".get()";
     }
 
-    /** The field holding an instance of {@code className}, created once with {@code new}. */
-    private String instance(String className) {
-        return instances.computeIfAbsent(className, k -> "__I" + instances.size());
+    /** The field holding the supplier of {@code instance}: the CDI bean, or one created, resolved on first use. */
+    private String instance(RestBindings.Instance instance) {
+        String field = instances.get(instance.className());
+        if (field != null) return field;
+        field = "__I" + instances.size();
+        instances.put(instance.className(), field);
+        creators.put(instance.className(), instance.creatable() ? instance.className() + "::new" : "null");
+        return field;
     }
-
     private String binding(TypeElement element) {
         String name = others.get(element);
         if (name == null) throw new IllegalStateException("no binding for " + element);

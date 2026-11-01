@@ -654,12 +654,21 @@ class RestBindingsCustomisationsTest {
         assertEquals("{\"c\":\"C\",\"a\":\"A\",\"b\":\"B\"}", recordJson);
     }
 
+    /**
+     * An adapter that is a CDI bean is obtained as the runtime obtains it: from the container when there is one,
+     * else created (here, without a container, as the runtime does).
+     */
+    @Test
+    void anAdapterThatIsACdiBeanIsObtainedAsTheRuntimeDoes() throws Exception {
+        assertTrue(fmt.hasBinding("fmt.Injected"), fmt.notes()::toString);
+        assertSameAsTheRuntime("fmt.Injected",
+                fmt.newInstance("fmt.Injected", fmt.newInstance("fmt.Money", new BigDecimal("1.5"), "EUR")));
+    }
+
     @Test
     void whatTheGeneratedCodeCannotCallKeepsTheRuntime() {
         assertFalse(fmt.hasBinding("fmt.Purse"));
         assertTrue(fmt.noted("fmt.Purse", "record component"), fmt.notes()::toString);
-        assertFalse(fmt.hasBinding("fmt.Injected"));
-        assertTrue(fmt.noted("fmt.Injected", "a CDI bean"), fmt.notes()::toString);
     }
 
     /** Both refuse {@code json} with a {@code JsonbException}. */
