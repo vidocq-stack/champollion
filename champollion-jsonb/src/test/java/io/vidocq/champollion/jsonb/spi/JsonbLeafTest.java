@@ -77,7 +77,8 @@ class JsonbLeafTest {
 
     @Test
     void aBadValueIsAJsonbException() {
-        assertThrows(JsonbException.class, () -> read(JsonbLeaf.of(LocalDate.class), "\"31/10/2026\""));
+        JsonbLeaf leaf = JsonbLeaf.of(LocalDate.class);
+        assertThrows(JsonbException.class, () -> read(leaf, "\"31/10/2026\""));
     }
 
     @Test

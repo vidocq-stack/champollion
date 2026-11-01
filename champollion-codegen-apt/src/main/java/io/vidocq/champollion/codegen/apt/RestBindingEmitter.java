@@ -41,6 +41,26 @@ import java.util.Map;
  */
 final class RestBindingEmitter {
 
+    private static final String READ_START = """
+                        jakarta.json.stream.JsonParser.Event e = p.next();
+                        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;
+                        if (e != jakarta.json.stream.JsonParser.Event.START_OBJECT) throw __expected("an object", e);
+                """;
+    private static final String LOOP_START = """
+                        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_OBJECT) {
+                            if (e != jakarta.json.stream.JsonParser.Event.KEY_NAME) throw __expected("a key", e);
+                            switch (p.getString()) {
+                """;
+    private static final String LOOP_END = """
+                                default -> __skip(p);
+                            }
+                        }
+                """;
+    private static final String I8 = "        ";
+    private static final String I16 = "                ";
+    private static final String WRITE_G = ".write(g, ";
+    private static final String NULL_GIVES_NULL = "        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;\n";
+    private static final String WITH_EVENT = "(p, e));\n";
     private final Model model;
     private final Map<TypeElement, String> others;
     /** Leaf codec fields, by the class literal of their type. */
@@ -116,26 +136,26 @@ final class RestBindingEmitter {
 
     private void emitWrite(StringBuilder out, Property p) {
         String key = "__key(g, " + lit(preQuote(p.jsonName())) + ", " + lit(p.jsonName()) + ");";
-        String getter = p.read() == Access.FIELD ? "value." + p.readMember() : "value." + p.readMember();
+        String getter = "value." + p.readMember();
         TypeMirror t = p.type();
         if (t.getKind().isPrimitive()) {
-            out.append("        ").append(key).append(' ').append(leaf(t)).append(".write(g, ").append(getter)
+            out.append(I8).append(key).append(' ').append(leaf(t)).append(WRITE_G).append(getter)
                     .append(");\n");
             return;
         }
-        String v = var();
+        String v = newVariable();
         out.append("        {\n            ").append(render(t)).append(' ').append(v).append(" = ").append(getter)
                 .append(";\n");
         if (RestBindings.OPTIONAL.equals(RestBindings.erasureName(t))) {
             TypeMirror inner = ((DeclaredType) t).getTypeArguments().get(0);
             out.append("            if (").append(v).append(" != null && ").append(v).append(".isPresent()) {\n");
-            out.append("                ").append(key).append('\n');
-            writeValue(out, v + ".get()", inner, "                ");
+            out.append(I16).append(key).append('\n');
+            writeValue(out, v + ".get()", inner, I16);
             out.append("            }");
         } else {
             out.append("            if (").append(v).append(" != null) {\n");
-            out.append("                ").append(key).append('\n');
-            writeValue(out, v, t, "                ");
+            out.append(I16).append(key).append('\n');
+            writeValue(out, v, t, I16);
             out.append("            }");
         }
         if (p.nillable()) out.append(" else { ").append(key).append(" g.writeNull(); }");
@@ -145,43 +165,43 @@ final class RestBindingEmitter {
     /** Writes the non-null {@code expr} of type {@code t}. */
     private void writeValue(StringBuilder out, String expr, TypeMirror t, String indent) {
         if (t.getKind().isPrimitive()) {
-            out.append(indent).append(leaf(t)).append(".write(g, ").append(expr).append(");\n");
+            out.append(indent).append(leaf(t)).append(WRITE_G).append(expr).append(");\n");
             return;
         }
         DeclaredType d = (DeclaredType) t;
         String name = RestBindings.erasureName(d);
         TypeElement element = (TypeElement) d.asElement();
         if (RestBindings.LEAVES.contains(name)) {
-            out.append(indent).append(leaf(t)).append(".write(g, ").append(expr).append(");\n");
+            out.append(indent).append(leaf(t)).append(WRITE_G).append(expr).append(");\n");
         } else if (element.getKind() == ElementKind.ENUM) {
             out.append(indent).append("g.write(").append(expr).append(".name());\n");
         } else if (RestBindings.COLLECTIONS.contains(name)) {
             TypeMirror elem = d.getTypeArguments().get(0);
-            String e = var();
+            String e = newVariable();
             out.append(indent).append("g.writeStartArray();\n");
             out.append(indent).append("for (").append(render(elem)).append(' ').append(e).append(" : ").append(expr)
                     .append(") {\n");
             out.append(indent).append("    if (").append(e).append(" == null) g.writeNull();\n");
             out.append(indent).append("    else {\n");
-            writeValue(out, e, elem, indent + "        ");
+            writeValue(out, e, elem, indent + I8);
             out.append(indent).append("    }\n");
             out.append(indent).append("}\n");
             out.append(indent).append("g.writeEnd();\n");
         } else if (RestBindings.MAP.equals(name)) {
             TypeMirror val = d.getTypeArguments().get(1);
-            String e = var();
+            String e = newVariable();
             out.append(indent).append("g.writeStartObject();\n");
             out.append(indent).append("for (java.util.Map.Entry<String, ").append(render(val)).append("> ").append(e)
                     .append(" : ").append(expr).append(".entrySet()) {\n");
             out.append(indent).append("    g.writeKey(").append(e).append(".getKey());\n");
             out.append(indent).append("    if (").append(e).append(".getValue() == null) g.writeNull();\n");
             out.append(indent).append("    else {\n");
-            writeValue(out, e + ".getValue()", val, indent + "        ");
+            writeValue(out, e + ".getValue()", val, indent + I8);
             out.append(indent).append("    }\n");
             out.append(indent).append("}\n");
             out.append(indent).append("g.writeEnd();\n");
         } else {
-            out.append(indent).append(binding(element)).append(".write(g, ").append(expr).append(");\n");
+            out.append(indent).append(binding(element)).append(WRITE_G).append(expr).append(");\n");
         }
     }
 
@@ -191,21 +211,21 @@ final class RestBindingEmitter {
         String type = model.typeName();
         StringBuilder out = new StringBuilder();
         out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
-        out.append(readStart());
+        out.append(READ_START);
         List<? extends RecordComponentElement> components = model.type().getRecordComponents();
         Map<String, String> locals = new LinkedHashMap<>();
         for (var c : components) {
             String local = "c_" + c.getSimpleName();
             locals.put(c.getSimpleName().toString(), local);
-            out.append("        ").append(render(c.asType())).append(' ').append(local).append(" = ")
+            out.append(I8).append(render(c.asType())).append(' ').append(local).append(" = ")
                     .append(defaultOf(c.asType())).append(";\n");
         }
-        out.append(loopStart());
+        out.append(LOOP_START);
         for (Property p : model.properties()) {
             out.append("                case ").append(lit(p.jsonName())).append(" -> ");
             assign(out, p, locals.get(p.writeMember()));
         }
-        out.append(loopEnd());
+        out.append(LOOP_END);
         out.append("        return new ").append(type).append('(');
         for (int i = 0; i < components.size(); i++) {
             if (i > 0) out.append(", ");
@@ -219,9 +239,9 @@ final class RestBindingEmitter {
         String type = model.typeName();
         StringBuilder out = new StringBuilder();
         out.append("    @Override\n    public ").append(type).append(" read(jakarta.json.stream.JsonParser p) {\n");
-        out.append(readStart());
-        out.append("        ").append(type).append(" o = new ").append(type).append("();\n");
-        out.append(loopStart());
+        out.append(READ_START);
+        out.append(I8).append(type).append(" o = new ").append(type).append("();\n");
+        out.append(LOOP_START);
         for (Property p : model.properties()) {
             if (p.write() == Access.NONE) continue;   // read-only: its key is skipped like an unknown one
             out.append("                case ").append(lit(p.jsonName())).append(" -> ");
@@ -229,33 +249,9 @@ final class RestBindingEmitter {
                     : "o." + p.writeMember() + "(%s);";
             assignWith(out, p, target);
         }
-        out.append(loopEnd());
+        out.append(LOOP_END);
         out.append("        return o;\n    }\n\n");
         return out.toString();
-    }
-
-    private static String readStart() {
-        return """
-                        jakarta.json.stream.JsonParser.Event e = p.next();
-                        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;
-                        if (e != jakarta.json.stream.JsonParser.Event.START_OBJECT) throw __expected("an object", e);
-                """;
-    }
-
-    private static String loopStart() {
-        return """
-                        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_OBJECT) {
-                            if (e != jakarta.json.stream.JsonParser.Event.KEY_NAME) throw __expected("a key", e);
-                            switch (p.getString()) {
-                """;
-    }
-
-    private static String loopEnd() {
-        return """
-                                default -> __skip(p);
-                            }
-                        }
-                """;
     }
 
     /** Reads the property into the record's local. */
@@ -268,7 +264,7 @@ final class RestBindingEmitter {
         String reader = reader(p.type());
         if (p.type().getKind().isPrimitive()) {
             // A JSON null cannot go into a primitive: the runtime rejects it, so does the binding.
-            String v = var();
+            String v = newVariable();
             out.append("{ ").append(boxed(p.type())).append(' ').append(v).append(" = ").append(reader)
                     .append("(p, p.next()); if (").append(v).append(" == null) throw new jakarta.json.bind.JsonbException(")
                     .append(lit("null for the primitive property " + p.jsonName())).append("); ")
@@ -297,7 +293,7 @@ final class RestBindingEmitter {
             String erased = RestBindings.erasureName(d);
             TypeElement element = (TypeElement) d.asElement();
             if (element.getKind() == ElementKind.ENUM) {
-                r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;\n");
+                r.append(NULL_GIVES_NULL);
                 r.append("        if (e != jakarta.json.stream.JsonParser.Event.VALUE_STRING) throw __expected(\"a string\", e);\n");
                 r.append("        String s = p.getString();\n");
                 r.append("        try { return ").append(key).append(".valueOf(s); }\n");
@@ -307,18 +303,18 @@ final class RestBindingEmitter {
                 TypeMirror elem = d.getTypeArguments().get(0);
                 String impl = "java.util.Set".equals(erased) ? "java.util.LinkedHashSet" : "java.util.ArrayList";
                 String elemReader = reader(elem);
-                r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;\n");
+                r.append(NULL_GIVES_NULL);
                 r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_ARRAY) throw __expected(\"an array\", e);\n");
-                r.append("        ").append(impl).append('<').append(render(elem)).append("> c = new ").append(impl)
+                r.append(I8).append(impl).append('<').append(render(elem)).append("> c = new ").append(impl)
                         .append("<>();\n");
                 r.append("        while ((e = p.next()) != jakarta.json.stream.JsonParser.Event.END_ARRAY) {\n");
                 r.append("            c.add(e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
-                        .append(elemReader).append("(p, e));\n");
+                        .append(elemReader).append(WITH_EVENT);
                 r.append("        }\n        return c;\n");
             } else if (RestBindings.MAP.equals(erased)) {
                 TypeMirror val = d.getTypeArguments().get(1);
                 String valReader = reader(val);
-                r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return null;\n");
+                r.append(NULL_GIVES_NULL);
                 r.append("        if (e != jakarta.json.stream.JsonParser.Event.START_OBJECT) throw __expected(\"an object\", e);\n");
                 r.append("        java.util.LinkedHashMap<String, ").append(render(val))
                         .append("> m = new java.util.LinkedHashMap<>();\n");
@@ -326,13 +322,13 @@ final class RestBindingEmitter {
                 r.append("            String k = p.getString();\n");
                 r.append("            e = p.next();\n");
                 r.append("            m.put(k, e == jakarta.json.stream.JsonParser.Event.VALUE_NULL ? null : ")
-                        .append(valReader).append("(p, e));\n");
+                        .append(valReader).append(WITH_EVENT);
                 r.append("        }\n        return m;\n");
             } else if (RestBindings.OPTIONAL.equals(erased)) {
                 TypeMirror inner = d.getTypeArguments().get(0);
                 String innerReader = reader(inner);
                 r.append("        if (e == jakarta.json.stream.JsonParser.Event.VALUE_NULL) return java.util.Optional.empty();\n");
-                r.append("        return java.util.Optional.ofNullable(").append(innerReader).append("(p, e));\n");
+                r.append("        return java.util.Optional.ofNullable(").append(innerReader).append(WITH_EVENT);
             } else {
                 r.append("        return ").append(binding(element))
                         .append(".read(new io.vidocq.champollion.jsonb.spi.PrimedJsonParser(e, p));\n");
@@ -357,7 +353,7 @@ final class RestBindingEmitter {
         return bindings.computeIfAbsent(name, k -> "__B" + bindings.size());
     }
 
-    private String var() {
+    private String newVariable() {
         return "__v" + variables++;
     }
 

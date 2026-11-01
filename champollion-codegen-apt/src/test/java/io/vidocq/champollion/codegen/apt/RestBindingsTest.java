@@ -369,7 +369,6 @@ class RestBindingsTest {
     }
 
     private static Object entry(Object next) throws Exception {
-        Class<?> genre = loader.loadClass("shop.Genre");
         return newInstance("shop.Catalog$Entry", 'A', java.util.UUID.fromString("123e4567-e89b-12d3-a456-426614174000"),
                 new java.util.LinkedHashSet<>(List.of(enumConstant("shop.Genre", "ESSAY"))), List.of(3, 1),
                 java.time.Instant.parse("2026-10-31T10:15:30Z"), java.time.LocalDateTime.of(2026, 10, 31, 10, 15),
@@ -417,7 +416,7 @@ class RestBindingsTest {
         Object viaRuntime;
         try {
             viaRuntime = runtime.fromJson(primitiveNull, type);
-        } catch (JsonbException e) {
+        } catch (JsonbException _) {
             assertThrows(JsonbException.class, () -> readStatic("shop.Counter", primitiveNull));
             return;
         }
