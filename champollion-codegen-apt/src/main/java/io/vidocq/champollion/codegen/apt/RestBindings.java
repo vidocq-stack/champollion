@@ -239,6 +239,8 @@ final class RestBindings {
     /** Records annotated {@code @JsonbStatic}: they have their own binding, which the generated code calls. */
     private final Map<TypeElement, String> staticBound = new LinkedHashMap<>();
     private final Deque<TypeElement> pending = new ArrayDeque<>();
+    private final Set<TypeElement> responseEntities = new java.util.LinkedHashSet<>();
+    private boolean responseEntitiesRead;
 
     /**
      * @param compiled the types of this compilation: a binding is generated in the package of its type, so only
@@ -255,7 +257,41 @@ final class RestBindings {
             TypeElement resource = resourceOf(element);
             if (resource != null) reachFrom(resource);
         }
+        reachResponseEntities();
         return settle();
+    }
+
+    /**
+     * Queues the entities the code of the compilation gives a JAX-RS {@code Response} ({@link ResponseEntities}), and
+     * keeps the application types they name: JAX-RS hands them to JSON-B at run time, which no signature shows.
+     */
+    private void reachResponseEntities() {
+        java.util.Optional<List<TypeMirror>> found;
+        try {
+            found = ResponseEntities.find(env, compiled);
+        } catch (LinkageError e) {   // no jdk.compiler: the entities stay unknown
+            found = java.util.Optional.empty();
+        }
+        responseEntitiesRead = found.isPresent();
+        for (TypeMirror entity : found.orElse(List.of())) {
+            reach(entity);
+            referencedTypes(entity).stream().filter(t -> !isPlatform(t.getQualifiedName().toString()))
+                    .forEach(responseEntities::add);
+        }
+    }
+
+    private static boolean isPlatform(String name) {
+        return name.startsWith("java.") || name.startsWith("jakarta.");
+    }
+
+    /** The application types the code gives a {@code Response} as its entity, or as a type an entity holds. */
+    Set<TypeElement> responseEntities() {
+        return responseEntities;
+    }
+
+    /** Whether the method bodies could be read for {@link #responseEntities}. */
+    boolean responseEntitiesRead() {
+        return responseEntitiesRead;
     }
 
     /**

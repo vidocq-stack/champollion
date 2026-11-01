@@ -117,6 +117,11 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     static final String TYPES_OPTION = "champollion.jsonb.types";
     /** The types of other compilations the resources reach, by binary name: a dependency's, to bind there. */
     static final String DEPENDENCY_TYPES_FILE = "META-INF/champollion/dependency-types";
+    /**
+     * The application types the code gives a JAX-RS {@code Response} as its entity, by binary name: those without a
+     * binding are bound by reflection, and Vidocq's module check opens their packages from this list.
+     */
+    static final String RESPONSE_ENTITIES_FILE = "META-INF/champollion/rest-entity-types";
     private static final String JSONB_BINDING = "io.vidocq.champollion.jsonb.spi.JsonbBinding";
     static final String JSONB_STATIC = "io.vidocq.champollion.jsonb.spi.JsonbStatic";
     /** The bindings generated for the types resources reach, and their type: kept across incremental builds. */
@@ -129,6 +134,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     private final Set<TypeElement> compiled = new java.util.HashSet<>();
     /** The binary names of the types of other compilations the resources reach. */
     private final Set<String> dependencyTypes = new java.util.TreeSet<>();
+    private final Set<String> responseEntityTypes = new java.util.TreeSet<>();
+    private boolean responseEntitiesNoted;
     private boolean namedTypesDone;
 
     @Override
@@ -167,7 +174,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
         if (env.processingOver() && !generatedBindings.isEmpty()) {
             writeServicesFile();
         }
-        if (env.processingOver() && !dependencyTypes.isEmpty()) writeDependencyTypes();
+        if (env.processingOver() && !dependencyTypes.isEmpty()) writeList(DEPENDENCY_TYPES_FILE, dependencyTypes);
+        if (env.processingOver() && !responseEntityTypes.isEmpty()) writeList(RESPONSE_ENTITIES_FILE, responseEntityTypes);
         // Never claims: other processors (Cassini's, Vauban's) read @Path too.
         return false;
     }
@@ -219,7 +227,16 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
                             + " the types its resources exchange keep the reflective JSON-B mapping at run time");
             return;
         }
-        generate(new RestBindings(processingEnv, compiled).collect(resources));
+        RestBindings found = new RestBindings(processingEnv, compiled).collect(resources);
+        for (TypeElement entity : found.responseEntities()) {
+            responseEntityTypes.add(processingEnv.getElementUtils().getBinaryName(entity).toString());
+        }
+        if (!found.responseEntitiesRead() && !responseEntitiesNoted) {
+            responseEntitiesNoted = true;
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE, "Champollion: this compiler does not"
+                    + " expose its trees; the entities given a JAX-RS Response keep the reflective JSON-B mapping");
+        }
+        generate(found);
     }
 
     /** Writes the bindings of the types {@code found} models, and notes why the others keep the runtime mapping. */
@@ -980,19 +997,19 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
     }
 
     /**
-     * Lists the types of other compilations the resources reach, for Vidocq's {@code generate} goal to bind in the
-     * dependency that holds them ({@value #TYPES_OPTION}).
+     * Writes {@code types}, one binary name per line, to {@code file}: the types of other compilations the resources
+     * reach, for Vidocq's {@code generate} goal to bind in the dependency that holds them ({@value #TYPES_OPTION}),
+     * or the entities given a {@code Response}, for its module check.
      */
-    private void writeDependencyTypes() {
+    private void writeList(String file, Set<String> types) {
         try {
-            FileObject f = processingEnv.getFiler()
-                    .createResource(StandardLocation.CLASS_OUTPUT, "", DEPENDENCY_TYPES_FILE);
+            FileObject f = processingEnv.getFiler().createResource(StandardLocation.CLASS_OUTPUT, "", file);
             try (var w = f.openWriter()) {
-                for (String type : dependencyTypes) w.write(type + "\n");
+                for (String type : types) w.write(type + "\n");
             }
         } catch (IOException e) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "Failed to write " + DEPENDENCY_TYPES_FILE + ": " + e.getMessage());
+                    "Failed to write " + file + ": " + e.getMessage());
         }
     }
 
