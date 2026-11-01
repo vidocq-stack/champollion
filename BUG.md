@@ -712,3 +712,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Correctif** : the processor builds the runtime's `@JsonbTypeInfo` chain (interfaces included). A record listed by
   its `@JsonbSubtype` writes and checks its discriminator; a class with such a chain keeps the runtime.
 - **Vérification** : `RestBindingsCustomisationsTest` (`Circle` alone, and through the sealed `Shape`).
+
+## BUG-20261101-13 — JSON-B: eight threads write less than one
+
+- **Date** : 2026-11-01
+- **Statut** : OPEN — to investigate after the JSON-B step C
+- **Module touché** : `champollion-jsonb` (write path; not located yet)
+- **Symptôme** : `JsonbRestBindingBench.write_generated_adapters` with 20 lines writes 1.48–1.52 ops/µs on one
+  thread and 0.715–0.721 ops/µs in total on eight (BENCH-20261101-02): the throughput halves when threads are
+  added, where it should grow.
+- **Repro minimal** :
+  ```bash
+  java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 1 -p lines=20
+  java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 8 -p lines=20
+  ```
+- **Hypothèse** : a shared, contended structure on the write path of one `Jsonb` used by several threads (a lock,
+  a buffer the instance keeps, a hot `AtomicReference`/`ConcurrentHashMap` entry); the same before and after the
+  instance cache of BENCH-20261101-02, so not the adapters' lookup.
