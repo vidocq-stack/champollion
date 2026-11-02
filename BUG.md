@@ -787,3 +787,33 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   codegen bundle and stripped the CDI API from the processor path.
 - **Vérification** : `JsonbCdiModuleTest` (provides the components, opens nothing); `TodoResourceTest` of the example;
   `champollion-it-weld` and `champollion-it-openliberty` unchanged.
+
+## BUG-20261102-01 — JSON-B: after a `vidocq dev` hot reload, the entities of the new layer are bound by reflection and need `opens`
+
+- **Date** : 2026-11-02
+- **Statut** : FIXED 2026-11-02 (branch `fix/hot-reload-static-bindings`). Reported by the vidocq-tutorial session
+  (tutorial step 11).
+- **Module touché** : `champollion-jsonb` — `StaticBindings`
+- **Symptôme** : `GET /books` answers 200 with no `opens` on the entity package; after one `vidocq dev` hot reload it
+  answers 500, `JsonbException: Failed to read property author: module … does not open package … to
+  io.vidocq.champollion.jsonb`. A cold restart is fine. `Book$$Binding.class` exists in `target/classes`.
+- **Reproduction minimale** : `vidocq create --name hrapp -x cassini-rest`, a public POJO `Book` with private fields
+  and getters in a package `book` that the module does not open, a `@Path` resource returning `List<Book>`;
+  `vidocq dev`, `GET /books` (200), touch the resource, wait for "Hot reload - restarting on a fresh application layer",
+  `GET /books` (500). Reproduced end to end on the 0.4.0-SNAPSHOT of 2026-11-02.
+- **Cause** : the `Jsonb` that Cassini serves requests with (`CassiniJsonbReaderWriter.DefaultJsonb`) is created once
+  per JVM, in the parent layer, and outlives the application layer. `StaticBindings.fromServiceLoader` read the
+  `META-INF/services/…JsonbBinding` files of the loaders it saw when the `Jsonb` was built (the library's and the
+  context class loader's) and indexed the bindings by `Class`. A hot reload boots a fresh application layer under the
+  same library: its `Book` is a new `Class` defined by a new loader, absent from that index, so `staticBindings.get`
+  answered `null` and the runtime registries mapped the type through reflection. Whether the first layer was found at
+  all depended on the context class loader of the thread that built the `Jsonb`.
+- **Correctif** : an index made from `ServiceLoader` also answers for a type it does not hold: it reads, once, the
+  services files of the type's own class loader and of the context class loader (unless the index was made from
+  them), and keeps the answer in a `ClassValue`, that is with the class itself, so that the hit and the miss cost one
+  lookup per class and a discarded layer stays collectable. The per-loader index is held through a weak reference.
+  The reflective fallback is unchanged.
+- **Vérification** : `StaticBindingsLaterLayerTest` (3: a layer booted after the `Jsonb`, a type without binding
+  keeps the runtime mapping, a discarded layer is collected; red before); the TCK JSON-B 3.0 (295, 5 skipped as
+  before); end to end on the tutorial-like app above: three hot reloads, `GET /books` 200 each time, no `opens`
+  written to the module-info.
