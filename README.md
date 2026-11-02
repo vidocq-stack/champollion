@@ -20,7 +20,7 @@
 ---
 
 Champollion is the **Jakarta JSON Processing 2.1** and **Jakarta JSON Binding 3.0**
-implementation of the [Vidocq](https://forge.vidocq.dev/vidocq) ecosystem: zero dependencies
+implementation of the [Vidocq](https://codefloe.com/Vidocq) ecosystem: zero dependencies
 beyond Jakarta specs, pure JDK 25, strict Java Modules, virtual threads, **compile-time static binding
 generation via APT** to avoid runtime reflection.
 

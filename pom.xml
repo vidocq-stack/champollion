@@ -56,7 +56,7 @@
     <scm>
         <url>https://codefloe.com/Vidocq/champollion</url>
         <connection>scm:git:https://codefloe.com/Vidocq/champollion.git</connection>
-        <developerConnection>scm:git:git@forge.vidocq.dev:vidocq/champollion.git</developerConnection>
+        <developerConnection>scm:git:ssh://git@codefloe.com/Vidocq/champollion.git</developerConnection>
     </scm>
 
     <properties>
