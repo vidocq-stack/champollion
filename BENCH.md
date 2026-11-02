@@ -611,6 +611,9 @@ introspective baseline (MethodHandles + cache).
 
 ## BENCH-20261101-01 — Generated REST bindings vs the reflective mapping (formats, array, superclass)
 
+> **Superseded as the reference** by BENCH-20261102-01 (macuntu, quiet host, load recorded). These Mac figures were
+> taken without a quiet-machine check (other builds may have run); kept as a secondary point.
+
 - **Date** : 2026-11-01
 - **Commit** : b7d31bc (`feat/jsonb-bindings-formats-creators`)
 - **JVM** : Temurin 25 LTS (2025-09-16)
@@ -647,6 +650,10 @@ introspective baseline (MethodHandles + cache).
 
 ## BENCH-20261101-02 — Adapters through JsonbInstances: per-call lookup vs instance kept per container generation
 
+> **Superseded** for its eight-thread figure: the 0.715–0.721 ops/µs below was a measurement artifact (CPU-starved
+> `-f 1` runs on a loaded Mac), see BENCH-20261102-01 and BUG-20261101-13. The before/after comparison on one thread
+> (within the error) is not re-measured.
+
 - **Date** : 2026-11-01
 - **Commit** : branch `feat/jsonb-cdi-instances` (before: cd5620b; after: the generation cache of this entry's commit)
 - **JVM** : Temurin 25 LTS (2025-09-16)
@@ -676,3 +683,74 @@ introspective baseline (MethodHandles + cache).
   already short; the cache matters when a container runs, where each call took the lock, walked the loaders and
   asked the registry — a path this JMH bench cannot start (no CDI container in it).
 - **Notes** : the eight-thread figure being below the one-thread one is not this change's: the same before and after.
+
+## BENCH-20261102-01 — Reference: generated vs reflective, and scaling with threads (platform and virtual), on macuntu
+
+- **Date** : 2026-11-02
+- **Commit** : c49193d (champollion `main`)
+- **Host** : macuntu (Montreuil) — Intel Core i7-8700B @ 3.20 GHz, 6 cores / 12 threads (`nproc` 12), 31 GiB RAM,
+  Ubuntu 22.04.5, kernel 5.15.0-191-generic, x86_64. Its CI runner stacks were stopped for the run; the remaining
+  containers (Portainer, a Reposilite backup, PostgreSQL) measured at 0–0.2 % CPU beforehand.
+- **JVM** : Temurin 25.0.5+8 LTS, in a throw-away `eclipse-temurin:25-jdk` container, no CPU limit.
+- **Protocol (pinned)** : `-f 2`, 3 warm-up iterations, load average printed before and after each run, nothing
+  else benchmarking on the host. Load at the start: 0.08.
+- **Commande exacte** :
+  ```bash
+  ./mvnw -pl champollion-bench -am package -DskipTests            # on the Mac; the shaded jar is copied in
+  java -jar benchmarks.jar JsonbRestBindingBench                    # class settings: -f 2 -wi 3 -w 2s -i 5 -r 3s, -Xms1G -Xmx1G G1
+  java -jar benchmarks.jar 'JsonbRestBindingBench.(write_generated|write_generated_adapters|read_generated)$' \
+       -f 2 -wi 3 -w 2s -i 5 -r 2s -t {1,8,32} -p lines=20 -jvmArgsAppend -Djmh.executor={PLATFORM,VIRTUAL}
+  java -jar benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters$' -f 2 -wi 3 -w 2s -i 5 -r 2s -t {1,8,32} -p lines=20 -prof gc
+  ```
+  (`-jvmArgsAppend` on the command line replaces the class's `-Xms1G -Xmx1G -XX:+UseG1GC`: the thread runs use the
+  JVM's default heap, G1 too.)
+- **Résultats — generated vs reflective, one thread** (load 0.08 → 1.23):
+  ```
+  Benchmark                                        (lines)  Mode  Cnt  Score   Error  Units
+  JsonbRestBindingBench.read_generated                   1  thrpt  10  0.488 ± 0.045  ops/us
+  JsonbRestBindingBench.read_reflective                  1  thrpt  10  0.387 ± 0.041  ops/us
+  JsonbRestBindingBench.read_generated                  20  thrpt  10  0.094 ± 0.003  ops/us
+  JsonbRestBindingBench.read_reflective                 20  thrpt  10  0.062 ± 0.008  ops/us
+  JsonbRestBindingBench.write_generated                  1  thrpt  10  1.080 ± 0.165  ops/us
+  JsonbRestBindingBench.write_reflective                 1  thrpt  10  0.798 ± 0.182  ops/us
+  JsonbRestBindingBench.write_generated                 20  thrpt  10  0.325 ± 0.036  ops/us
+  JsonbRestBindingBench.write_reflective                20  thrpt  10  0.163 ± 0.071  ops/us
+  JsonbRestBindingBench.write_generated_adapters         1  thrpt  10  4.124 ± 0.331  ops/us
+  JsonbRestBindingBench.write_generated_adapters        20  thrpt  10  0.562 ± 0.077  ops/us
+  ```
+  Generated vs reflective: write +35 % (1 line), ×2.0 (20 lines); read +26 % (1 line), +52 % (20 lines).
+- **Résultats — threads, `lines=20`, total ops/µs** (all threads together):
+  ```
+                              1 thread         8 threads        32 threads
+  write_generated_adapters
+    platform                  0.412 ± 0.252    1.537 ± 0.568    1.609 ± 0.783
+    virtual                   0.469 ± 0.151    1.549 ± 0.474    not measurable (*)
+  write_generated
+    platform                  0.233 ± 0.105    0.874 ± 0.143    0.836 ± 0.286
+    virtual                   0.309 ± 0.098    0.889 ± 0.471    not measurable (*)
+  read_generated
+    platform                  0.065 ± 0.031    0.165 ± 0.121    0.238 ± 0.060
+    virtual                   0.078 ± 0.003    0.253 ± 0.102    not measurable (*)
+  ```
+  (*) JMH with virtual threads, 32 CPU-bound benchmark threads on 12 carriers: the 12 carriers stay mounted on
+  benchmark threads that never block, the 20 others never run, and JMH's iteration barrier never completes (run killed
+  after 1 h 30; thread dump: every `ForkJoinPool` carrier in `BenchPriced$$Binding.write`/`WriterSink.append`). A
+  harness limit for CPU-bound virtual threads, not a Champollion one: a real server's virtual threads block on I/O.
+- **Résultats — allocation (`-prof gc`, write_generated_adapters, 20 lines)** :
+  ```
+  threads  ops/us          alloc.rate.norm   alloc.rate        gc.count  gc.time
+        1  0.457 ± 0.239   5928 B/op         2583 MB/s            85      118 ms   (suspect: an orphan JVM was still running)
+        8  1.575 ± 0.559   5928 B/op         8893 MB/s           293      331 ms
+       32  1.538 ± 0.566   5928 B/op         8546 MB/s           297      322 ms
+  ```
+- **Comparaison** : throughput grows with threads up to the host's cores and then stays flat — 8 threads write
+  ≈ 3.7× one thread on 6 physical cores, 32 threads the same as 8; virtual threads match platform threads. The bytes
+  allocated per operation do not change with the thread count (5928 B/op), and GC takes ≈ 1.6 % of the time: no lock,
+  no shared buffer, no per-thread pool on the write path. This closes BUG-20261101-13: its "eight threads write less
+  than one" (BENCH-20261101-02) does not reproduce, here or on the Mac (M5 Max, same commit as that entry:
+  1.60 → 9.71 ops/µs, 6.1× on 8 threads; JMH `-prof stack` at 8 threads: 89.6 % RUNNABLE in serialization code,
+  no BLOCKED thread).
+- **Notes** : macuntu's per-iteration spread is wide in the thread runs (e.g. 0.17–0.61 ops/µs at one thread), wider
+  than in the one-thread class run above (2 s vs 3 s iterations, default heap); the scaling conclusion holds across
+  it. Slower than the Mac in absolute terms (2018 i7 vs M5 Max): compare ratios, not ops/µs, across hosts.
+

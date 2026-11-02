@@ -716,19 +716,24 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261101-13 — JSON-B: eight threads write less than one
 
 - **Date** : 2026-11-01
-- **Statut** : OPEN — to investigate after the JSON-B step C
-- **Module touché** : `champollion-jsonb` (write path; not located yet)
-- **Symptôme** : `JsonbRestBindingBench.write_generated_adapters` with 20 lines writes 1.48–1.52 ops/µs on one
-  thread and 0.715–0.721 ops/µs in total on eight (BENCH-20261101-02): the throughput halves when threads are
-  added, where it should grow.
+- **Statut** : CLOSED 2026-11-02 — not reproducible, a measurement artifact
+- **Module touché** : none
+- **Symptôme** : `JsonbRestBindingBench.write_generated_adapters` with 20 lines wrote 1.48–1.52 ops/µs on one
+  thread and 0.715–0.721 ops/µs in total on eight (BENCH-20261101-02).
 - **Repro minimal** :
   ```bash
   java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 1 -p lines=20
   java -jar champollion-bench/target/benchmarks.jar 'JsonbRestBindingBench.write_generated_adapters' -f 1 -wi 3 -w 2s -i 5 -r 2s -t 8 -p lines=20
   ```
-- **Hypothèse** : a shared, contended structure on the write path of one `Jsonb` used by several threads (a lock,
-  a buffer the instance keeps, a hot `AtomicReference`/`ConcurrentHashMap` entry); the same before and after the
-  instance cache of BENCH-20261101-02, so not the adapters' lookup.
+- **Investigation** : the same commands on the commit BENCH-20261101-02 measured (feab6af) give 1.60 → 9.71 ops/µs
+  (6.1× on 8 threads, M5 Max), and the same on `main`. JMH `-prof stack` at 8 threads: 89.6 % RUNNABLE, all in
+  serialization code (`WriterSink.append`, `GeneratorSink.appendLong`, the generated `write`), no BLOCKED thread.
+  `-prof gc`: 5928 B/op whatever the thread count. On a quiet reference host (BENCH-20261102-01, macuntu, 6 cores),
+  platform and virtual threads scale up to the cores and stay flat beyond.
+- **Cause** : the original `-f 1` runs were taken while other builds loaded the Mac: CPU starvation, not contention.
+- **Correctif** : none in code. Benchmarks are now taken with the pinned protocol of BENCH-20261102-01 (`-f 2`,
+  warm-ups, a quiet host, load recorded before and after).
+
 ## BUG-20261101-11 — JSON-B: `@JsonbPropertyOrder` on a record was ignored
 
 - **Date** : 2026-11-01
