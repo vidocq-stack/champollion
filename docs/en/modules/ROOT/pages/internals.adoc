@@ -4,6 +4,65 @@
 [.lead]
 Champollion's technical signature lies in two points: a hand-written **JSON-P state-machine parser** designed to minimize allocation, and a **compile-time JSON-B codegen** via APT that removes runtime reflection. This page details both pipelines.
 
+[#generated-code]
+== Generated code and reflective fallback [.tag-new]#NEW#
+
+Every brick of the suite documents, in a section of this name, what it generates, who generates it and when, what
+looks it up at run time, and what runs instead when it is missing. For Champollion that is the JSON-B binding of each
+type it can model at build time, and the Protobuf parser of each `@ProtobufStatic` record; the runtime introspection
+stays as the fallback, unchanged. Which types get a binding is in
+xref:reference.adoc#rest-bindings[Reference — Bindings for the types REST resources exchange].
+
+[cols="2,2,3,3"]
+|===
+| Generated | By, and when | Used at run time by | Without it
+
+| `<Type>$$Binding`, a `JsonbBinding<T>`: writes and reads the type with plain code, property names as precomputed
+  UTF-8 constants
+| `champollion-codegen-apt` in javac, for each `@JsonbStatic` record and, with no annotation, for the types the
+  compilation's JAX-RS resources take or return and the types their properties hold; on Vidocq the
+  `vidocq-runtime-cassini-rest-extension-codegen` bundle puts it on the processor path
+| `ChampollionJsonb`, through `StaticBindings`: the `ServiceLoader` of `JsonbBinding`, read once, keyed by class
+| The type is introspected by reflection on first use (<<_json_b_pipeline_runtime_introspection_default_mode>>),
+  which on the module path needs its package opened to `io.vidocq.champollion.jsonb`.
+
+| `META-INF/champollion/dependency-types`: the types of a dependency the application's resources exchange
+| `champollion-codegen-apt`
+| `vidocq:generate`, which runs the processor over the dependency jar that holds them
+  (`-Achampollion.jsonb.types`) and puts the bindings in its enriched copy
+| The dependency's types are introspected by reflection.
+
+| `META-INF/champollion/rest-entity-types`: the types the code hands to a JAX-RS `Response` as its entity
+| `champollion-codegen-apt`, from the method bodies of the compilation
+| Vidocq's module check (`vidocq doctor`, `vidocq:check-module-info`), which counts the packages of those
+  without a binding among the ones to open
+| An `opens` to add by hand.
+
+| `<Record>$$Parser` and `<Record>$$ParserProvider`
+| `champollion-protobuf-codegen` in javac, for each `@ProtobufStatic` record
+| `Protobuf.parser(Class)`, through the `ServiceLoader` of `ParserProvider`
+| `RuntimeBinding` reads the record's components and calls them through method handles. Writing a message always
+  goes through `RuntimeBinding`.
+|===
+
+Adapters, serializers and deserializers that are CDI beans are found at build by the extension of
+`champollion-jsonb-cdi`, which Vauban runs on the processor path (xref:reference.adoc#jsonb-cdi[Reference]).
+
+=== When the fallback runs
+
+* A type the build cannot model: an abstract class, `@JsonbVisibility`, a `@JsonbCreator` class from a dependency
+  compiled without `-parameters`, and the other cases the reference lists.
+* A type no resource of the compilation reaches and that carries no `@JsonbStatic`.
+* A type of a class compiled without the processor, outside Vidocq or before `vidocq:generate` ran.
+
+=== Which path ran
+
+* The build says, in a compiler note per type, which ones keep the reflective mapping and why:
+  `Champollion: <type> keeps the reflective JSON-B mapping at run time: <reason>`.
+* `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding` in the built jar lists every generated binding.
+* On the module path, a reflective mapping without the `opens` fails with a `JsonbException` that names the module,
+  the package and the line to add (xref:reference.adoc#bound-types-access[Reference]).
+
 == Modules overview
 
 [plantuml]
@@ -119,7 +178,7 @@ Key traits:
 * **Generated Java code, no bytecode** in `champollion-codegen-apt`. Bytecode comes via `javac` on the generated source — debuggable, readable.
 * **Class-File API (JEP 484)** considered for secondary passes (precomputed UTF-8 byte-array constants in bytecode). No Byte Buddy, no ASM.
 * **`META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding`**: the APT accumulates every generated binding in this services file; `ChampollionJsonb` discovers them via `ServiceLoader` at startup (collision strategy: first registered wins, deterministic source order — consistent with Java Modules `provides ... with` semantics).
-* **Runtime fallback**: if no static binding is found for a type, `ChampollionJsonb` silently falls back to M4 introspection (`RuntimeBindingRegistry` / `RuntimeReadRegistry`). To audit which types are statically bound, inspect the `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding` entries in your jar.
+* **Runtime fallback**: if no static binding is found for a type, `ChampollionJsonb` falls back to M4 introspection (`RuntimeBindingRegistry` / `RuntimeReadRegistry`). The build names the types that keep it, in a compiler note each, and the `META-INF/services/io.vidocq.champollion.jsonb.spi.JsonbBinding` entries of your jar list the types statically bound (<<generated-code>>).
 * **AOT-friendly**: zero reflection ⇒ GraalVM `native-image` with no config, Leyden CDS happy.
 * **Optimizations in the generated binding**: property names as precomputed UTF-8 `byte[]` constants, stable write order, grouped writes (`writeStartObject` + first `write` merged via the `writeString` fast-path).
 
