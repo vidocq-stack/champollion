@@ -754,3 +754,38 @@ introspective baseline (MethodHandles + cache).
   than in the one-thread class run above (2 s vs 3 s iterations, default heap); the scaling conclusion holds across
   it. Slower than the Mac in absolute terms (2018 i7 vs M5 Max): compare ratios, not ops/µs, across hosts.
 
+
+## BENCH-20261102-02 — `ComputedClassValue` keeps the values of never-discarded classes in an owned map
+
+- **Date** : 2026-11-02
+- **Commit** : `main` cf991ab + the BUG-20261102-02 change (champollion `fix/jsonb-layer-leak`)
+- **Host** : Apple M5 Max, 18 cores, 128 GiB, macOS 27.0.1. **Loaded**: other jobs were running (load average 3.3–3.9
+  before the runs), so differences under ~10 % are noise.
+- **JVM** : Temurin 25 (`25-tem`), shaded `champollion-bench` jar built from each tree, same JVM and flags.
+- **Commande exacte** :
+  ```bash
+  java -jar benchmarks.jar 'JsonbWriteBench.champollion_.*|JsonbReadBench.champollion_.*' \
+       -f 1 -wi 2 -w 2 -i 4 -r 2 -t 1 -bm avgt -tu us        # orig and fixed jars interleaved, 3 rounds, median
+  ```
+  Question: does routing the class of a never-discarded loader through an owned `ConcurrentHashMap` instead of the
+  class's own `ClassValue` slow the hot lookup (`cache.get(type)`) of the writers and readers?
+- **Résultats (µs/op, median of 3 interleaved rounds, one thread)** :
+  ```
+  Benchmark                                   orig       fixed     delta
+  JsonbReadBench.champollion_pojo   SMALL      0.137      0.153    +11.8 %  (16 ns on a loaded host)
+  JsonbReadBench.champollion_pojo   MEDIUM     1.493      1.495     +0.1 %
+  JsonbReadBench.champollion_pojo   LARGE    153.999    150.503     -2.3 %
+  JsonbReadBench.champollion_record SMALL      0.208      0.217     +4.6 %
+  JsonbReadBench.champollion_record MEDIUM     1.447      1.484     +2.6 %
+  JsonbReadBench.champollion_record LARGE    150.298    152.521     +1.5 %
+  JsonbWriteBench.champollion_pojo  SMALL      0.091      0.093     +2.2 %
+  JsonbWriteBench.champollion_pojo  MEDIUM     0.724      0.730     +0.9 %
+  JsonbWriteBench.champollion_pojo  LARGE     81.567     71.244    -12.7 %
+  JsonbWriteBench.champollion_record SMALL     0.091      0.091     -0.5 %
+  JsonbWriteBench.champollion_record MEDIUM    0.730      0.732     +0.3 %
+  JsonbWriteBench.champollion_record LARGE    69.956     70.646     +1.0 %
+  ```
+- **Delta vs previous run** : first run of this change. Verdict: no measurable change on the write path; the one
+  visible number (small POJO read, +16 ns) is inside the noise of a loaded host and is the only case where the
+  benchmark's own classes (application loader) take the owned-map path; to confirm on macuntu under the
+  BENCH-20261102-01 protocol if it matters.

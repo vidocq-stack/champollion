@@ -28,7 +28,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Reflexive model of Protocol Buffers types (mentally aligned with
@@ -43,7 +42,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class Descriptors {
 
-    private static final ConcurrentHashMap<Class<?>, Descriptor> SYNTHESIZED = new ConcurrentHashMap<>();
+    // A ClassValue, not a ConcurrentHashMap<Class<?>, ...>: a strong map keeps the classes of every application layer
+    // a hot reload discarded (BUG-20261102-02); the entry of a ClassValue lives in the class and dies with it.
+    private static final ClassValue<Descriptor> SYNTHESIZED = new ClassValue<>() {
+        @Override
+        protected Descriptor computeValue(Class<?> recordClass) {
+            return synthesize(recordClass);
+        }
+    };
 
     private Descriptors() {}
 
@@ -54,7 +60,7 @@ public final class Descriptors {
      */
     public static Descriptor forRecord(Class<?> recordClass) {
         Objects.requireNonNull(recordClass, "recordClass");
-        return SYNTHESIZED.computeIfAbsent(recordClass, Descriptors::synthesize);
+        return SYNTHESIZED.get(recordClass);
     }
 
     private static Descriptor synthesize(Class<?> recordClass) {

@@ -42,7 +42,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Reflective runtime binding for records annotated {@link ProtobufMessage}.
@@ -50,7 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Introspection on first encounter of the class: we build a
  * {@link BindingPlan} via {@link RecordComponent#getAnnotation(Class)} and
  * {@link MethodHandle}s for the canonical constructor and accessors.
- * Binding plan cached in a {@link ConcurrentHashMap} keyed by {@link Class} — amortized cost
+ * Binding plan cached in a {@link ClassValue} keyed by {@link Class} — amortized cost
  * after warmup. No {@code synchronized}, no {@code ThreadLocal}.</p>
  *
  * <p>The static mode ({@code champollion-protobuf-codegen}) may later
@@ -58,7 +57,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class RuntimeBinding {
 
-    private static final ConcurrentHashMap<Class<?>, BindingPlan> PLANS = new ConcurrentHashMap<>();
+    // A ClassValue, not a ConcurrentHashMap<Class<?>, ...>: a strong map keeps the classes of every application layer
+    // a hot reload discarded (BUG-20261102-02); the entry of a ClassValue lives in the class and dies with it.
+    private static final ClassValue<BindingPlan> PLANS = new ClassValue<>() {
+        @Override
+        protected BindingPlan computeValue(Class<?> type) {
+            return buildPlan(type);
+        }
+    };
 
     private RuntimeBinding() {}
 
@@ -81,11 +87,7 @@ public final class RuntimeBinding {
     // ================================================================== Plan resolution
 
     private static BindingPlan planFor(Class<?> type) {
-        BindingPlan cached = PLANS.get(type);
-        if (cached != null) return cached;
-        BindingPlan computed = buildPlan(type);
-        BindingPlan existing = PLANS.putIfAbsent(type, computed);
-        return existing != null ? existing : computed;
+        return PLANS.get(type);
     }
 
     private static BindingPlan buildPlan(Class<?> type) {

@@ -23,7 +23,6 @@ import io.vidocq.champollion.protobuf.ProtoEnumValue;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Cache of mappings {@code Java enum constant ↔ proto int value}.
@@ -49,7 +48,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class EnumValueMap {
 
-    private static final ConcurrentHashMap<Class<?>, EnumValueMap> CACHE = new ConcurrentHashMap<>();
+    // A ClassValue, not a ConcurrentHashMap<Class<?>, ...>: a strong map keeps the classes of every application layer
+    // a hot reload discarded (BUG-20261102-02); the entry of a ClassValue lives in the class and dies with it.
+    private static final ClassValue<EnumValueMap> CACHE = new ClassValue<>() {
+        @Override
+        protected EnumValueMap computeValue(Class<?> enumClass) {
+            return build(enumClass);
+        }
+    };
 
     private final Map<Integer, Enum<?>> intToEnum;
     private final Map<Enum<?>, Integer> enumToInt;
@@ -60,11 +66,7 @@ public final class EnumValueMap {
     }
 
     public static EnumValueMap forClass(Class<?> enumClass) {
-        EnumValueMap cached = CACHE.get(enumClass);
-        if (cached != null) return cached;
-        EnumValueMap built = build(enumClass);
-        EnumValueMap prev = CACHE.putIfAbsent(enumClass, built);
-        return prev != null ? prev : built;
+        return CACHE.get(enumClass);
     }
 
     private static EnumValueMap build(Class<?> enumClass) {

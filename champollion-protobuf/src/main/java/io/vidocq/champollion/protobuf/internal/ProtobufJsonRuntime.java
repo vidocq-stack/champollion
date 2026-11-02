@@ -58,7 +58,6 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Implementation of the Proto3 JSON Canonical Mapping. Wired to Jakarta JSON-P
@@ -67,7 +66,14 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ProtobufJsonRuntime {
 
-    private static final ConcurrentHashMap<Class<?>, JsonBindingPlan> PLANS = new ConcurrentHashMap<>();
+    // A ClassValue, not a ConcurrentHashMap<Class<?>, ...>: a strong map keeps the classes of every application layer
+    // a hot reload discarded (BUG-20261102-02); the entry of a ClassValue lives in the class and dies with it.
+    private static final ClassValue<JsonBindingPlan> PLANS = new ClassValue<>() {
+        @Override
+        protected JsonBindingPlan computeValue(Class<?> type) {
+            return buildPlan(type);
+        }
+    };
 
     /** JSON strings of the non-finite floating-point values (proto3 JSON §float/double). */
     private static final String NAN = "NaN";
@@ -1339,11 +1345,7 @@ public final class ProtobufJsonRuntime {
     }
 
     private static JsonBindingPlan planFor(Class<?> type) {
-        JsonBindingPlan cached = PLANS.get(type);
-        if (cached != null) return cached;
-        JsonBindingPlan computed = buildPlan(type);
-        JsonBindingPlan existing = PLANS.putIfAbsent(type, computed);
-        return existing != null ? existing : computed;
+        return PLANS.get(type);
     }
 
     private static JsonBindingPlan buildPlan(Class<?> type) {

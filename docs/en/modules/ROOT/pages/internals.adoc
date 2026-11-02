@@ -63,6 +63,16 @@ Adapters, serializers and deserializers that are CDI beans are found at build by
 * On the module path, a reflective mapping without the `opens` fails with a `JsonbException` that names the module,
   the package and the line to add (xref:reference.adoc#bound-types-access[Reference]).
 
+=== A discarded application layer stays collectable [.tag-new]#NEW#
+
+`vidocq dev` boots a fresh application layer, with its own class loader, on every hot reload, while the `Jsonb` that Cassini serves requests with is created once and keeps its caches. The writers and readers it resolves are cached per class; where a cached value lives decides what a discarded layer leaves behind:
+
+* A class of an application layer keeps its value in the class itself (a `ClassValue`), so the value lives and dies with the class.
+* A class of a loader that is never discarded (the JDK's collections, the classes of the class path) keeps its value in a map the registry owns. A `ClassValue` would store it in the JDK class for good, and the value of that entry (the writer of a `List`, a lambda over the registry) holds the registry back, which holds the generated bindings of the layer it was built for. Every layer a hot reload discarded would stay reachable through it (BUG-20261102-02).
+* The static caches of the Protobuf runtime are `ClassValue`s for the same reason.
+
+The reflective fallback is unchanged; only where its cached values live moved.
+
 == Modules overview
 
 [plantuml]

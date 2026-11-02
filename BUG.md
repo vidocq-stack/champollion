@@ -817,3 +817,33 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   keeps the runtime mapping, a discarded layer is collected; red before); the TCK JSON-B 3.0 (295, 5 skipped as
   before); end to end on the tutorial-like app above: three hot reloads, `GET /books` 200 each time, no `opens`
   written to the module-info.
+
+## BUG-20261102-02 — JSON-B: a `Jsonb` kept every application layer a `vidocq dev` hot reload discarded
+
+- **Date** : 2026-11-02
+- **Statut** : FIXED 2026-11-02 (branch `fix/jsonb-layer-leak`). Found by the static audit of the hot-reload leak (item 25
+  of Vidocq/vidocq-workspace#40): 15 reloads of the audit app left 16 live `VaubanClassLoader`s; JFR `path-to-gc-roots`
+  named the chain after Cassini and Cyrano had released their own statics (cassini#114, cyrano#64).
+- **Module touché** : `champollion-jsonb` — `ComputedClassValue` (used by `RuntimeBindingRegistry.cache`,
+  `RuntimeReadRegistry.classCache` and `StaticBindings.later`); `champollion-protobuf` — four static `Class` maps.
+- **Symptôme** : memory grows by one application layer (~0.8 MB in the audit app) per hot reload; the old classes,
+  their loader and the generated bindings stay reachable although nothing of the application refers to them.
+- **Reproduction minimale** : `JsonbLayerLeakTest` — a layer defined by a child loader with a services file listing a
+  generated binding, a `Jsonb` built under it, `toJson` of the entity, of a `List.of(e, e, e)` and of a `Map` holding
+  it, the layer closed and dropped, `System.gc()`: the layer is still reachable.
+- **Cause** : the registries cache a writer or reader per class in a per-instance `ClassValue`. For a class the JVM
+  never discards (`ImmutableCollections$ListN`, `MapN`, …) the entry lives in the class for good; its value (the writer
+  of the collection) is a lambda over the registry, and the registry reaches the `ClassValue` that is the weak key of
+  the entry in that class: a weak key held by its own value is never cleared. The registry holds the generated
+  bindings of the layer it was built for (`staticBindings.byType`), hence the layer's classes and loader. The audit
+  heap dump could not show it: the chain ends in a "Class Loader Data" root. The static `ConcurrentHashMap<Class<?>, …>`
+  caches of the Protobuf runtime (`Descriptors`, `EnumValueMap`, `RuntimeBinding`, `ProtobufJsonRuntime`) held the
+  classes of the message records strongly.
+- **Correctif** : `ComputedClassValue` keeps the value of a class of the bootstrap, platform or application loader in
+  a map the cache owns (collected with the registry) and any other class's value in a `ClassValue`, in the class
+  itself, as before. The four Protobuf maps became `ClassValue`s. The reflective fallback and the champollion#82
+  later-layer lookup are unchanged.
+- **Vérification** : `JsonbLayerLeakTest` (2; the first is red on `main`: a dropped `Jsonb` keeps its layer alive; the
+  second guards a `Jsonb` kept across layers); unit tests of the reactor (`mvn test`: jsonb 693, protobuf 448, …);
+  TCK JSON-B 3.0 `all` and `all --static`: 295 tests, 5 skipped as before; BENCH-20261102-02 (no measurable change).
+  The loader count of the audit app after a hot-reload series is reported on the pull request.
