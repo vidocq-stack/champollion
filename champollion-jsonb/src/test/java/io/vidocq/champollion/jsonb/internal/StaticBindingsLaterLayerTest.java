@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -154,14 +155,17 @@ class StaticBindingsLaterLayerTest {
     @Test
     void aDiscardedLayerCanBeCollected(@TempDir Path first, @TempDir Path second) throws Exception {
         ChampollionJsonb jsonb = new ChampollionJsonbBuilder().buildChampollion();
+        ReferenceQueue<ClassLoader> collected = new ReferenceQueue<>();
         WeakReference<ClassLoader> discarded;
         try (ApplicationLayer one = applicationLayer(first)) {
             assertEquals("{\"generated\":1}", jsonb.toJson(one.marked(1)));
-            discarded = new WeakReference<>(one);
+            discarded = new WeakReference<>(one, collected);
         }
-        for (int i = 0; i < 20 && discarded.get() != null; i++) {
+        // The queue hands the reference over once the loader is collected: no sleeping, a bounded wait for the collector.
+        java.lang.ref.Reference<? extends ClassLoader> handedOver = null;
+        for (int i = 0; i < 20 && handedOver == null; i++) {
             System.gc();
-            Thread.sleep(50);
+            handedOver = collected.remove(100);
         }
         assertNull(discarded.get(), "the Jsonb must not hold the discarded layer's classes");
         try (ApplicationLayer two = applicationLayer(second)) {

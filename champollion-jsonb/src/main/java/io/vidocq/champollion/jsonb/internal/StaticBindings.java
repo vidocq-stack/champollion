@@ -151,17 +151,21 @@ final class StaticBindings {
 
     /** The bindings the services files of {@code loader} list: read once while the answer is reachable. */
     private static StaticBindings layer(ClassLoader loader) {
+        var answer = new StaticBindings[1];
         synchronized (LAYERS) {
-            WeakReference<StaticBindings> known = LAYERS.get(loader);
-            StaticBindings layer = known == null ? null : known.get();
-            if (layer == null) {
-                var found = new ArrayList<JsonbBinding<?>>();
-                scan(loader, found);
-                layer = of(found);
-                LAYERS.put(loader, new WeakReference<>(layer));
-            }
-            return layer;
+            LAYERS.compute(loader, (key, known) -> {
+                StaticBindings kept = known == null ? null : known.get();
+                if (kept == null) {
+                    var found = new ArrayList<JsonbBinding<?>>();
+                    scan(key, found);
+                    kept = of(found);
+                    known = new WeakReference<>(kept);
+                }
+                answer[0] = kept;
+                return known;
+            });
         }
+        return answer[0];
     }
 
     Map<Class<?>, JsonbBinding<?>> view() { return byType; }
