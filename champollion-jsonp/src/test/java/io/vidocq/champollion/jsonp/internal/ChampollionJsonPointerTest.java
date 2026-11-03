@@ -220,10 +220,10 @@ class ChampollionJsonPointerTest {
             nested = Json.createArrayBuilder().add(nested).build();
         }
         JsonStructure doc = (JsonStructure) nested;
-        String pointer = "/0".repeat(depth);
+        ChampollionJsonPointer pointer = new ChampollionJsonPointer("/0".repeat(depth));
+        JsonValue value = Json.createValue(2);
 
-        JsonException ex = assertThrows(JsonException.class,
-                () -> new ChampollionJsonPointer(pointer).add(doc, Json.createValue(2)));
+        JsonException ex = assertThrows(JsonException.class, () -> pointer.add(doc, value));
         assertTrue(ex.getMessage().contains("too deep"), ex.getMessage());
     }
 }
