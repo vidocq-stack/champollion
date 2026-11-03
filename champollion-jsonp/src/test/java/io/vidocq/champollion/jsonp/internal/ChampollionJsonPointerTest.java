@@ -209,4 +209,21 @@ class ChampollionJsonPointerTest {
             assertEquals("baz", newFoo.getString(0));
         }
     }
+
+    @Test
+    void anOverlyDeepPointerIsRejectedInsteadOfOverflowingTheStack() {
+        // Security audit F-11: mutateRecursive recurses once per pointer token; a crafted
+        // pointer with tens of thousands of tokens must be refused, not blow the stack.
+        int depth = 20_000;
+        JsonValue nested = Json.createValue(1);
+        for (int i = 0; i < depth; i++) {
+            nested = Json.createArrayBuilder().add(nested).build();
+        }
+        JsonStructure doc = (JsonStructure) nested;
+        String pointer = "/0".repeat(depth);
+
+        JsonException ex = assertThrows(JsonException.class,
+                () -> new ChampollionJsonPointer(pointer).add(doc, Json.createValue(2)));
+        assertTrue(ex.getMessage().contains("too deep"), ex.getMessage());
+    }
 }

@@ -49,6 +49,9 @@ public final class ChampollionJsonPointer implements JsonPointer {
     private final List<String> tokens;
     private final JsonException parseError;
 
+    /** Maximum number of reference tokens: bounds the recursion depth of the mutation traversal (audit F-11). */
+    private static final int MAX_TOKENS = 10_000;
+
     public ChampollionJsonPointer(String pointer) {
         if (pointer == null) throw new IllegalArgumentException("pointer is null");
         if (!pointer.isEmpty() && pointer.charAt(0) != '/') {
@@ -88,6 +91,9 @@ public final class ChampollionJsonPointer implements JsonPointer {
             if (c == '/') {
                 out.add(sb.toString());
                 sb.setLength(0);
+                // Security audit F-11: mutations recurse once per token, so a crafted pointer with
+                // tens of thousands of tokens would overflow the stack. Cap the depth here.
+                if (out.size() > MAX_TOKENS) throw new JsonException("JSON Pointer too deep: more than " + MAX_TOKENS + " tokens");
             } else if (c == '~') {
                 if (i + 1 >= len) throw new JsonException("Unfinished escape in JSON Pointer");
                 i++;
