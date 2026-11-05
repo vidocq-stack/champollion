@@ -6,7 +6,7 @@
     <parent>
         <groupId>io.vidocq.champollion</groupId>
         <artifactId>champollion-parent</artifactId>
-        <version>0.4.0-SNAPSHOT</version>
+        <version>0.4.0-RC2</version>
     </parent>
     <artifactId>champollion-jsonb-cdi</artifactId>
     <name>Champollion :: JSON-B CDI</name>
@@ -17,7 +17,7 @@
         <!-- Weld 6.0 implements CDI 4.1, the level the Vidocq runtime targets. -->
         <weld.version>6.0.4.Final</weld.version>
         <!-- The Vauban processor and API of this release line, as mansart-data-cdi pins them. -->
-        <vauban.version>0.4.0-SNAPSHOT</vauban.version>
+        <vauban.version>0.4.0-RC2</vauban.version>
     </properties>
     <dependencies>
         <dependency>
