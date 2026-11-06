@@ -1,8 +1,13 @@
 = What's new
-:description: Everything that changed in this component since the {release-version} release.
+:description: Everything that changed in this component since the 0.3.0 release, release candidate by release candidate.
 
 [.lead]
-New in the `{project-version}` development line — everything listed here landed **after the {release-version} release** and is not part of it. Every entry links to the section that documents it, and those sections carry the [.tag-new]#NEW# badge. Each brick of the suite keeps its own page of this kind; xref:home::whats-new.adoc[the ecosystem index] gathers them. When the next release train ships, this page is frozen with it and restarts empty on the dev line.
+Everything that landed in this component since the 0.3.0 release, newest first: <<rc2,Added in 0.4.0-RC2>>, <<rc1,Brought by 0.4.0-RC1>>. The documentation of the earlier release candidates is no longer published, so their entries are kept here. Every entry links to the section that documents it, and the [.tag-new]#NEW# badges on those pages mark what 0.4.0-RC2 added. Each brick of the suite keeps its own page of this kind; xref:home::whats-new.adoc[the ecosystem index] gathers them.
+
+// cumulative what's new
+
+[#rc2]
+== Added in 0.4.0-RC2 (since 0.4.0-RC1)
 
 * xref:internals.adoc#generated-code[A discarded application layer stays collectable] — a hot reload no longer leaves the previous layer reachable through the `Jsonb` that served it: the per-class caches of the JSON-B registries and of the Protobuf runtime keep their values where they cannot hold a layer back (BUG-20261102-02).
 * xref:internals.adoc#generated-code[Generated code and reflective fallback] — one table lists what Champollion generates at build (JSON-B bindings, the lists Vidocq reads for dependencies and `Response` entities, Protobuf parsers), what uses it at run time and what runs when it is missing, followed by when the introspection still runs and how to tell which path ran.
@@ -23,3 +28,11 @@ New in the `{project-version}` development line — everything listed here lande
 * xref:reference.adoc#bound-types-access[A type its module does not open] — when binding fails because the module of a type does not open its package to Champollion, the `JsonbException` says so and gives the `opens` line to add, instead of a bare `Failed to read property` or `ctor failed`.
 * xref:internals.adoc[Internals, JSON-P pipeline] — `Jsonb` on byte streams, as a REST layer uses it, costs less. Writing a list of 100 records to an `OutputStream` allocates 8.8 KB instead of 21.6 KB and is about 30 % faster, on par with Jackson: numbers are written without an intermediate string, and a large document borrows a buffer the `Jsonb` keeps instead of growing its own. Reading a small UTF-8 body from an `InputStream` allocates 224 bytes instead of 2,848 and takes about half the time: the body is read whole and parsed as a string with the kept parser, which reuses its tokenizer and remembers the member names it has read. `fromJson` on a `String` or a `Reader` gains the same way. The JSON is the same, byte for byte.
 * xref:internals.adoc[Internals, JSON-P pipeline] — the `JsonGenerator` buffers its own output and hands the target `Writer` one write per kilobyte, instead of going through a `BufferedWriter` of 256 characters whose every call took a lock. The output is byte for byte the same; `toJson` to an `OutputStream` or a `String` is cheaper per value.
+
+[#rc1]
+== Brought by 0.4.0-RC1 (since 0.3.0)
+
+=== Other containers
+
+* **Proven on Weld and Open Liberty** — two new test modules run the Champollion jars, unchanged, outside the Vidocq runtime: `champollion-it-weld` with Weld SE 6.0 on a class path, and `champollion-it-openliberty` as a WAR on Open Liberty 26.0.0.10 (MicroProfile 7). In both, the application gets Champollion from the JSON-P and JSON-B APIs, and a JSON-B adapter is resolved as a CDI bean, with injection (JSON-B 3.0 §5). Neither module is published (champollion#19). On Open Liberty, keep the server's `jsonb-3.0` feature off: with it, `JsonbBuilder.create()` answers with the server's Yasson. xref:reference.adoc#other-containers[Other containers].
+* **The Annotation API is `provided`** — `champollion-api` no longer ships `jakarta.annotation-api`: no Champollion code uses it at run time (`requires static`), and a WAR now carries no second copy of a Jakarta platform API (vidocq-workspace#17). An application that compiled against `jakarta.annotation` through Champollion alone now declares it itself. xref:reference.adoc#other-containers[Other containers].
