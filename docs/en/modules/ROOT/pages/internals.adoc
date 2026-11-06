@@ -5,7 +5,7 @@
 Champollion's technical signature lies in two points: a hand-written **JSON-P state-machine parser** designed to minimize allocation, and a **compile-time JSON-B codegen** via APT that removes runtime reflection. This page details both pipelines.
 
 [#generated-code]
-== Generated code and reflective fallback [.tag-new]#NEW#
+== Generated code and reflective fallback
 
 Every brick of the suite documents, in a section of this name, what it generates, who generates it and when, what
 looks it up at run time, and what runs instead when it is missing. For Champollion that is the JSON-B binding of each
@@ -63,7 +63,7 @@ Adapters, serializers and deserializers that are CDI beans are found at build by
 * On the module path, a reflective mapping without the `opens` fails with a `JsonbException` that names the module,
   the package and the line to add (xref:reference.adoc#bound-types-access[Reference]).
 
-=== A discarded application layer stays collectable [.tag-new]#NEW#
+=== A discarded application layer stays collectable
 
 `vidocq dev` boots a fresh application layer, with its own class loader, on every hot reload, while the `Jsonb` that Cassini serves requests with is created once and keeps its caches. The writers and readers it resolves are cached per class; where a cached value lives decides what a discarded layer leaves behind:
 
@@ -132,13 +132,13 @@ Key components (package `io.vidocq.champollion.jsonp.internal`):
 * Charset detection in `ChampollionJsonProvider` for `InputStream` input: BOM sniffing (UTF-8 / UTF-16 BE/LE / UTF-32 BE/LE), then the RFC 8259 §8.1 null-byte-pattern heuristic when no BOM is present.
 * No buffer pool inside `champollion-jsonp`: each parse allocates its tokenizer and `char[512]` (this per-parse fixed cost is why SMALL payloads sit at 0.66× Parsson while MEDIUM/LARGE win — see BENCH.md). The pooling that does exist lives one layer up, in `champollion-jsonb` (see below).
 
-The symmetric `JsonGenerator` buffers its own output [.tag-new]#NEW#: every value, key, comma and escape goes into a `char[1024]` of the generator, and the target `Writer` receives one write per full buffer and one at the end, whatever the `Writer` (`OutputStreamWriter`, `StringWriter`, a user `Writer`). Until 0.4.0-RC1 the target was wrapped in a `BufferedWriter` of 256 characters, whose every call takes a lock: about a dozen locked calls per small object. RFC 8259 §7 escapes are written from a switch per special character.
+The symmetric `JsonGenerator` buffers its own output: every value, key, comma and escape goes into a `char[1024]` of the generator, and the target `Writer` receives one write per full buffer and one at the end, whatever the `Writer` (`OutputStreamWriter`, `StringWriter`, a user `Writer`). Until 0.4.0-RC1 the target was wrapped in a `BufferedWriter` of 256 characters, whose every call takes a lock: about a dozen locked calls per small object. RFC 8259 §7 escapes are written from a switch per special character.
 
-On an `OutputStream` the generator encodes UTF-8 itself into a byte buffer that starts at 128 bytes [.tag-new]#NEW#. Integral numbers are written digit by digit into that buffer, with no `Long.toString` string per value, and the context stack is a plain array whose top changes in place. A `Jsonb` keeps one 4 KB buffer between two writes: a document that outgrows the 128 bytes borrows it, instead of growing its own buffer by doubling and copying, and gives it back when the generator closes. A small document never touches it. A list of 100 records written to a stream dropped from 21.6 KB to 8.8 KB allocated per call, and from 5.7 µs to 4.1 µs (BENCH-20261029-02).
+On an `OutputStream` the generator encodes UTF-8 itself into a byte buffer that starts at 128 bytes. Integral numbers are written digit by digit into that buffer, with no `Long.toString` string per value, and the context stack is a plain array whose top changes in place. A `Jsonb` keeps one 4 KB buffer between two writes: a document that outgrows the 128 bytes borrows it, instead of growing its own buffer by doubling and copying, and gives it back when the generator closes. A small document never touches it. A list of 100 records written to a stream dropped from 21.6 KB to 8.8 KB allocated per call, and from 5.7 µs to 4.1 µs (BENCH-20261029-02).
 
-`Jsonb.fromJson(InputStream, ...)` reads a body of up to 8 KB whole into a buffer the `Jsonb` keeps, decodes it to a `String` when it is UTF-8 (with or without a byte order mark), and parses that string with the kept parser [.tag-new]#NEW#. There is no pushback stream, no charset decoder and no reader per call: a 50-byte body costs 496 bytes instead of 2,848. A body in UTF-16 or UTF-32, or longer than 8 KB, takes the streaming path described above, with the bytes already read put back in front. In every case the stream is closed, as before.
+`Jsonb.fromJson(InputStream, ...)` reads a body of up to 8 KB whole into a buffer the `Jsonb` keeps, decodes it to a `String` when it is UTF-8 (with or without a byte order mark), and parses that string with the kept parser. There is no pushback stream, no charset decoder and no reader per call: a 50-byte body costs 496 bytes instead of 2,848. A body in UTF-16 or UTF-32, or longer than 8 KB, takes the streaming path described above, with the bytes already read put back in front. In every case the stream is closed, as before.
 
-The parser a `Jsonb` keeps is recycled whole between two reads [.tag-new]#NEW#: `reset(String)` reuses its tokenizer instead of building a new one, and the parser remembers the member names it has read, in a table of 64 slots. A name read again, as the members of a record are in every body, comes back as the same `String`, so neither the string nor its hash is computed again. Only unescaped names of at most 32 characters are kept; a name replaces the one that shared its slot. Reading the 50-byte body now allocates 224 bytes, the body, its one value and the record, and takes about 135 ns instead of 186 (BENCH-20261029-03). A parser created by `JsonProvider.createParser` does not keep names: used once, it would only pay for the table.
+The parser a `Jsonb` keeps is recycled whole between two reads: `reset(String)` reuses its tokenizer instead of building a new one, and the parser remembers the member names it has read, in a table of 64 slots. A name read again, as the members of a record are in every body, comes back as the same `String`, so neither the string nor its hash is computed again. Only unescaped names of at most 32 characters are kept; a name replaces the one that shared its slot. Reading the 50-byte body now allocates 224 bytes, the body, its one value and the record, and takes about 135 ns instead of 186 (BENCH-20261029-03). A parser created by `JsonProvider.createParser` does not keep names: used once, it would only pay for the table.
 
 == JSON-B pipeline — runtime introspection (default mode)
 
@@ -198,7 +198,7 @@ Key traits:
 
 * **No `synchronized`** anywhere on the hot paths — caches are `ClassValue` / `ConcurrentHashMap`, safe under `Executors.newVirtualThreadPerTaskExecutor()`.
 * Per-call state (current config, serialization / deserialization contexts) lives in explicit per-operation objects (`ChampollionSerializationContext` / `ChampollionDeserializationContext`) passed down the call chain — no application-visible thread-local state, no ambient context mechanism.
-* The one piece of state kept between calls is internal: `ChampollionJsonb` keeps a `ChampollionJsonParser` (P9), and, since 0.4.0-SNAPSHOT, a 4 KB generator buffer and an 8 KB read buffer [.tag-new]#NEW#. Each sits in an atomic slot: a call takes it out and puts it back, and a call that finds the slot empty, on another thread or reentrant, uses one of its own. None of them is a `ThreadLocal`. The parser is kept so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
+* The one piece of state kept between calls is internal: `ChampollionJsonb` keeps a `ChampollionJsonParser` (P9), and, since 0.4.0-SNAPSHOT, a 4 KB generator buffer and an 8 KB read buffer. Each sits in an atomic slot: a call takes it out and puts it back, and a call that finds the slot empty, on another thread or reentrant, uses one of its own. None of them is a `ThreadLocal`. The parser is kept so `fromJson` does not reallocate `JsonTokenizer + char[512] + Deque` on every call. It works because `champollion-jsonp` grants a Java Modules-qualified export: `exports io.vidocq.champollion.jsonp.internal to io.vidocq.champollion.jsonb` (cf. link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md], P9 entry).
 
 == AOT compatibility
 
