@@ -127,7 +127,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261027-03 — APT: the generated static binding of a `List<Float>` does not compile
 
 - **Date** : 2026-10-27
-- **Statut** : FIXED (fix/list-float-binding, Vidocq/champollion#87)
+- **Statut** : FIXED 2838b5d (fix/list-float-binding, Vidocq/champollion#87)
 - **Module touché** : `champollion-codegen-apt` — `JsonbStaticProcessor` (list element reading, `readLeaf`)
 - **Symptôme** : a `@JsonbStatic` record with a `List<Float>` component makes the annotation processor emit code that fails to compile.
 - **Reproduction minimale** : `@JsonbStatic record Sample(List<Float> values) {}` compiled with the processor.
