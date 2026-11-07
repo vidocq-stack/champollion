@@ -358,7 +358,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-16 — JSON-P: `skipObject()` / `skipArray()` do nothing inside a container
 
 - **Date** : 2026-10-28
-- **Statut** : FIXED (fix/jsonp-skip-in-container, Vidocq/champollion#88)
+- **Statut** : FIXED 48b53a1 (fix/jsonp-skip-in-container, Vidocq/champollion#88)
 - **Module touché** : `champollion-jsonp` — `ChampollionJsonParser.skipUntilCloseOf`, `JsonValueParser.skipObject` /
   `skipArray`
 - **Symptôme** : both parsers skip only when the current event is `START_OBJECT` / `START_ARRAY`. The JSON-P 2.1
