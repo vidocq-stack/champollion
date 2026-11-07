@@ -434,15 +434,29 @@ public final class ChampollionJsonParser implements JsonParser {
     }
 
     @Override public void skipArray() {
-        skipUntilCloseOf(Event.START_ARRAY, Event.END_ARRAY);
+        skipUntilCloseOf(false, Event.START_ARRAY, Event.END_ARRAY);
     }
 
     @Override public void skipObject() {
-        skipUntilCloseOf(Event.START_OBJECT, Event.END_OBJECT);
+        skipUntilCloseOf(true, Event.START_OBJECT, Event.END_OBJECT);
     }
 
-    private void skipUntilCloseOf(Event openEvent, Event closeEvent) {
-        if (lastEvent != openEvent) return;
+    /**
+     * JSON-P 2.1 {@code skipObject()} / {@code skipArray()}: when the events consumed so far leave the parser inside
+     * a container of the requested kind, advances to its matching end event; otherwise does nothing.
+     */
+    private void skipUntilCloseOf(boolean object, Event openEvent, Event closeEvent) {
+        // {@code depth} and {@code nestBits} already include the look-ahead event of a previous hasNext(): undo it
+        // to get the containers opened by the events the caller consumed. A popped container keeps its bit.
+        int consumed = depth;
+        if (nextReady && next != null) {
+            if (next == Event.START_OBJECT || next == Event.START_ARRAY) consumed--;
+            else if (next == Event.END_OBJECT || next == Event.END_ARRAY) consumed++;
+        }
+        if (consumed == 0) return;
+        int top = consumed - 1;
+        boolean innermostIsObject = (nestBits[top >>> 6] & (1L << (top & 63))) != 0;
+        if (innermostIsObject != object) return;
         int open = 1;
         while (open > 0 && hasNext()) {
             Event e = next();

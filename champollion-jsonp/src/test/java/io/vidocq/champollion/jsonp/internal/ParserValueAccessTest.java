@@ -168,9 +168,10 @@ class ParserValueAccessTest {
             p.skipObject();
             assertEquals(Event.END_OBJECT, p.currentEvent());
             assertEquals(Event.VALUE_NUMBER, p.next());
-            p.skipObject();
-            p.skipArray();
+            p.skipObject(); // inside the root array: no effect
             assertEquals(3, p.getInt());
+            p.skipArray(); // inside the root array: advances to its end (JSON-P 2.1)
+            assertEquals(Event.END_ARRAY, p.currentEvent());
         }
     }
 

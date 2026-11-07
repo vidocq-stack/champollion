@@ -223,14 +223,19 @@ public final class JsonValueParser implements JsonParser {
     @Override public Stream<Map.Entry<String, JsonValue>> getObjectStream() { return getObject().entrySet().stream(); }
     @Override public Stream<JsonValue> getValueStream() { return Stream.of(getValue()); }
 
+    /** JSON-P 2.1: inside an array (anywhere after its START_ARRAY), advances to its END_ARRAY; otherwise no effect. */
     @Override public void skipArray() {
-        if (lastEvent == Event.START_ARRAY) {
-            getArray();
+        if (stack.peek() instanceof ArrayFrame af && af.entered) {
+            stack.pop();
+            lastEvent = Event.END_ARRAY;
         }
     }
+
+    /** JSON-P 2.1: inside an object (anywhere after its START_OBJECT), advances to its END_OBJECT; otherwise no effect. */
     @Override public void skipObject() {
-        if (lastEvent == Event.START_OBJECT) {
-            getObject();
+        if (stack.peek() instanceof ObjectFrame of && of.entered) {
+            stack.pop();
+            lastEvent = Event.END_OBJECT;
         }
     }
 

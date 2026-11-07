@@ -358,7 +358,7 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261028-16 — JSON-P: `skipObject()` / `skipArray()` do nothing inside a container
 
 - **Date** : 2026-10-28
-- **Statut** : OPEN (found while writing the BUG-20261028-05 regression tests)
+- **Statut** : FIXED (fix/jsonp-skip-in-container, Vidocq/champollion#88)
 - **Module touché** : `champollion-jsonp` — `ChampollionJsonParser.skipUntilCloseOf`, `JsonValueParser.skipObject` /
   `skipArray`
 - **Symptôme** : both parsers skip only when the current event is `START_OBJECT` / `START_ARRAY`. The JSON-P 2.1
@@ -373,6 +373,10 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Investigations** :
   - 2026-10-28 : reproduced with `ChampollionJsonParser` (jshell). Not fixed in the Sonar clean-up branch: it changes
     parser behaviour checked by the JSON-P TCK and the JSON-B deserializer escape hatch, so it wants its own change.
+  - 2026-11-07 : fixed in both parsers. `ChampollionJsonParser` derives the innermost consumed container from `depth` /
+    `nestBits`, undoing a pending `hasNext()` look-ahead; `JsonValueParser` looks at its top frame. A skip of the other
+    kind, or outside any container, stays a no-op. Two tests that pinned the old behaviour (`JsonValueParserTest`,
+    `ParserValueAccessTest`) now follow the javadoc; new `SkipInContainerTest` covers both parsers.
 
 ## BUG-20261029-01 — JSON-B: a generated binding ignored the `JsonbConfig`
 

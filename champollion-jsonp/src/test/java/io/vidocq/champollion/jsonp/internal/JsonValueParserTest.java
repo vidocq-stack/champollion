@@ -222,9 +222,10 @@ class JsonValueParserTest {
             assertEquals(Event.END_OBJECT, p.currentEvent());
             assertEquals(Event.KEY_NAME, p.next());
             assertEquals("d", p.getString());
-            p.skipArray();
-            p.skipObject();
+            p.skipArray(); // inside an object: no effect
             assertEquals(Event.KEY_NAME, p.currentEvent());
+            p.skipObject(); // inside the root object: advances to its end (JSON-P 2.1)
+            assertEquals(Event.END_OBJECT, p.currentEvent());
         }
     }
 
