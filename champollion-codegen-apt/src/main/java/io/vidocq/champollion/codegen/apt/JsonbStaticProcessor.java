@@ -876,7 +876,8 @@ public final class JsonbStaticProcessor extends AbstractProcessor {
             case JAVA_LANG_STRING -> p + ".getString()";
             case JAVA_LANG_INTEGER -> p + GET_INT;
             case JAVA_LANG_LONG -> p + ".getLong()";
-            case JAVA_LANG_DOUBLE, JAVA_LANG_FLOAT -> p + ".getBigDecimal().doubleValue()";
+            case JAVA_LANG_DOUBLE -> p + ".getBigDecimal().doubleValue()";
+            case JAVA_LANG_FLOAT -> p + ".getBigDecimal().floatValue()";
             case JAVA_LANG_SHORT -> "(short) " + p + GET_INT;
             case JAVA_LANG_BYTE -> "(byte) " + p + GET_INT;
             case JAVA_LANG_BOOLEAN -> "(" + ev + " == JsonParser.Event.VALUE_TRUE)";

@@ -127,11 +127,13 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261027-03 — APT: the generated static binding of a `List<Float>` does not compile
 
 - **Date** : 2026-10-27
-- **Statut** : OPEN (found while covering the Sonar cleanup with unit tests)
+- **Statut** : FIXED (fix/list-float-binding, Vidocq/champollion#87)
 - **Module touché** : `champollion-codegen-apt` — `JsonbStaticProcessor` (list element reading, `readLeaf`)
 - **Symptôme** : a `@JsonbStatic` record with a `List<Float>` component makes the annotation processor emit code that fails to compile.
 - **Reproduction minimale** : `@JsonbStatic record Sample(List<Float> values) {}` compiled with the processor.
 - **Hypothèse de cause** : `readLeaf` returns a `double` for `Float` elements, which the generated code adds to a `List<Float>` without a narrowing conversion.
+- **Investigations** :
+  - 2026-11-07 : confirmed — the same applied to `Optional<Float>` and `Map<String, Float>`. `readLeaf` now reads a `Float` with `getBigDecimal().floatValue()`. Test `CodegenContainersTest.boxed_float_elements_round_trip_in_list_optional_and_map`.
 
 ## BUG-20261027-04 — Protobuf JSON: `UInt64Value` is written signed
 

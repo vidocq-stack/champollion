@@ -44,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -200,6 +201,30 @@ class CodegenContainersTest {
                     (double[]) s.targetClass.getMethod("weights").invoke(back)));
             assertTrue(java.util.Arrays.equals(new boolean[] {true, false},
                     (boolean[]) s.targetClass.getMethod("flags").invoke(back)));
+        }
+    }
+
+    /** BUG-20261027-03: a boxed {@code Float} element was read as a {@code double}, which does not compile. */
+    @Test
+    void boxed_float_elements_round_trip_in_list_optional_and_map(@TempDir Path tmp) throws Exception {
+        String src = """
+                package generated.cont;
+                import io.vidocq.champollion.jsonb.spi.JsonbStatic;
+                import java.util.List;
+                import java.util.Map;
+                import java.util.Optional;
+                @JsonbStatic
+                public record Gauges(List<Float> values, Optional<Float> best, Map<String, Float> byName) {}
+                """;
+        Setup s = setup(tmp, "generated.cont.Gauges", src);
+        Object inst = s.targetClass.getDeclaredConstructors()[0].newInstance(
+                List.of(1.5f, 2.25f), Optional.of(0.5f), Map.of("a", 3.5f));
+        assertWriteEquals(s, inst);
+
+        var sw = new StringWriter();
+        try (JsonGenerator g = Json.createGenerator(sw)) { s.staticBinding.write(g, inst); }
+        try (JsonParser p = Json.createParser(new StringReader(sw.toString()))) {
+            assertEquals(inst, s.staticBinding.read(p));
         }
     }
 
