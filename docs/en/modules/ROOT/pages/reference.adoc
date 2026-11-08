@@ -33,6 +33,9 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 
 | `io.vidocq.champollion:champollion-tck` (in-reactor, `tck` Maven profile)
 | Official TCK runner JSON-P 2.1 + JSON-B 3.0. Joins the reactor only under `-Ptck`; invoke through `run-official-tck-*.sh` (see xref:tck.adoc[]).
+
+| `io.vidocq.champollion:champollion-architecture-tests`
+| **Test only**, never released. Runs Champollion's architecture rules (allowed dependencies per module, layers, no reflection outside the documented runtime-mode fallbacks, no platform thread, no `ThreadLocal`, no dependency on another foundational brick) on the classes of every shipped module. The rules come from `io.vidocq:vidocq-archrules`, the shared build and test library of `vidocq-parent`, in test scope; it brings ArchUnit (Apache-2.0), also test scope. The reflective fallbacks are listed, each with its reason, in `ArchitectureRules.REFLECTIVE_FALLBACKS`: the JSON-B and protobuf runtime modes (superseded by generated bindings), the optional CDI lookup, and the `java.lang.reflect.Type` token of the JSON-B API.
 |===
 
 == Java modules

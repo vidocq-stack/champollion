@@ -114,6 +114,7 @@
         <module>champollion-codegen-maven-plugin</module>
         <module>champollion-bench</module>
         <module>champollion-examples</module>
+        <module>champollion-architecture-tests</module>
     </modules>
 
     <dependencyManagement>

@@ -45,6 +45,13 @@ Provide `modules/ROOT/images/<project>-logo.png` (PNG), referenced from `index.a
 
 > When you change these documentation rules, keep `AGENTS.md` and `CLAUDE.md` in sync.
 
+## Architecture rules
+
+The test-only module `champollion-architecture-tests` runs the shared `vidocq-archrules` library of
+`vidocq-parent` (test scope, brings ArchUnit, Apache-2.0) on the classes of every shipped module (Vidocq/vidocq#289):
+allowed dependencies, layers, no reflection outside the documented fallbacks, no platform thread, no `ThreadLocal`.
+Each fallback of `ArchitectureRules.REFLECTIVE_FALLBACKS` carries its reason; never add one without it.
+
 ## Terminology
 
 Use **Java Modules** (or **Java module** for a single module) when referring to

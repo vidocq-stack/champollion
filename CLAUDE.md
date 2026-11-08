@@ -68,7 +68,12 @@ Object model `JsonObject/JsonArray/JsonValue` on top. Patch/Pointer/MergePatch a
 ## Architecture Constraints Not to Violate
 
 1. **Zero dependencies beyond Jakarta specs** in `champollion-jsonp` and `champollion-jsonb`.
-   JUnit/JMH only in `scope=test`/`scope=provided`.
+   JUnit/JMH only in `scope=test`/`scope=provided`. **ArchUnit** (`com.tngtech.archunit:archunit`,
+   Apache-2.0, through the shared `vidocq-archrules` library of `vidocq-parent`) is test scope too, used only by the
+   test-only module `champollion-architecture-tests` (Vidocq/vidocq#289): its `ArchitectureRules` turn these
+   constraints into tests on the shipped classes. The documented reflective fallbacks (runtime modes, optional CDI
+   lookup, JSON-B `Type` token) are listed with their reasons in `ArchitectureRules.REFLECTIVE_FALLBACKS`; a new
+   one needs a documented reason there.
 2. **`champollion-jsonb` depends on `champollion-jsonp`** but never the reverse — the binding
    layer knows how to compose on the processing layer, not vice versa.
 3. **Strict Java Modules**: all modules have a `module-info.java`, `internal.*` packages not exported,
