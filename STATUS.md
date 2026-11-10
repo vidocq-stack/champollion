@@ -21,7 +21,7 @@
 | `champollion-jsonb` | ✅ **runtime + lookup-first static** | 52 tests. Runtime `toJson` + `fromJson` operational (primitives, `java.time`, UUID, enum, records, POJOs, containers). Public SPI `JsonbBinding<T>` + `@JsonbStatic` exposed, ServiceLoader, lookup-first, runtime fallback. |
 | `champollion-codegen-apt` | ✅ **functional MVP** | 18 tests. `JsonbStaticProcessor` APT generates one `JsonbBinding<T>` per `@JsonbStatic` record + ServiceLoader file. Covers primitives + String + enums + `List<E>` + `Optional<E>` + `Map<String,V>` + primitive arrays + `String[]` + nested `@JsonbStatic` records. Automated differential testing static vs runtime. |
 | `champollion-codegen-maven-plugin` | ✅ **active** (`packaging=maven-plugin`) | 3 tests. `generate` mojo writes `<FQN>$$Trigger.java` triggers annotated `@JsonbStatic`, then runs `javac` with `JsonbStaticProcessor` on the host project compile classpath. `maven-plugin-plugin 4.0.0-beta-2` supports Java 25. |
-| `champollion-bench` | ✅ active | JMH workloads (parser + JSON-B read/write) — see `BENCH.md`. |
+| `champollion-bench` | ✅ active | JMH workloads (parser + JSON-B read/write) vs Parsson/Yasson/Jackson — see `BENCH.md`. |
 | `champollion-examples` | 🟡 empty | POM ready, no example written yet. |
 | `champollion-tck` | ✅ **created** (out of reactor) | Out-of-reactor module (Model 4.0.0 POM). Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Root shell scripts `run-official-tck-{jsonp-2.1,jsonb-3.0}.sh`. Clean skip (exit 78) if the official TCK is unavailable. |
 
@@ -107,7 +107,7 @@ visibility hierarchy.
 ### Medium term — broader tests
 
 - ~~**JSONTestSuite corpus**~~ — DONE 2026-06-11: the full `nst/JSONTestSuite` parsing corpus (318 files, MIT, vendored with its license) runs in `JsonTestSuiteConformanceTest`. **318/318 on first integration** — single adjustment: `i_number_huge_exp` materialization defers to `BigDecimal` (int-scale limit) exactly like Parsson.
-- **JMH benchmark** in `champollion-bench`: throughput, latency and allocations.
+- **JMH benchmark** in `champollion-bench`: throughput/latency/allocs comparison vs Parsson, Yasson, Jackson.
 - **Examples** in `champollion-examples`: runtime vs static codegen demo, integration with `Json.*` and `JsonbBuilder`, custom adapter examples.
 
 ### Long term — M6 (TCK)
