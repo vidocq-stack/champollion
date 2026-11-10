@@ -37,7 +37,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 | `champollion-codegen-apt` | Pure JDK annotation processor. Generates one `JsonbBinding<T>` per record annotated `@JsonbStatic` + ServiceLoader file. Automatic static vs runtime differential. |
 | `champollion-codegen-maven-plugin` | `generate` mojo that scans the compile classpath and delegates to APT for non-annotable classes (third-party POJOs). `maven-plugin-plugin 4.0.0-beta-2`, Java 25. |
 | `champollion-tck` | In-reactor behind the `tck` Maven profile. Profiles `-Pjsonp-tck` (JUnit 5) and `-Pjsonb-tck` (TestNG). Clean skip (exit 78) if official TCK is absent. |
-| `champollion-bench` | JMH POM ready — comparisons vs Parsson / Yasson / Jackson to come. |
+| `champollion-bench` | JMH benchmarks; figures in `BENCH.md`. |
 | `champollion-examples` | Usage examples — to be written. |
 
 ## Philosophy (inherited from Vidocq)
@@ -62,7 +62,7 @@ hieroglyphics — Champollion reads arbitrary structures and translates them int
 | M4 — JSON-B runtime introspective | ✅ |
 | M5 — Codegen APT + Maven plugin | ✅ MVP |
 | M6 — TCK 100% PASS | ✅ |
-| M7 — JMH benchmarks vs Parsson / Yasson / Jackson | ⏳ planned |
+| M7 — JMH benchmarks | ⏳ planned |
 
 Details per sub-module and phase progress: see [`STATUS.md`](./STATUS.md) and [`ROADMAP.md`](./ROADMAP.md).
 Exhaustive TCK status: [`TCK.md`](./TCK.md).

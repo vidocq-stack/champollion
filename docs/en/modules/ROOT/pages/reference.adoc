@@ -26,7 +26,7 @@ Consolidated reference for the Maven artifacts, Java modules, supported annotati
 | `champollion:generate` Mojo bound to `generate-sources`; generates bindings for the record FQNs listed explicitly in `<targets>` (no classpath scanning) — for types you cannot annotate yourself.
 
 | `io.vidocq.champollion:champollion-bench`
-| JMH — Parsson/Yasson/Jackson comparisons. No runtime scope.
+| JMH benchmarks. No runtime scope.
 
 | `io.vidocq.champollion:champollion-examples`
 | Runnable examples.
@@ -294,6 +294,6 @@ Bound to `generate-sources`. `<targets>` takes **explicit record FQNs** (present
 
 == Resources
 
-* link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] — JMH benchmarks vs Parsson / Yasson / Jackson
+* link:{repo-champollion}/src/branch/main/BENCH.md[BENCH.md] — JMH benchmarks, dated runs
 * link:{repo-champollion}/src/branch/main/TCK.md[TCK.md] — TCK details
 * link:{repo-champollion}/src/branch/main/ROADMAP.md[ROADMAP.md] — phases M0..M7
