@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.vidocq.champollion</groupId>
+        <artifactId>champollion-parent</artifactId>
+        <version>0.4.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>champollion-jsonb-cdi-vauban</artifactId>
+    <name>Champollion :: JSON-B CDI :: Vauban</name>
+    <description>The Vauban glue of champollion-jsonb-cdi: the components that let Vauban create the JSON-B registry,
+        call its observers and proxy it, without reflection and without an opens. The Vidocq runtime extension adds
+        it; Weld, Open Liberty or any other CDI container runs champollion-jsonb-cdi alone.</description>
+    <properties>
+        <!-- The Vauban API and container of this release line, as mansart-data-cdi pins them. -->
+        <vauban.version>0.4.0-SNAPSHOT</vauban.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb-cdi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The VaubanComponentProvider service type this module provides. API types only: the container is the
+             application's, Vauban under Vidocq. -->
+        <dependency>
+            <groupId>io.vidocq.vauban</groupId>
+            <artifactId>vauban-api</artifactId>
+            <version>${vauban.version}</version>
+        </dependency>
+        <!-- The platform's APIs: the container brings them. -->
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <version>4.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- The container the tests boot, on the module path, to prove the registry needs no reflection. -->
+        <dependency>
+            <groupId>io.vidocq.vauban</groupId>
+            <artifactId>vauban-core</artifactId>
+            <version>${vauban.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.vauban</groupId>
+            <artifactId>vauban-classloader-spi</artifactId>
+            <version>${vauban.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <!-- The tests run on the module path, as a Vidocq application does: the registry's package is exported to
+                 this module alone, so a reflective fallback of Vauban would fail. The test classes boot Vauban, which
+                 this module does not read; nothing is opened to it. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- @{argLine} keeps the JaCoCo agent of the quality profile (vidocq-parent). -->
+                    <argLine>
+                        @{argLine}
+                        --add-reads io.vidocq.champollion.jsonb.cdi.vauban=io.vidocq.vauban.core
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

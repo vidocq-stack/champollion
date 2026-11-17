@@ -12,12 +12,11 @@
     <name>Champollion :: JSON-B CDI</name>
     <description>The CDI side of Champollion's JSON-B, kept out of the core: a build compatible extension that
         validates the adapters, serializers and deserializers JSON-B annotations name, and a registry that hands
-        their CDI instances to the generated bindings and the runtime, per container, destroyed when it stops.</description>
+        their CDI instances to the generated bindings and the runtime, per container, destroyed when it stops.
+        Container-neutral: the Vauban glue is champollion-jsonb-cdi-vauban.</description>
     <properties>
         <!-- Weld 6.0 implements CDI 4.1, the level the Vidocq runtime targets. -->
         <weld.version>6.0.4.Final</weld.version>
-        <!-- The Vauban processor and API of this release line, as mansart-data-cdi pins them. -->
-        <vauban.version>0.4.0-SNAPSHOT</vauban.version>
     </properties>
     <dependencies>
         <dependency>
@@ -25,7 +24,9 @@
             <artifactId>champollion-jsonb</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- The platform's APIs: the container brings them. -->
+        <!-- The platform's APIs: the container brings them. No container implementation and no Vauban: the
+             Vauban glue, the components that create the registry without reflection, is
+             champollion-jsonb-cdi-vauban, which the Vidocq runtime extension adds. -->
         <dependency>
             <groupId>jakarta.enterprise</groupId>
             <artifactId>jakarta.enterprise.cdi-api</artifactId>
@@ -36,18 +37,6 @@
             <groupId>jakarta.json.bind</groupId>
             <artifactId>jakarta.json.bind-api</artifactId>
             <scope>provided</scope>
-        </dependency>
-        <!-- Supplies the VaubanComponentProvider service type of the generated _VaubanComponents
-             (module-info `provides`). API types only, no code runs outside Vauban. Neither optional nor
-             trimmed of its CDI dependencies, unlike mansart-data-cdi (mansart#68): Weld's reflective
-             discovery loads every class of the bean archive, and gives up the registry when
-             _VaubanComponents cannot load (vauban-api absent); and exclusions on this declaration win
-             Maven's mediation in a consumer, stripping the CDI API from a Vidocq codegen bundle's
-             processor path. The CDI APIs it brings are the ones the container provides. -->
-        <dependency>
-            <groupId>io.vidocq.vauban</groupId>
-            <artifactId>vauban-api</artifactId>
-            <version>${vauban.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jboss.weld.se</groupId>
@@ -63,33 +52,6 @@
     </dependencies>
     <build>
         <plugins>
-            <!--
-                Vauban codegen runs as an ANNOTATION PROCESSOR on this module's own bean, the registry:
-                the compile generates an in-module _VaubanComponents that creates it and calls its
-                observers, so Vauban needs no `opens` of this package, whether or not vidocq:generate
-                enriched the jar. Inert under a standard CDI container.
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>io.vidocq.vauban</groupId>
-                            <artifactId>vauban-processor</artifactId>
-                            <version>${vauban.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>default-testCompile</id>
-                        <configuration>
-                            <proc>none</proc>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <!-- Weld SE on a class path, as an application server runs it. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

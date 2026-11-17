@@ -19,6 +19,7 @@
  */
 package io.vidocq.champollion.jsonb.cdi;
 
+import io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry;
 import io.vidocq.champollion.jsonb.spi.JsonbInstances;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.json.bind.Jsonb;

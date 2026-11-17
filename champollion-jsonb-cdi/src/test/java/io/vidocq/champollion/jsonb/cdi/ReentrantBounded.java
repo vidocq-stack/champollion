@@ -19,6 +19,7 @@
  */
 package io.vidocq.champollion.jsonb.cdi;
 
+import io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.Dependent;

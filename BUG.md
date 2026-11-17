@@ -1055,3 +1055,20 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Cause** : `JsonbCdiRegistry` asks an `Instance<Object>` injected without a qualifier, so for `@Default`, which that
   bean does not have. `JsonbCdiExtension` counts the beans of a type whatever their qualifiers: it counts one, and
   reports nothing.
+
+## BUG-20261118-01 — JSON-B: `synchronized` blocks in the shipped core, against CLAUDE.md constraint 4
+
+- **Date** : 2026-11-18
+- **Statut** : OPEN. Found while splitting `champollion-jsonb-cdi` (branch `refactor/jsonb-cdi-vauban-split`), left
+  out of that change: it is in `champollion-jsonb`, outside the split, and a lock change there wants its own JSON-B TCK
+  run.
+- **Module touché** : `champollion-jsonb` — `JsonbInstances` (`install`, `uninstall`, `sourceFor`, on `SOURCES`) and
+  `StaticBindings` (on `LAYERS`).
+- **Symptôme** : CLAUDE.md, constraint 4, says "No `synchronized`, no `ThreadLocal`"; four `synchronized` blocks ship.
+  No failure seen: the blocks are short, run no I/O, and JDK 24+ no longer pins a virtual thread on a monitor
+  (JEP 491). `ChampollionJsonb`'s Javadoc says "No `synchronized`" for its own caches only.
+- **Reproduction minimale** : `grep -rn 'synchronized (' champollion-jsonb/src/main/java`.
+- **Cause** : the registries of CDI sources and of hot-reload layers guard a `WeakHashMap` with its monitor. The
+  architecture rules check thread-locals and platform threads, not monitors, so nothing caught it.
+- **Correctif proposé** : a `ReentrantLock` per map (or a structure that needs no lock), and an architecture rule
+  that forbids `synchronized` in the shipped classes, with a self-test fixture.

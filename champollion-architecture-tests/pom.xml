@@ -48,6 +48,16 @@
         </dependency>
         <dependency>
             <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb-cdi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
+            <artifactId>champollion-jsonb-cdi-vauban</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.champollion</groupId>
             <artifactId>champollion-protobuf</artifactId>
             <scope>test</scope>
         </dependency>

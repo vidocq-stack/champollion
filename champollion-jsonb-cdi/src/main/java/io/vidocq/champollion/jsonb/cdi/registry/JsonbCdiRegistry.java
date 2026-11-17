@@ -17,7 +17,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0 OR EUPL-1.2 OR GPL-2.0-or-later
  */
-package io.vidocq.champollion.jsonb.cdi;
+package io.vidocq.champollion.jsonb.cdi.registry;
 
 import io.vidocq.champollion.jsonb.spi.JsonbInstances;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,6 +48,11 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>A class is looked up by type. A class with a bounded type variable is a bean that its raw class does not look up
  * (CDI 4.1 section 5.2.4): it is served by the bean of that class, obtained once and destroyed the same way.</p>
+ *
+ * <p>A bean of any CDI container, which creates it and calls its observers. Its constructor and observers are public
+ * for Vauban's adapter, {@code io.vidocq.champollion.jsonb.cdi.vauban}, the only module this package is exported to:
+ * it creates the registry and calls them without reflection and without an {@code opens}. No other module reaches
+ * them.</p>
  */
 @ApplicationScoped
 public class JsonbCdiRegistry implements JsonbInstances.Source {
@@ -65,21 +70,35 @@ public class JsonbCdiRegistry implements JsonbInstances.Source {
     protected JsonbCdiRegistry() {
     }
 
+    /**
+     * The registry of the container that injects {@code beans} and {@code container}.
+     *
+     * @param beans     the lookup of the container's beans
+     * @param container the container, for the beans the lookup by type does not find
+     */
     @Inject
-    JsonbCdiRegistry(Instance<Object> beans, BeanContainer container) {
+    public JsonbCdiRegistry(Instance<Object> beans, BeanContainer container) {
         this.beans = beans;
         this.container = container;
     }
 
-    /** Serves the generated bindings and the runtime of the application starting. */
-    void install(@Observes Startup event) {
+    /**
+     * Serves the generated bindings and the runtime of the application starting.
+     *
+     * @param event the container's start
+     */
+    public void install(@Observes Startup event) {
         application = Thread.currentThread().getContextClassLoader();
         if (application == null) application = JsonbCdiRegistry.class.getClassLoader();
         JsonbInstances.install(application, this);
     }
 
-    /** Stops serving, and destroys the instances obtained; from then on, it creates and keeps nothing. */
-    void uninstall(@Observes Shutdown event) {
+    /**
+     * Stops serving, and destroys the instances obtained; from then on, it creates and keeps nothing.
+     *
+     * @param event the container's stop
+     */
+    public void uninstall(@Observes Shutdown event) {
         closed = true;
         if (application != null) JsonbInstances.uninstall(application, this);
         destroyAll();

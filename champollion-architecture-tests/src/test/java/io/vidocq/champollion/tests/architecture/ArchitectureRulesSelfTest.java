@@ -37,7 +37,10 @@ import java.util.stream.Stream;
 
 import io.vidocq.archrules.VidocqArchRules;
 import io.vidocq.champollion.codegen.apt.archfixture.AptReachingIntoProtobuf;
+import io.vidocq.champollion.jsonb.archfixture.JsonbReachingIntoJsonbCdi;
 import io.vidocq.champollion.jsonb.archfixture.JsonbReachingIntoProtobuf;
+import io.vidocq.champollion.jsonb.cdi.archfixture.JsonbCdiReachingIntoVauban;
+import io.vidocq.champollion.jsonb.cdi.vauban.archfixture.VaubanAdapterReachingIntoJsonb;
 import io.vidocq.champollion.jsonp.archfixture.JsonpReachingIntoJsonb;
 import io.vidocq.champollion.protobuf.codegen.archfixture.CodegenReachingIntoJsonb;
 import io.vidocq.champollion.protobuf.internal.archfixture.ProtobufReachingIntoJsonb;
@@ -67,6 +70,19 @@ class ArchitectureRulesSelfTest {
                 ruleWith("LAYERS", ArchitectureRules.LAYERS, JsonpReachingIntoJsonb.class),
                 ruleWith("JSONB_DEPENDENCIES", ArchitectureRules.JSONB_DEPENDENCIES, JsonbReachingIntoProtobuf.class),
                 ruleWith("LAYERS", ArchitectureRules.LAYERS, JsonbReachingIntoProtobuf.class),
+                ruleWith("JSONB_DEPENDENCIES", ArchitectureRules.JSONB_DEPENDENCIES, JsonbReachingIntoJsonbCdi.class),
+                ruleWith(
+                        "JSONB_CDI_DEPENDENCIES",
+                        ArchitectureRules.JSONB_CDI_DEPENDENCIES,
+                        JsonbCdiReachingIntoVauban.class),
+                ruleWith(
+                        "FOUNDATIONAL_BRICKS",
+                        ArchitectureRules.FOUNDATIONAL_BRICKS,
+                        JsonbCdiReachingIntoVauban.class),
+                ruleWith(
+                        "JSONB_CDI_VAUBAN_DEPENDENCIES",
+                        ArchitectureRules.JSONB_CDI_VAUBAN_DEPENDENCIES,
+                        VaubanAdapterReachingIntoJsonb.class),
                 ruleWith(
                         "PROTOBUF_DEPENDENCIES",
                         ArchitectureRules.PROTOBUF_DEPENDENCIES,
@@ -88,9 +104,9 @@ class ArchitectureRulesSelfTest {
 
     @Test
     void theFoundationalBricksRuleCatchesADependencyOnAForbiddenPackage() {
-        // Neither Chappe nor Vauban is on the class path of this module (adding one would draw an edge
-        // between foundational bricks in the dependency graph), so the same rule is set to a package a fixture
-        // does reach.
+        // Chappe is not on the class path of this module, and of Vauban only the API the engine adapter brings, so
+        // the same rule is also set to a package a fixture does reach; moduleRuleBreaches holds the real rule to
+        // a fixture that reaches the Vauban API.
         ArchRule rule = VidocqArchRules.neverDependOn(
                 new String[] {"io.vidocq.champollion.jsonp.."},
                 new String[] {"io.vidocq.champollion.jsonb.."},

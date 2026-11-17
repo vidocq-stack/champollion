@@ -21,7 +21,8 @@
  * The CDI side of Champollion's JSON-B: a build compatible extension that validates, at build, the adapters,
  * serializers and deserializers JSON-B annotations name, and a registry that hands their CDI instances to the
  * generated bindings and to the runtime, per container. The core, {@code io.vidocq.champollion.jsonb}, stays free of
- * CDI.
+ * CDI, and this module of any container: it reads the CDI and JSON-B APIs only, and runs unchanged on Weld, Open
+ * Liberty or Vauban.
  */
 module io.vidocq.champollion.jsonb.cdi {
     requires io.vidocq.champollion.jsonb;
@@ -31,12 +32,10 @@ module io.vidocq.champollion.jsonb.cdi {
 
     exports io.vidocq.champollion.jsonb.cdi;
 
-    // No `opens`: Vauban creates the registry and calls its observers through the _VaubanComponents the Vauban
-    // processor generated in this module. Other CDI containers run it on a class path, where this is inert.
-    requires io.vidocq.vauban.api;
-
-    provides io.vidocq.vauban.api.VaubanComponentProvider
-            with io.vidocq.champollion.jsonb.cdi._VaubanComponents;
+    // The registry bean. No `opens`: under Vauban, io.vidocq.champollion.jsonb.cdi.vauban creates it, calls its
+    // observers and makes its client proxy, in plain Java code, so the package is exported to that module alone.
+    // Other CDI containers run this module on a class path, where the export is inert.
+    exports io.vidocq.champollion.jsonb.cdi.registry to io.vidocq.champollion.jsonb.cdi.vauban;
 
     provides jakarta.enterprise.inject.build.compatible.spi.BuildCompatibleExtension
             with io.vidocq.champollion.jsonb.cdi.JsonbCdiExtension;

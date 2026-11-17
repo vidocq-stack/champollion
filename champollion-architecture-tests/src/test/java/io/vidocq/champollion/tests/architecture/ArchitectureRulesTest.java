@@ -32,7 +32,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * The architecture rules on the classes Champollion ships: champollion-api, -jsonp, -jsonb, -protobuf,
+ * The architecture rules on the classes Champollion ships: champollion-api, -jsonp, -jsonb, -jsonb-cdi, -jsonb-cdi-vauban, -protobuf,
  * -protobuf-codegen and -codegen-apt, test classes left out (Vidocq/vidocq#289). A failure names each class and the
  * dependency or call that breaks the rule.
  */
@@ -48,6 +48,12 @@ class ArchitectureRulesTest {
         assertTrue(
                 SHIPPED.contain("io.vidocq.champollion.jsonb.internal.ChampollionJsonbProvider"),
                 "champollion-jsonb imported");
+        assertTrue(
+                SHIPPED.contain("io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry"),
+                "champollion-jsonb-cdi imported");
+        assertTrue(
+                SHIPPED.contain("io.vidocq.champollion.jsonb.cdi.vauban.JsonbCdiVaubanComponents"),
+                "champollion-jsonb-cdi-vauban imported");
         assertTrue(SHIPPED.contain("io.vidocq.champollion.protobuf.ParserProvider"), "champollion-protobuf imported");
         assertTrue(
                 SHIPPED.contain("io.vidocq.champollion.protobuf.codegen.ProtobufStaticProcessor"),
@@ -62,6 +68,8 @@ class ArchitectureRulesTest {
                 named("API_DEPENDENCIES", ArchitectureRules.API_DEPENDENCIES),
                 named("JSONP_DEPENDENCIES", ArchitectureRules.JSONP_DEPENDENCIES),
                 named("JSONB_DEPENDENCIES", ArchitectureRules.JSONB_DEPENDENCIES),
+                named("JSONB_CDI_DEPENDENCIES", ArchitectureRules.JSONB_CDI_DEPENDENCIES),
+                named("JSONB_CDI_VAUBAN_DEPENDENCIES", ArchitectureRules.JSONB_CDI_VAUBAN_DEPENDENCIES),
                 named("PROTOBUF_DEPENDENCIES", ArchitectureRules.PROTOBUF_DEPENDENCIES),
                 named("PROTOBUF_CODEGEN_DEPENDENCIES", ArchitectureRules.PROTOBUF_CODEGEN_DEPENDENCIES),
                 named("APT_DEPENDENCIES", ArchitectureRules.APT_DEPENDENCIES),

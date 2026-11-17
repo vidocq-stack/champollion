@@ -27,7 +27,8 @@ import com.tngtech.archunit.core.importer.ImportOption;
 final class ChampollionClasses {
 
     /**
-     * The root package of each shipped module: champollion-api, -jsonp, -jsonb, -protobuf, -protobuf-codegen and
+     * The root package of each shipped module: champollion-api, -jsonp, -jsonb (which holds -jsonb-cdi and
+     * -jsonb-cdi-vauban), -protobuf, -protobuf-codegen and
      * -codegen-apt.
      */
     private static final String[] SHIPPED_PACKAGES = {

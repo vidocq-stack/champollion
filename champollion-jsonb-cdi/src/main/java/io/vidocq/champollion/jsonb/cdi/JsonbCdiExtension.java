@@ -45,7 +45,7 @@ import java.util.Set;
 /**
  * Validates, at build, the adapters, serializers and deserializers that {@code @JsonbTypeAdapter},
  * {@code @JsonbTypeSerializer} and {@code @JsonbTypeDeserializer} name, as the generated bindings and the runtime will
- * obtain them from the container ({@link JsonbCdiRegistry}): an error when one is ambiguous, or injects without being a
+ * obtain them from the container ({@link io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry}): an error when one is ambiguous, or injects without being a
  * bean (its injections would stay null).
  *
  * <p>It registers no synthetic bean: under Vauban it runs at build and again at boot, and the registry, a plain bean of

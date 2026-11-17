@@ -31,30 +31,58 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * On the module path, Vauban creates the registry bean through the components the Vauban processor generated in this
- * module at its build, so the jar needs no {@code opens}, with or without {@code vidocq:generate}.
+ * The module is container-neutral: it depends on the CDI and JSON-B APIs only, reads no Vauban module and ships no
+ * Vauban components (workspace AGENTS.md, "A brick depends on APIs; the Vidocq runtime extension assembles"). The
+ * Vauban glue is {@code champollion-jsonb-cdi-vauban}, the only module the registry's package is exported to.
  */
 class JsonbCdiModuleTest {
 
-    private static final String PACKAGE = JsonbCdiRegistry.class.getPackageName();
+    private static final String REGISTRY_PACKAGE = "io.vidocq.champollion.jsonb.cdi.registry";
+    private static final String VAUBAN_ADAPTER = "io.vidocq.champollion.jsonb.cdi.vauban";
 
     private static ModuleDescriptor descriptor() throws IOException, URISyntaxException {
         // The tests run on the class path: read this module's own descriptor, not the first one the loader finds.
-        Path classes = Path.of(JsonbCdiRegistry.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        Path classes = Path.of(JsonbCdiExtension.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         try (InputStream in = Files.newInputStream(classes.resolve("module-info.class"))) {
             return ModuleDescriptor.read(in);
         }
     }
 
     @Test
-    void shipsItsVaubanComponents() throws IOException, URISyntaxException {
-        List<String> providers = descriptor().provides().stream()
-                .filter(p -> p.service().equals("io.vidocq.vauban.api.VaubanComponentProvider"))
-                .flatMap(p -> p.providers().stream())
+    void readsNoVaubanModule() throws IOException, URISyntaxException {
+        List<String> vauban = descriptor().requires().stream()
+                .map(ModuleDescriptor.Requires::name)
+                .filter(name -> name.startsWith("io.vidocq.vauban"))
                 .toList();
-        assertEquals(List.of(PACKAGE + "._VaubanComponents"), providers);
+        assertEquals(List.of(), vauban, "a brick depends on APIs; the Vauban glue is " + VAUBAN_ADAPTER);
+    }
+
+    @Test
+    void providesNoVaubanComponents() throws IOException, URISyntaxException {
+        List<String> services = descriptor().provides().stream()
+                .map(ModuleDescriptor.Provides::service)
+                .filter(service -> service.startsWith("io.vidocq.vauban"))
+                .toList();
+        assertEquals(List.of(), services);
+    }
+
+    @Test
+    void vaubanIsNoDependency() {
+        // Neither compile nor runtime: the class path of the tests is the module's own, Weld included.
+        assertThrows(ClassNotFoundException.class, () -> Class.forName("io.vidocq.vauban.api.VaubanComponentProvider"));
+    }
+
+    @Test
+    void exportsTheRegistryToTheVaubanAdapterOnly() throws IOException, URISyntaxException {
+        List<Set<String>> targets = descriptor().exports().stream()
+                .filter(export -> export.source().equals(REGISTRY_PACKAGE))
+                .map(ModuleDescriptor.Exports::targets)
+                .toList();
+        assertEquals(List.of(Set.of(VAUBAN_ADAPTER)), targets,
+                "the adapter creates the registry and calls its observers; no other module reaches them");
     }
 
     @Test

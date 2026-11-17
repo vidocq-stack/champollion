@@ -27,6 +27,12 @@ import io.vidocq.archrules.Packages;
 import io.vidocq.archrules.PlatformThreads;
 import io.vidocq.archrules.VidocqArchRules;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+
 import com.tngtech.archunit.lang.ArchRule;
 
 /**
@@ -37,7 +43,9 @@ import com.tngtech.archunit.lang.ArchRule;
  *
  * <p>The root package of each shipped module: {@code io.vidocq.champollion.spi} (champollion-api),
  * {@code io.vidocq.champollion.jsonp} (champollion-jsonp), {@code io.vidocq.champollion.jsonb}
- * (champollion-jsonb), {@code io.vidocq.champollion.protobuf} without {@code .codegen} (champollion-protobuf),
+ * (champollion-jsonb), {@code io.vidocq.champollion.jsonb.cdi} (champollion-jsonb-cdi),
+ * {@code io.vidocq.champollion.jsonb.cdi.vauban} (champollion-jsonb-cdi-vauban), {@code io.vidocq.champollion.protobuf}
+ * without {@code .codegen} (champollion-protobuf),
  * {@code io.vidocq.champollion.protobuf.codegen} (champollion-protobuf-codegen) and
  * {@code io.vidocq.champollion.codegen.apt} (champollion-codegen-apt). The two Maven plugins run on the build
  * machine and are not covered.
@@ -51,6 +59,12 @@ final class ArchitectureRules {
         "io.vidocq.champollion.protobuf.internal..",
         "io.vidocq.champollion.protobuf.wkt.."
     };
+
+    /** champollion-jsonb-cdi, inside the packages of champollion-jsonb. */
+    private static final String JSONB_CDI = "io.vidocq.champollion.jsonb.cdi..";
+
+    /** champollion-jsonb-cdi-vauban, inside the packages of champollion-jsonb-cdi. */
+    private static final String JSONB_CDI_VAUBAN = "io.vidocq.champollion.jsonb.cdi.vauban..";
 
     /** champollion-api: the Jakarta JSON-P and JSON-B APIs it re-exposes, and the annotation API (static). */
     static final ArchRule API_DEPENDENCIES = VidocqArchRules.dependOnlyOn(
@@ -77,16 +91,47 @@ final class ArchitectureRules {
      * champollion-jsonb: the JSON-P and JSON-B APIs, champollion-api and the parser internals champollion-jsonp
      * exports to it alone (parser pool, module-info.java of champollion-jsonp).
      */
-    static final ArchRule JSONB_DEPENDENCIES = VidocqArchRules.dependOnlyOn(
-            new String[] {"io.vidocq.champollion.jsonb.."},
+    static final ArchRule JSONB_DEPENDENCIES = dependOnlyOnOutside(
+            "io.vidocq.champollion.jsonb..",
+            JSONB_CDI,
             Packages.of(
                     Jdk.RUNTIME,
                     "jakarta.json..",
                     "jakarta.json.bind..",
                     "io.vidocq.champollion.spi..",
-                    "io.vidocq.champollion.jsonp.internal..",
-                    "io.vidocq.champollion.jsonb.."),
+                    "io.vidocq.champollion.jsonp.internal.."),
             CLAUDE_CONSTRAINTS + ", zero dependency beyond Jakarta specs; module-info.java of champollion-jsonb");
+
+    /**
+     * champollion-jsonb-cdi: the CDI, CDI language model and JSON-B APIs and champollion-jsonb, container-neutral
+     * (workspace AGENTS.md, "A brick depends on APIs; the Vidocq runtime extension assembles"). Never its Vauban
+     * glue, which depends on it.
+     */
+    static final ArchRule JSONB_CDI_DEPENDENCIES = dependOnlyOnOutside(
+            JSONB_CDI,
+            JSONB_CDI_VAUBAN,
+            Packages.of(
+                    Jdk.RUNTIME,
+                    "jakarta.enterprise..",
+                    "jakarta.inject..",
+                    "jakarta.json.bind..",
+                    "io.vidocq.champollion.jsonb",
+                    "io.vidocq.champollion.jsonb.spi.."),
+            "workspace AGENTS.md, a brick depends on APIs; module-info.java of champollion-jsonb-cdi");
+
+    /**
+     * champollion-jsonb-cdi-vauban, the engine adapter: CDI, the Vauban API and the registry it runs, nothing else
+     * (workspace AGENTS.md, the {@code *-cdi-vauban} exception).
+     */
+    static final ArchRule JSONB_CDI_VAUBAN_DEPENDENCIES = VidocqArchRules.dependOnlyOn(
+            new String[] {JSONB_CDI_VAUBAN},
+            Packages.of(
+                    Jdk.RUNTIME,
+                    "jakarta.enterprise..",
+                    "io.vidocq.vauban.api..",
+                    "io.vidocq.champollion.jsonb.cdi.registry..",
+                    JSONB_CDI_VAUBAN),
+            "workspace AGENTS.md, engine adapters *-cdi-vauban; module-info.java of champollion-jsonb-cdi-vauban");
 
     /** champollion-protobuf: the JSON-P API only, composed on champollion-jsonp through the provider. */
     static final ArchRule PROTOBUF_DEPENDENCIES = VidocqArchRules.dependOnlyOn(
@@ -152,12 +197,38 @@ final class ArchitectureRules {
 
     /**
      * Workspace AGENTS.md, dependency graph: the foundational bricks (chappe, vauban, champollion) have no
-     * dependency between them.
+     * dependency between them. The one exception is the engine adapter champollion-jsonb-cdi-vauban, which
+     * {@link #JSONB_CDI_VAUBAN_DEPENDENCIES} holds to the Vauban API.
      */
-    static final ArchRule FOUNDATIONAL_BRICKS = VidocqArchRules.neverDependOn(
-            new String[] {"io.vidocq.champollion.."},
-            new String[] {"io.vidocq.chappe..", "io.vidocq.vauban.."},
-            "workspace AGENTS.md, dependency graph");
+    static final ArchRule FOUNDATIONAL_BRICKS = noClasses()
+            .that()
+            .resideInAPackage("io.vidocq.champollion..")
+            .and()
+            .resideOutsideOfPackage(JSONB_CDI_VAUBAN)
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("io.vidocq.chappe..", "io.vidocq.vauban..")
+            .because("io.vidocq.champollion.. but the engine adapter " + JSONB_CDI_VAUBAN
+                    + " never depend on io.vidocq.chappe.., io.vidocq.vauban.. (workspace AGENTS.md, dependency graph"
+                    + " and engine adapters *-cdi-vauban)");
+
+    /**
+     * The zero-dependency rule of a module whose packages hold another module's: the classes of {@code subject}
+     * outside {@code excluded} depend only on {@code allowed} and on their own classes, never on {@code excluded}.
+     */
+    private static ArchRule dependOnlyOnOutside(String subject, String excluded, String[] allowed, String source) {
+        return classes()
+                .that()
+                .resideInAPackage(subject)
+                .and()
+                .resideOutsideOfPackage(excluded)
+                .should()
+                .onlyDependOnClassesThat(resideInAnyPackage(allowed)
+                        .or(resideInAPackage(subject).and(not(resideInAPackage(excluded))))
+                        .as("reside in " + String.join(", ", allowed) + " or in " + subject + " outside " + excluded))
+                .because("the classes of " + subject + " outside " + excluded + " depend on nothing but "
+                        + String.join(", ", allowed) + " and themselves (" + source + ")");
+    }
 
     private static final String JSONB_TYPE_TOKEN = "java.lang.reflect.Type is the type token of the JSON-B API"
             + " (Jsonb.toJson(Object, Type), Jsonb.fromJson(String, Type)): it only reads generic type arguments,"
@@ -189,6 +260,12 @@ final class ArchitectureRules {
                     "the failure path of the JSON-B runtime mode: it recognises InaccessibleObjectException to tell"
                             + " the user which opens line to add (BUG-20261031-01); it reads no member"),
             Map.entry("io.vidocq.champollion.jsonb.internal.GenericTypes", JSONB_TYPE_TOKEN),
+            Map.entry(
+                    "io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry",
+                    "the CDI bean types of a generic class: java.lang.reflect.Type is the type of a bean"
+                            + " (Bean.getTypes(), BeanContainer.getReference) and of a class's type variables, which"
+                            + " the registry compares to find the bean of a class with a bounded type variable"
+                            + " (CDI 4.1 section 5.2.4, BUG-20261117-02); it reads no member of a class"),
             Map.entry("io.vidocq.champollion.jsonb.internal.ChampollionJsonb", JSONB_TYPE_TOKEN),
             Map.entry("io.vidocq.champollion.jsonb.internal.ChampollionDeserializationContext", JSONB_TYPE_TOKEN),
             Map.entry("io.vidocq.champollion.protobuf.Descriptors", PROTOBUF_RUNTIME_MODE),
