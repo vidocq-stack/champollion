@@ -14,7 +14,13 @@
 
     <groupId>io.vidocq.champollion</groupId>
     <artifactId>champollion-protobuf-tck</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
+    <!--
+        The version of the Champollion reactor, kept in step by hand: this POM has no parent, so the
+        reactor's version bump does not reach it. The runtime and the code generator below follow it
+        (`${project.version}`): this is the one line to change. It stayed on 0.3.0-SNAPSHOT from
+        2026-08-30 to 2026-11-17, so the wrapper ran the last 0.3.0 snapshot (BUG-20261117-03).
+    -->
+    <version>0.4.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>Champollion :: Protobuf TCK (Conformance Runner)</name>
@@ -29,7 +35,7 @@
         <dependency>
             <groupId>io.vidocq.champollion</groupId>
             <artifactId>champollion-protobuf</artifactId>
-            <version>0.3.0-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -51,7 +57,7 @@
                         <path>
                             <groupId>io.vidocq.champollion</groupId>
                             <artifactId>champollion-protobuf-codegen</artifactId>
-                            <version>0.3.0-SNAPSHOT</version>
+                            <version>${project.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

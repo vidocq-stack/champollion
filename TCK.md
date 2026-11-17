@@ -104,7 +104,13 @@ no pre-installed TCK. `main` itself runs no TCK: it builds, tests and deploys in
 one pass.
 
 A run takes about two minutes (JSON-P 179 + 18 pluggability tests, JSON-B 295 with
-5 skipped, 0 failures; measured locally on 2026-10-26).
+5 skipped, 0 failures; measured locally on 2026-10-26, same counts on 2026-11-17).
+
+The runner tests the modules of the reactor it belongs to: `champollion-tck/pom.xml`
+names no version of Champollion, `champollion-parent` manages it. From 2026-08-30 to
+2026-11-17 it named `0.3.0-SNAPSHOT`, so every run of that period tested the last
+snapshot of the 0.3.0 line and not the pull request (BUG-20261117-03). The run of
+2026-11-17 is the first one on the code written since.
 
 ---
 

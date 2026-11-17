@@ -853,3 +853,66 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   second guards a `Jsonb` kept across layers); unit tests of the reactor (`mvn test`: jsonb 693, protobuf 448, …);
   TCK JSON-B 3.0 `all` and `all --static`: 295 tests, 5 skipped as before; BENCH-20261102-02 (no measurable change).
   The loader count of the audit app after a hot-reload series is reported on the pull request.
+
+## BUG-20261117-03 — TCK: the runners tested the last 0.3.0 snapshot, not the code of the reactor
+
+- **Date** : 2026-11-17
+- **Statut** : FIXED 2026-11-17 (branch `fix/tck-runner-tests-the-reactor`). Found when the producer job of
+  champollion#98 failed in its TCK step: the first pull request to change code since the snapshot repository moved.
+- **Module touché** : `champollion-tck/pom.xml` (official JSON-P 2.1 and JSON-B 3.0 TCK);
+  `champollion-protobuf-tck/pom.xml` (Protobuf conformance wrapper, outside the reactor).
+- **Symptôme** : two, for one cause.
+  - From 2026-08-30 to 2026-11-17 each run of the official TCK, on a pull request or by hand, tested
+    `champollion-jsonp` and `champollion-jsonb` `0.3.0-SNAPSHOT` (build `0.3.0-20260830.134029-19`, the last snapshot
+    before the 0.3.0 release), not the `0.4.0-SNAPSHOT` the scripts had just installed. The two CDI tests of the
+    JSON-B suite ran on the `vauban-core` of that line too. Seven entries of this file quote a TCK run as a proof
+    (BUG-20261029-03 to -06, BUG-20261101-06, BUG-20261102-01 and -02): each of those runs was a run of that jar, and
+    proved nothing about the change it is quoted for.
+  - Since the `io.vidocq` snapshots are read from `maven.vidocq.dev` (2026-11-12), CI no longer takes them from the
+    Sonatype snapshot repository, where the `0.3.0-SNAPSHOT` jars still are. `pr-validate / producer` fails on every
+    pull request that changes code: `Could not find artifact io.vidocq.champollion:champollion-jsonp:jar:0.3.0-SNAPSHOT`
+    (champollion#98, run 897).
+- **Reproduction minimale** : on `main`, after `./mvnw -ntp install -DskipTests`:
+  ```
+  ./mvnw -ntp -Ptck,jsonp-tck -pl champollion-tck dependency:list -DincludeGroupIds=io.vidocq.champollion
+  ```
+  lists `champollion-jsonp:jar:0.3.0-SNAPSHOT` and `champollion-jsonb:jar:0.3.0-SNAPSHOT`, next to
+  `champollion-api:jar:0.4.0-SNAPSHOT`. Where the old snapshot can still be downloaded, the suite then passes.
+- **Cause** : the runner wrote the version of the implementation in a property of its own (`champollion.version`) and
+  the version of `vauban-core` as a literal. The version bump after the 0.3.0 release (933d9cb, 2026-08-30) moved the
+  runner's parent to `0.4.0-SNAPSHOT` and left both. The Protobuf wrapper has no parent: its own version and the two
+  it names stayed behind the same way. Nothing failed while the old snapshot could be downloaded, so the gate stayed
+  green on a jar nobody was changing.
+- **Correctif** : `champollion-tck` declares `champollion-jsonp` and `champollion-jsonb` without a version, like the
+  other modules of the reactor: `champollion-parent` manages them at `${project.version}`. `vauban-core` follows a
+  `vauban.version` property, as in `champollion-jsonb-cdi`. `champollion-protobuf-tck` is on `0.4.0-SNAPSHOT`, and its
+  runtime and code generator follow `${project.version}`: one line to change at the next bump.
+- **Vérification** : on a private Maven repository, the reactor of this branch installed without tests, then the three
+  suites as the scripts run them (`-Ptck,<profile> -pl champollion-tck test`).
+  - `dependency:list` names `0.4.0-SNAPSHOT` for the three Champollion modules and for Vauban; the two tested jars
+    have the SHA-256 of the ones in `target/`.
+  - JSON-P 179 tests, pluggability 18, JSON-B 295 with 5 skipped, 0 failures. This is the first run of the official
+    TCK on the code written since 2026-08-30, and it passes.
+  - The Protobuf wrapper resolves `0.4.0-SNAPSHOT` and compiles against it. Google's `conformance_test_runner` is not
+    on the machine: the conformance suite was not run. Four of the wrapper's eight unit tests fail before and after
+    this change (BUG-20261117-04).
+
+## BUG-20261117-04 — Protobuf conformance wrapper: four of its eight unit tests fail, and nothing runs them
+
+- **Date** : 2026-11-17
+- **Statut** : OPEN. Found while checking BUG-20261117-03.
+- **Module touché** : `champollion-protobuf-tck` — `ConformanceRunnerTest` (tests only).
+- **Symptôme** : `mvn -f champollion-protobuf-tck/pom.xml test` gives `Tests run: 8, Failures: 4`:
+  `Messages.response_roundtrip_lost_null_distinction`, `Pipe.single_skipped_request_yields_skipped_response`,
+  `Pipe.known_type_json_output` and `Pipe.known_type_protobuf_roundtrip`, each with `expected: <> but was: <null>`.
+  The same four fail against `0.3.0-SNAPSHOT` and against `0.4.0-SNAPSHOT`.
+- **Reproduction minimale** : the command above, after an install of the reactor.
+- **Hypothèse de cause** : the tests expect a field absent from the wire to come back as the Java default (`""`). The
+  fields of `ConformanceResponse` declare `explicitPresence = true` since 5e83642 (2026-05-22), and the runtime
+  returns `null` for an absent field with explicit presence (`RuntimeBinding.defaultFor`, c93c7bb, same day): the
+  tests were not changed with it. `run-official-conformance-protobuf.sh` builds the wrapper with `-DskipTests`, and
+  the module is outside the reactor, so no build ever ran them.
+- **Investigations** :
+  - 2026-11-17 : the four failures reproduced on a private repository with `main`'s POM (0.3.0-SNAPSHOT) and with the
+    fixed one (0.4.0-SNAPSHOT). To do, in a pull request of its own: make the four tests state the behaviour of an
+    explicit-presence field, and let the script run the wrapper's tests.

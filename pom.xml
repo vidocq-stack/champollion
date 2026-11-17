@@ -74,7 +74,8 @@
             download.eclipse.org and is idempotent; each runner exits non-zero on a red suite.
 
             Measured locally on 2026-10-26: 179 + 18 JSON-P and 295 JSON-B tests (5 skipped), 0
-            failures, about two minutes.
+            failures, about two minutes. Same counts on 2026-11-17, the first run on the code of the
+            reactor: until then champollion-tck named the 0.3.0 snapshot (BUG-20261117-03).
         -->
         <ci.tck.command>./install-tck.sh &amp;&amp; ./run-official-tck-jsonp-2.1.sh all &amp;&amp; ./run-official-tck-jsonb-3.0.sh all</ci.tck.command>
 
