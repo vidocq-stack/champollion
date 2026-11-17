@@ -21,6 +21,7 @@ package io.vidocq.champollion.protobuf.wkt;
 
 import io.vidocq.champollion.protobuf.ProtobufMessage;
 
+import java.lang.ref.WeakReference;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -39,12 +40,16 @@ import java.util.concurrent.ConcurrentMap;
  * <p>Mutable, thread-safe, module-static. Users register their
  * types via {@link #register(Class)} (the {@code fullName} comes from
  * {@link ProtobufMessage#value()}) or directly via {@code typeFullName}.</p>
+ *
+ * <p>The registry outlives every application layer of {@code vidocq dev}, and a registered type is a class of the
+ * layer that registered it. So it holds each type weakly: a type stays registered as long as its class loader
+ * lives, and is forgotten once its layer is discarded (BUG-20261117-01).</p>
  */
 public final class TypeRegistry {
 
     public static final String DEFAULT_BASE = "type.googleapis.com";
 
-    private static final ConcurrentMap<String, Class<?>> BY_FULL_NAME = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, WeakReference<Class<?>>> BY_FULL_NAME = new ConcurrentHashMap<>();
 
     static {
         // Automatic registration of WKT exposed by Champollion.
@@ -76,17 +81,32 @@ public final class TypeRegistry {
             throw new IllegalArgumentException(type + " is missing @ProtobufMessage");
         }
         String full = pm.value().isEmpty() ? type.getSimpleName() : pm.value();
-        BY_FULL_NAME.put(full, type);
+        BY_FULL_NAME.put(full, new WeakReference<>(type));
     }
 
     public static void register(String typeFullName, Class<?> type) {
         Objects.requireNonNull(typeFullName, "typeFullName");
         Objects.requireNonNull(type, "type");
-        BY_FULL_NAME.put(typeFullName, type);
+        BY_FULL_NAME.put(typeFullName, new WeakReference<>(type));
     }
 
+    /**
+     * Returns the type registered under a full name.
+     *
+     * @param typeFullName the {@code <full.name>} part of a {@code type_url}
+     * @return the registered type, or {@code null} when none is registered under that name, or when the class
+     *         loader of the one that was is gone
+     */
     public static Class<?> lookup(String typeFullName) {
-        return BY_FULL_NAME.get(typeFullName);
+        WeakReference<Class<?>> registered = BY_FULL_NAME.get(typeFullName);
+        if (registered == null) {
+            return null;
+        }
+        Class<?> type = registered.get();
+        if (type == null) {
+            BY_FULL_NAME.remove(typeFullName, registered);
+        }
+        return type;
     }
 
     /** Extrait la portion {@code <full.name>} d'un {@code type_url}. */

@@ -916,3 +916,25 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
   - 2026-11-17 : the four failures reproduced on a private repository with `main`'s POM (0.3.0-SNAPSHOT) and with the
     fixed one (0.4.0-SNAPSHOT). To do, in a pull request of its own: make the four tests state the behaviour of an
     explicit-presence field, and let the script run the wrapper's tests.
+
+## BUG-20261117-01 — Protobuf: a message type registered for `Any` kept the application layer that registered it
+
+- **Date** : 2026-11-17
+- **Statut** : FIXED 2026-11-17 (branch `fix/type-registry-layer-leak`). Latent leak listed by the layer audit
+  (Vidocq/vidocq#631): the one strong `Class` map the fix of BUG-20261102-02 left in `champollion-protobuf`.
+- **Module touché** : `champollion-protobuf` — `wkt.TypeRegistry`.
+- **Symptôme** : an application that registers its message types (`TypeRegistry.register`) keeps the layer a
+  `vidocq dev` hot reload discarded reachable until the next layer registers a type under each of the same names; a
+  type the next layer no longer registers (renamed, removed) keeps its layer for good. Until then `lookup`, hence
+  `Any.unpack()` and the JSON mapping of `Any`, answers with a class of the discarded layer. Not seen in the
+  applications measured so far: none registers a type.
+- **Reproduction minimale** : `TypeRegistryTest.aDiscardedLayerThatRegisteredAMessageTypeIsCollectable` — a layer
+  defined by a child loader registers its own copy of a message type, the layer is dropped, `System.gc()`: the layer
+  is still reachable.
+- **Cause** : `TypeRegistry.BY_FULL_NAME`, a static `ConcurrentHashMap<String, Class<?>>` of the library, which
+  outlives every application layer, held each registered class strongly.
+- **Correctif** : the map holds each type through a `WeakReference`. A class is held by its class loader, so a type
+  stays registered as long as its layer lives; once the layer is gone, `lookup` returns `null` and drops the entry.
+- **Vérification** : `TypeRegistryTest` (3; the first is red on `main`; the second guards a type of a live layer
+  across a collection; the third guards the replacement by a later layer of the same name); the reactor with
+  `-Pquality verify`.
