@@ -89,23 +89,24 @@ class ConformanceRunnerTest {
         void response_skipped_factory_only_sets_skipped_field() {
             ConformanceResponse r = ConformanceResponse.skipped("not yet");
             assertEquals("not yet", r.skipped());
-            // Les autres champs sont null en mémoire (oneof simulé) mais
-            // après round-trip wire ils seront aux defaults Java ("" / new byte[0])
-            // — la distinction null/default n'est pas portée par le wire format.
+            // The other members of the oneof are null in memory, and they stay null after a round
+            // trip on the wire: they declare explicit presence (next test).
             assertNull(r.parse_error());
             assertNull(r.protobuf_payload());
         }
 
         @Test
-        void response_roundtrip_lost_null_distinction() throws IOException {
+        void response_roundtrip_keeps_unset_members_null() throws IOException {
             ConformanceResponse src = ConformanceResponse.skipped("not yet");
             byte[] bytes = Protobuf.toByteArray(src);
             ConformanceResponse back = Protobuf.parser(ConformanceResponse.class).parseFrom(bytes);
             // skipped is present
             assertEquals("not yet", back.skipped());
-            // Fields absent on wire become Java defaults after parse
-            assertEquals("", back.parse_error());
-            assertEquals(0, back.protobuf_payload().length);
+            // The members of the oneof declare explicit presence: one that is absent from the wire
+            // is null after the parse, not the Java default ("" or an empty array). The runner
+            // relies on it to write only the member it set.
+            assertNull(back.parse_error());
+            assertNull(back.protobuf_payload());
         }
     }
 
@@ -140,8 +141,8 @@ class ConformanceRunnerTest {
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
             assertTrue(resp.skipped().contains("Unknown message_type"),
                     "skipped doit mentionner le message inconnu, got: " + resp.skipped());
-            // round-trip wire → defaults Java pour les champs absents
-            assertEquals("", resp.parse_error());
+            // An unset member of the oneof stays null on the way back (explicit presence)
+            assertNull(resp.parse_error());
         }
 
         @Test
@@ -200,9 +201,9 @@ class ConformanceRunnerTest {
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
             byte[] respBytes = din.readNBytes(readLenLE(din));
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
-            assertEquals("", resp.parse_error(), "parse_error must be empty after wire round-trip");
-            assertEquals("", resp.serialize_error(), "serialize_error must be empty");
-            assertEquals("", resp.skipped(), "must not be skipped");
+            assertNull(resp.parse_error(), "parse_error must be unset after the wire round-trip");
+            assertNull(resp.serialize_error(), "serialize_error must be unset");
+            assertNull(resp.skipped(), "must not be skipped");
             TestAllTypesProto3 back = Protobuf.parser(TestAllTypesProto3.class).parseFrom(resp.protobuf_payload());
             assertEquals(42, back.optional_int32());
             assertEquals("hello", back.optional_string());
@@ -231,7 +232,7 @@ class ConformanceRunnerTest {
             DataInputStream din = new DataInputStream(new ByteArrayInputStream(output.toByteArray()));
             byte[] respBytes = din.readNBytes(readLenLE(din));
             ConformanceResponse resp = Protobuf.parser(ConformanceResponse.class).parseFrom(respBytes);
-            assertEquals("", resp.parse_error());
+            assertNull(resp.parse_error());
             assertTrue(resp.json_payload().contains("\"optionalInt32\":7"),
                     "JSON canonical doit utiliser camelCase et inclure optionalInt32:7 — got: "
                             + resp.json_payload());

@@ -900,22 +900,32 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261117-04 — Protobuf conformance wrapper: four of its eight unit tests fail, and nothing runs them
 
 - **Date** : 2026-11-17
-- **Statut** : OPEN. Found while checking BUG-20261117-03.
-- **Module touché** : `champollion-protobuf-tck` — `ConformanceRunnerTest` (tests only).
+- **Statut** : FIXED 2026-11-17 (branch `fix/protobuf-wrapper-tests`). Found while checking BUG-20261117-03.
+- **Module touché** : `champollion-protobuf-tck` — `ConformanceRunnerTest` (tests only);
+  `run-official-conformance-protobuf.sh`.
 - **Symptôme** : `mvn -f champollion-protobuf-tck/pom.xml test` gives `Tests run: 8, Failures: 4`:
   `Messages.response_roundtrip_lost_null_distinction`, `Pipe.single_skipped_request_yields_skipped_response`,
   `Pipe.known_type_json_output` and `Pipe.known_type_protobuf_roundtrip`, each with `expected: <> but was: <null>`.
   The same four fail against `0.3.0-SNAPSHOT` and against `0.4.0-SNAPSHOT`.
 - **Reproduction minimale** : the command above, after an install of the reactor.
-- **Hypothèse de cause** : the tests expect a field absent from the wire to come back as the Java default (`""`). The
-  fields of `ConformanceResponse` declare `explicitPresence = true` since 5e83642 (2026-05-22), and the runtime
-  returns `null` for an absent field with explicit presence (`RuntimeBinding.defaultFor`, c93c7bb, same day): the
-  tests were not changed with it. `run-official-conformance-protobuf.sh` builds the wrapper with `-DskipTests`, and
-  the module is outside the reactor, so no build ever ran them.
+- **Cause** : the tests expect a field absent from the wire to come back as the Java default (`""`). The fields of
+  `ConformanceResponse` declare `explicitPresence = true` since 5e83642 (2026-05-22), and the runtime returns `null`
+  for an absent field with explicit presence (`RuntimeBinding.defaultFor`, c93c7bb, same day): the tests were not
+  changed with it. `run-official-conformance-protobuf.sh` built the wrapper with `-DskipTests`, and the module is
+  outside the reactor, so no build ever ran them. The runtime is right: the eight fields are the members of the
+  `oneof result`, and the runner writes only the member it set because the others are `null`.
+- **Correctif** : the four tests state the behaviour of an explicit-presence field (`assertNull` on the unset
+  members); `response_roundtrip_lost_null_distinction` is now `response_roundtrip_keeps_unset_members_null`. The
+  script builds the wrapper with its tests, so a red wrapper stops the run before any conformance report.
+- **Vérification** : on a private Maven repository (the script's Maven calls pointed at it with `MAVEN_ARGS`).
+  - The script with the tests switched on and the old expectations: it stops at the wrapper's build,
+    `Tests run: 8, Failures: 4`, exit 1.
+  - With the fixed tests: `Tests run: 8, Failures: 0`; the script goes on to its degraded mode (Google's
+    `conformance_test_runner` is not on the machine) and exits 0.
+  - The conformance suite itself was not run, for the same reason.
 - **Investigations** :
   - 2026-11-17 : the four failures reproduced on a private repository with `main`'s POM (0.3.0-SNAPSHOT) and with the
-    fixed one (0.4.0-SNAPSHOT). To do, in a pull request of its own: make the four tests state the behaviour of an
-    explicit-presence field, and let the script run the wrapper's tests.
+    fixed one (0.4.0-SNAPSHOT): they do not come from the version the wrapper tested.
 
 ## BUG-20261117-01 — Protobuf: a message type registered for `Any` kept the application layer that registered it
 

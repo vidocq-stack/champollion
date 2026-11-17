@@ -44,8 +44,11 @@ fi
 echo ">>> Install local reactor (sans tests)..."
 (cd "$SCRIPT_DIR" && mvn -ntp install -DskipTests -q)
 
-echo ">>> Build champollion-protobuf-tck (standalone)..."
-(cd "$TCK_DIR" && mvn -ntp package -DskipTests -q)
+echo ">>> Build champollion-protobuf-tck (standalone), with its unit tests..."
+# The wrapper's own tests run here: the module is outside the reactor, so no other build runs
+# them. They stayed red, unseen, from 2026-05-22 to 2026-11-17 (BUG-20261117-04). A wrapper
+# whose tests fail gives a conformance report nobody can read, so the script stops there.
+(cd "$TCK_DIR" && mvn -ntp package -q)
 
 RUNNER="${CONFORMANCE_TEST_RUNNER:-}"
 if [ -z "$RUNNER" ] || [ ! -x "$RUNNER" ]; then
