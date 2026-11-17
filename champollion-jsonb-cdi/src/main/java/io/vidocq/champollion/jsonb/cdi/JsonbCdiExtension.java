@@ -101,11 +101,40 @@ public class JsonbCdiExtension implements BuildCompatibleExtension {
         if (injects(type)) injecting.add(type.name());
     }
 
+    /**
+     * Counts a bean for each class it can be looked up by, as the registry looks it up: by each of its types that is a
+     * class, and, for the bean of a class with type variables, by that class. The only type of its class such a bean
+     * has is parameterized, {@code type<T>} (CDI 4.1 section 2.2.1), and its raw class does not look it up (section
+     * 5.2.4): the registry takes it by its bean class (BUG-20261117-02, BUG-20261117-05).
+     */
     @Registration(types = Object.class)
     public void bean(BeanInfo bean) {
         for (Type type : bean.types()) {
             if (type.isClass()) beansByType.merge(type.asClass().declaration().name(), 1, Integer::sum);
         }
+        if (bean.isClassBean() && hasTypeOfItsGenericClass(bean)) {
+            beansByType.merge(bean.declaringClass().name(), 1, Integer::sum);
+        }
+    }
+
+    /**
+     * Whether a class bean has the type of its own class with its own type variables, {@code type<T, ...>}: the type
+     * the registry looks it up by. A class without type variables, or a bean {@code @Typed} away from its class,
+     * has none.
+     */
+    private static boolean hasTypeOfItsGenericClass(BeanInfo bean) {
+        ClassInfo declaring = bean.declaringClass();
+        List<String> own = declaring.typeParameters().stream().map(v -> v.name()).toList();
+        if (own.isEmpty()) return false;
+        for (Type type : bean.types()) {
+            if (type.isParameterizedType()
+                    && type.asParameterizedType().declaration().name().equals(declaring.name())
+                    && type.asParameterizedType().typeArguments().stream()
+                            .map(a -> a.isTypeVariable() ? a.asTypeVariable().name() : null).toList().equals(own)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Validation

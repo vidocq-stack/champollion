@@ -49,4 +49,19 @@ class JsonbCdiExtensionTest {
         String message = String.valueOf(e.getMessage()) + (e.getCause() == null ? "" : e.getCause().getMessage());
         assertTrue(message.contains("Shared") && message.contains("ambiguous"), message);
     }
+
+    /**
+     * A generic adapter that injects and is a bean, named by a class the extension sees: nothing to report. Its only
+     * type of its class is parameterized, and the extension counts it by its bean class, as the registry looks it up
+     * (BUG-20261117-05).
+     */
+    @Test
+    void aGenericAdapterThatInjectsAndIsABeanPassesTheValidation() {
+        Weld weld = new Weld("bounded-valid").disableDiscovery()
+                .addBeanClasses(BoundedTagged.class, BoundedAdapter.class, Formatter.class)
+                .addBuildCompatibleExtensions(JsonbCdiExtension.class);
+        try (var container = weld.initialize()) {
+            assertTrue(container.isRunning());
+        }
+    }
 }

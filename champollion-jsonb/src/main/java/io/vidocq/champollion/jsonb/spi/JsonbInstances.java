@@ -91,22 +91,25 @@ public final class JsonbInstances {
      */
     public static Source sourceFor(Class<?> type) {
         if (INSTALLED.get() == 0) return null;
+        List<Source> candidates;
         synchronized (SOURCES) {
-            List<Source> candidates = lookup(type.getClassLoader());
+            candidates = lookup(type.getClassLoader());
             if (candidates.isEmpty()) candidates = lookup(Thread.currentThread().getContextClassLoader());
             if (candidates.isEmpty()) {
                 candidates = new ArrayList<>();
                 for (List<Source> sources : SOURCES.values()) candidates.addAll(sources);
             }
-            if (candidates.size() == 1) return candidates.getFirst();
-            List<Source> serving = candidates.stream().filter(s -> s.serves(type)).toList();
-            if (serving.size() > 1) {
-                throw new JsonbException(serving.size() + " running CDI containers have a bean of " + type.getName()
-                        + " for the same application: JSON-B cannot tell which one serves it; give each"
-                        + " application its own class loader, or stop one container");
-            }
-            return serving.isEmpty() ? null : serving.getFirst();
         }
+        if (candidates.size() == 1) return candidates.getFirst();
+        // Asked outside the lock: a source may walk the beans of its container (BUG-20261117-02), and a container that
+        // stops meanwhile serves nothing more.
+        List<Source> serving = candidates.stream().filter(s -> s.serves(type)).toList();
+        if (serving.size() > 1) {
+            throw new JsonbException(serving.size() + " running CDI containers have a bean of " + type.getName()
+                    + " for the same application: JSON-B cannot tell which one serves it; give each"
+                    + " application its own class loader, or stop one container");
+        }
+        return serving.isEmpty() ? null : serving.getFirst();
     }
 
     /** The sources installed for {@code loader} or its closest ancestor that has some. */

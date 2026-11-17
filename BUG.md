@@ -938,3 +938,110 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Vérification** : `TypeRegistryTest` (3; the first is red on `main`; the second guards a type of a live layer
   across a collection; the third guards the replacement by a later layer of the same name); the reactor with
   `-Pquality verify`.
+
+## BUG-20261117-02 — JSON-B CDI: an adapter whose class has a bounded type variable is created with `new`, without its injections
+
+- **Date** : 2026-11-17
+- **Statut** : FIXED on `fix/bean-class-lookup`. Found by the audit of the lookups by raw class made for
+  Vidocq/vauban#335 (Vidocq/vidocq#652). The ticket expected the case once #335 is merged: it is there today, on Weld
+  and on the Vauban of `main` (455067f5).
+- **Module touché** : `champollion-jsonb-cdi` (`JsonbCdiRegistry`)
+- **Symptôme** : an adapter, serializer or deserializer `BoundedAdapter<T extends Number>` annotated `@Dependent` is a
+  bean. The registry does not serve it: the generated bindings and the runtime create it with its no-argument
+  constructor. Its injected fields are `null`, its `@PostConstruct` and `@PreDestroy` methods never run, and nothing
+  says so.
+- **Reproduction minimale** : `JsonbCdiRegistryTest.aBoundedGenericAdapterIsServedAndDestroyedByItsContainer`
+  (`injected by the container ==> expected: <<x>> but was: <x>`) and
+  `theRuntimeUsesTheBoundedGenericAdapterOfTheRunningContainer` (`expected: <{"name":"<n>"}> but was: <{"name":"n"}>`).
+- **Cause** : `JsonbCdiRegistry` asked `beans.select(type)`. The raw class of a bean whose class has a bounded type
+  variable is not a type that bean can be looked up by (CDI 4.1 section 5.2.4). The lookup is unsatisfied, and the
+  registry answers that the class is no bean.
+- **Correctif** : when the lookup by type finds no bean and the class has type variables, the registry takes the bean
+  of that class among the container's beans that have `@Default`: the one whose bean class is the class and that has,
+  among its bean types, the class with its own type variables (`X<T>`, the type of the bean of a generic class, CDI
+  4.1 section 2.2.1). That type tells it from a producer the class declares, of `X<Integer>` for example: such a
+  producer is never served for `X`, even when the bean of `X` is `@Typed` away from it (`BeanContainer.getBeans`,
+  `resolve`, `getReference`). The qualifiers of the lookup do not change. Two beans of the class with that type are
+  ambiguous, as two beans of a type are: the class is created with `new`. The registry makes the handle of that bean
+  itself, because `Instance.select` refuses a required type with a type variable (CDI 4.1 section 5.6.1,
+  `IllegalArgumentException`): it creates the instance once, at its first use, and destroys it with `Bean.destroy`
+  when the container stops, where it destroys the others. `CreationalContext.release()` alone is specified to destroy
+  the dependents of an instance only. The beans are walked once per class, and only for a class with type variables:
+  the answer is kept. Once the container stops, the registry serves nothing and creates nothing.
+  `JsonbInstances.sourceFor` asks the sources whether they serve a class outside the lock that guards them: that
+  question may now walk the beans of a container (it was asked under the lock before, a cost found in review).
+- **Vérification** : `JsonbCdiRegistryTest`, on Weld: 11 new tests. Red before the first version of the fix: 4 of
+  them. Red before the review's changes: `theBeanOfABoundedGenericClassIsServedNotAProducerItDeclares` (`expected:
+  <true> but was: <false>`), `aProducerOfABoundedGenericClassIsNotServedForThatClass` (`expected: <false> but was:
+  <true>`), `aStoppedRegistryCreatesNothing` (`a stopped registry serves nothing ==> expected: <false> but was:
+  <true>`); `aBoundedGenericClassWithoutABeanIsDecidedOnce` is red without the cache of the classes without a bean
+  (`the beans are walked once for the class ==> expected: <1> but was: <3>`); `JsonbInstancesTest.
+  aSourceIsAskedWhetherItServesWithoutTheLockOfTheSources` was red with `serves` under the lock (`expected:
+  <TERMINATED> but was: <BLOCKED>`). The switch to `Bean.destroy` has no red test: Weld and Vauban release a
+  `@Dependent` instance either way; the `@PreDestroy` counts (`DESTROYED`) show that it runs once, on Weld and
+  Vauban. The same tests on a Vauban container, with a project that is not committed (the reactor has no test on a
+  Vauban container): red before the first version (4 of 9), green after it on the Vauban of `main` (455067f5) and of
+  `fix/raw-type-assignability` (131fb3e6); after the review, 10 of 10 on `vauban-core` 0.4.0-20261117.232012-205.
+  The official TCKs were not run: they do not load `champollion-jsonb-cdi`.
+
+## BUG-20261117-05 — JSON-B CDI: the extension takes a generic adapter that is a bean for no bean, and fails the deployment
+
+- **Date** : 2026-11-17
+- **Statut** : FIXED on `fix/bean-class-lookup`, with BUG-20261117-02: found while fixing it, and without this fix
+  that one does not ship for an adapter that injects (found in review).
+- **Module touché** : `champollion-jsonb-cdi` (`JsonbCdiExtension`)
+- **Symptôme** : a class the extension sees names, with `@JsonbTypeAdapter`, an adapter
+  `BoundedAdapter<T extends Number>` that is annotated `@Dependent` and has an `@Inject` field. The deployment fails:
+  `Champollion: …BoundedAdapter, named by a JSON-B annotation on …BoundedTagged.name, has @Inject members but is no
+  bean: its injections would stay null; give it a bean-defining annotation (@Dependent, @ApplicationScoped...)`. Any
+  generic adapter is concerned, with a bound or without one.
+- **Reproduction minimale** : `JsonbCdiExtensionTest.aGenericAdapterThatInjectsAndIsABeanPassesTheValidation`: Weld
+  without discovery, with the extension, the class that names the adapter, the adapter and its collaborator.
+- **Cause** : `JsonbCdiExtension.bean` counts a bean for each of its types that is a class (`type.isClass()`). The only
+  type of its class that a generic class has is parameterized, so the count stays 0 and `validate` takes the class for
+  no bean.
+  Where the extension does not see the class that names the adapter, nothing failed: a container in the annotated
+  discovery mode gives it the bean classes only, as in `JsonbCdiRegistryTest`, which is why the tests of
+  BUG-20261117-02 passed without this fix. Under Vauban the extension runs at the build of the application, and Vauban
+  reports a parameterized bean type as a parameterized type too (`VaubanBceBeanInfo.types`, `TypeMapper`): the build
+  failed the same way (read, not run).
+- **Correctif** : `JsonbCdiExtension.bean` counts the bean of a class with type variables for that class too, as the
+  registry looks it up: a class bean whose types include its class with its own type variables (`X<T>`). A bean
+  `@Typed` away from that type is not counted, and the registry does not serve it either.
+- **Vérification** : the test above, red before the fix with the message of the symptom
+  (`DeploymentException: Champollion: …BoundedAdapter, named by a JSON-B annotation on …BoundedTagged.name, has
+  @Inject members but is no bean`), green after it. Not run under a Vauban build.
+
+## BUG-20261117-06 — JSON-B: without the registry, an adapter whose class has a bounded type variable is created with `new`
+
+- **Date** : 2026-11-17
+- **Statut** : OPEN. Found while fixing BUG-20261117-02: the same lookup by raw class, in another class. Disabled
+  reproduction: `JsonbCdiRegistryTest.withoutTheRegistryABoundedGenericAdapterIsInjected`.
+- **Module touché** : `champollion-jsonb` (`CdiResolver.fromContainer`)
+- **Symptôme** : in a container without the registry of `champollion-jsonb-cdi` (the module absent, or a container
+  that runs no build compatible extension), the runtime takes the bean of an adapter from `CDI.current()`. An adapter
+  `BoundedAdapter<T extends Number>` annotated `@Dependent` is created with its no-argument constructor instead: its
+  injected fields are `null` (`expected: <{"name":"<n>"}> but was: <{"name":"n"}>`).
+- **Reproduction minimale** : the disabled test above: Weld without discovery, the adapter and its collaborator as
+  bean classes, `JsonbBuilder.create().toJson(...)`.
+- **Cause** : `CdiResolver.fromContainer` calls `CDI.current().select(beanClass)`, by reflection. The raw class of a
+  bean whose class has a bounded type variable does not look it up (CDI 4.1 section 5.2.4): the lookup is unsatisfied
+  and the resolver falls back to the constructor.
+- **Correctif** : none yet. `CdiResolver` reaches CDI by reflection, as the CDI API is no dependency of
+  `champollion-jsonb`: the lookup of BUG-20261117-02 has to be written the same way there. It is a fourth lookup by
+  raw class; Vidocq/vidocq#652 lists three.
+
+## BUG-20261117-07 — JSON-B CDI: an adapter that has only another qualifier than `@Default` is created with `new`
+
+- **Date** : 2026-11-17
+- **Statut** : OPEN. Found while fixing BUG-20261117-02 and left as it was: that fix keeps the qualifiers of the
+  lookup. Disabled reproduction: `JsonbCdiRegistryTest.anAdapterWithAnotherQualifierIsServedByItsContainer`.
+- **Module touché** : `champollion-jsonb-cdi` (`JsonbCdiRegistry`, `JsonbCdiExtension`); `CdiResolver`, in
+  `champollion-jsonb`, asks the same way.
+- **Symptôme** : an adapter annotated `@Dependent`, with a qualifier of its own, is a bean. The generated bindings and
+  the runtime create it with its no-argument constructor: its injected fields are `null`
+  (`injected by the container ==> expected: <<x>> but was: <x>`), and nothing says so.
+- **Reproduction minimale** : the disabled test above.
+- **Cause** : `JsonbCdiRegistry` asks an `Instance<Object>` injected without a qualifier, so for `@Default`, which that
+  bean does not have. `JsonbCdiExtension` counts the beans of a type whatever their qualifiers: it counts one, and
+  reports nothing.

@@ -109,6 +109,52 @@ class JsonbInstancesTest {
         }
     }
 
+    /**
+     * A source may walk the beans of its container to answer {@code serves} (BUG-20261117-02): it is asked without the
+     * lock that guards the installed sources, so that a container starting or stopping meanwhile does not wait for it.
+     */
+    @Test
+    void aSourceIsAskedWhetherItServesWithoutTheLockOfTheSources() throws InterruptedException {
+        ClassLoader loader = Plain.class.getClassLoader();
+        ClassLoader other = new ClassLoader(null) { };
+        Container unrelated = new Container(String.class, "x");
+        Thread[] installer = new Thread[1];
+        Thread.State[] seen = new Thread.State[1];
+        Container asking = new Container(Plain.class, new Plain());
+        JsonbInstances.Source probing = new JsonbInstances.Source() {
+            @Override
+            public <T> T get(Class<T> type) {
+                return null;
+            }
+
+            @Override
+            public boolean serves(Class<?> type) {
+                // Another container starts while this one is asked: it ends, or it waits for the lock.
+                installer[0] = Thread.ofPlatform().start(() -> {
+                    JsonbInstances.install(other, unrelated);
+                    JsonbInstances.uninstall(other, unrelated);
+                });
+                Thread.State state = installer[0].getState();
+                while (state != Thread.State.BLOCKED && state != Thread.State.TERMINATED) {
+                    Thread.onSpinWait();
+                    state = installer[0].getState();
+                }
+                seen[0] = state;
+                return false;
+            }
+        };
+        JsonbInstances.install(loader, asking);
+        JsonbInstances.install(loader, probing);
+        try {
+            assertSame(asking, JsonbInstances.sourceFor(Plain.class));
+        } finally {
+            JsonbInstances.uninstall(loader, asking);
+            JsonbInstances.uninstall(loader, probing);
+            if (installer[0] != null) installer[0].join();
+        }
+        assertEquals(Thread.State.TERMINATED, seen[0], "a container that starts does not wait for serves");
+    }
+
     @Test
     void aBeanWithoutAConstructorAndWithoutAContainerIsAJsonbException() {
         Supplier<Plain> none = JsonbInstances.of(Plain.class, null);
