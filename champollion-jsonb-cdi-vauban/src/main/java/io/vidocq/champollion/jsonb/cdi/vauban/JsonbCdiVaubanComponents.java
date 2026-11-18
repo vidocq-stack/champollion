@@ -20,6 +20,8 @@
 package io.vidocq.champollion.jsonb.cdi.vauban;
 
 import io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry;
+import io.vidocq.vauban.api.GeneratedCoverage;
+import io.vidocq.vauban.api.GeneratedCoverage.Generator;
 import io.vidocq.vauban.api.VaubanComponentProvider;
 import jakarta.enterprise.event.Shutdown;
 import jakarta.enterprise.event.Startup;
@@ -38,6 +40,11 @@ import java.util.function.Supplier;
  * compiles, in their own package, and the registry is compiled in a module that knows no Vauban.
  * {@code JsonbCdiVaubanComponentsTest} fails when the registry gains a member the container calls and this class
  * does not.</p>
+ *
+ * <p>Under {@code vidocq:generate}, the enriched copy of {@code champollion-jsonb-cdi} carries components of its own for
+ * the registry. Both answer the same, and Vauban asks its providers in turn and keeps the first answer: the registry
+ * stays one bean (Vauban registers a bean class once, by name), its observers are called once each, and it gets one
+ * client proxy. Vidocq's {@code TodoResourceTest} checks it on that path.</p>
  */
 public final class JsonbCdiVaubanComponents implements VaubanComponentProvider {
 
@@ -86,5 +93,16 @@ public final class JsonbCdiVaubanComponents implements VaubanComponentProvider {
     public Object createClientProxy(String proxyClassName, Supplier<?> delegate) {
         if (!REGISTRY_PROXY.equals(proxyClassName)) return null;
         return new JsonbCdiRegistryClientProxy((Supplier<? extends JsonbCdiRegistry>) delegate);
+    }
+
+    /**
+     * What this class runs, keyed as the container asks for it, so the dev console names it instead of reporting the
+     * registry as run by reflection. {@link Generator#APT}: Java source compiled with the module, which is what the
+     * processor would have written; the enum has no value for code written by hand.
+     */
+    @Override
+    public GeneratedCoverage coverage() {
+        return GeneratedCoverage.of(Generator.APT, new String[] {REGISTRY}, new String[0],
+                new String[] {REGISTRY + "#" + INSTALL, REGISTRY + "#" + UNINSTALL}, new String[] {REGISTRY_PROXY});
     }
 }

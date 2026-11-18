@@ -21,7 +21,12 @@ package io.vidocq.champollion.jsonb.cdi.vauban;
 
 import io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry;
 import io.vidocq.champollion.jsonb.spi.JsonbInstances;
+import io.vidocq.vauban.core.bean.model.ObserverDescriptor;
+import io.vidocq.vauban.core.container.CodegenCoverage;
+import io.vidocq.vauban.core.container.CodegenCoverage.Coverage;
+import io.vidocq.vauban.core.container.CodegenCoverage.Verdict;
 import io.vidocq.vauban.core.container.VaubanContainer;
+import jakarta.enterprise.inject.spi.Bean;
 import jakarta.enterprise.inject.spi.BeanContainer;
 import org.junit.jupiter.api.Test;
 
@@ -123,5 +128,33 @@ class JsonbCdiVaubanModuleTest {
             container.close();
         }
         assertNull(JsonbInstances.sourceFor(JsonbCdiVaubanModuleTest.class), "its Shutdown observer uninstalled it");
+    }
+
+    /**
+     * The dev console names the code that runs the registry: the components declare what they cover, so the bean and
+     * its two observers read as build-time code, not reflection nor an unknown provider.
+     */
+    @Test
+    void theDevConsoleSeesTheRegistryRunByBuildTimeCode() {
+        VaubanContainer container = VaubanContainer.builder().addBeanClass(JsonbCdiRegistry.class).build();
+        try {
+            CodegenCoverage coverage = container.codegenCoverage();
+            Coverage generated = new Coverage(Verdict.APT, List.of());
+            Set<Bean<?>> beans = container.getBeanManager().getBeans(JsonbCdiRegistry.class);
+            assertEquals(1, beans.size(), beans.toString());
+            Bean<?> bean = beans.iterator().next();
+            assertEquals(generated, coverage.of(bean), "the bean: constructor and client proxy");
+            List<ObserverDescriptor> observers = container.eventDispatcher().observers().stream()
+                    // The class name through Object: this module does not read the one of the indexer's DotName.
+                    .filter(observer -> String.valueOf(observer.declaringClass())
+                            .equals(JsonbCdiVaubanComponents.REGISTRY))
+                    .toList();
+            assertEquals(2, observers.size(), observers.toString());
+            for (ObserverDescriptor observer : observers) {
+                assertEquals(generated, coverage.of(observer), observer.methodName());
+            }
+        } finally {
+            container.close();
+        }
     }
 }
