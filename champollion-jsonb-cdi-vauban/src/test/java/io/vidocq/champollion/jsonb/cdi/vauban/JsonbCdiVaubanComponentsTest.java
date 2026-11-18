@@ -107,7 +107,8 @@ class JsonbCdiVaubanComponentsTest {
         registry.uninstall(new Shutdown());
         assertEquals(recording.hashCode(), registry.hashCode());
         assertEquals(recording.toString(), registry.toString());
-        assertTrue(registry.equals(recording), "the registry's own equals, on the registry");
+        // JUnit calls registry.equals(recording): the proxy hands it to the registry, equal to itself.
+        assertEquals(registry, recording, "the registry's own equals, on the registry");
 
         assertEquals(List.of("install", "serves", "get", "uninstall"), recording.calls);
     }
