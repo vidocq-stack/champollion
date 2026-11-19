@@ -129,13 +129,15 @@ class JsonbInstancesTest {
 
             @Override
             public boolean serves(Class<?> type) {
-                // Another container starts while this one is asked: it ends, or it waits for the lock.
+                // Another container starts while this one is asked: it ends, or it waits for the lock (parked on a
+                // java.util.concurrent lock, so WAITING; BLOCKED was the state on the monitor this lock replaced).
                 installer[0] = Thread.ofPlatform().start(() -> {
                     JsonbInstances.install(other, unrelated);
                     JsonbInstances.uninstall(other, unrelated);
                 });
                 Thread.State state = installer[0].getState();
-                while (state != Thread.State.BLOCKED && state != Thread.State.TERMINATED) {
+                while (state != Thread.State.WAITING && state != Thread.State.BLOCKED
+                        && state != Thread.State.TERMINATED) {
                     Thread.onSpinWait();
                     state = installer[0].getState();
                 }

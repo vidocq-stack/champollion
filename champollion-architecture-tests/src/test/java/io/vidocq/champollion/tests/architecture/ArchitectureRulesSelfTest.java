@@ -33,6 +33,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 
 import io.vidocq.archrules.VidocqArchRules;
@@ -131,7 +132,9 @@ class ArchitectureRulesSelfTest {
                 ruleWith("NO_PLATFORM_THREADS", ArchitectureRules.NO_PLATFORM_THREADS, BuildsAThreadPoolExecutor.class),
                 ruleWith("NO_PLATFORM_THREADS", ArchitectureRules.NO_PLATFORM_THREADS, StartsAPlatformThread.class),
                 ruleWith("NO_PLATFORM_THREADS", ArchitectureRules.NO_PLATFORM_THREADS, CreatesAThread.class),
-                ruleWith("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL, KeepsAThreadLocal.class));
+                ruleWith("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL, KeepsAThreadLocal.class),
+                ruleWith("NO_SYNCHRONIZED", ArchitectureRules.NO_SYNCHRONIZED, GuardsWithAMonitor.class),
+                ruleWith("NO_SYNCHRONIZED", ArchitectureRules.NO_SYNCHRONIZED, DeclaresASynchronizedMethod.class));
     }
 
     @ParameterizedTest(name = "{0} catches {1}")
@@ -145,7 +148,8 @@ class ArchitectureRulesSelfTest {
         return Stream.of(
                 ruleWith("NO_REFLECTION", ArchitectureRules.NO_REFLECTION, LooksUpACharsetByName.class),
                 ruleWith("NO_PLATFORM_THREADS", ArchitectureRules.NO_PLATFORM_THREADS, UsesVirtualThreads.class),
-                ruleWith("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL, UsesVirtualThreads.class));
+                ruleWith("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL, UsesVirtualThreads.class),
+                ruleWith("NO_SYNCHRONIZED", ArchitectureRules.NO_SYNCHRONIZED, GuardsWithALock.class));
     }
 
     @ParameterizedTest(name = "{0} keeps {1}")
@@ -239,6 +243,38 @@ class ArchitectureRulesSelfTest {
 
         StringBuilder buffer() {
             return BUFFER.get();
+        }
+    }
+
+    static final class GuardsWithAMonitor {
+        private final List<String> names = new java.util.ArrayList<>();
+
+        void add(String name) {
+            synchronized (names) {
+                names.add(name);
+            }
+        }
+    }
+
+    static final class DeclaresASynchronizedMethod {
+        private int count;
+
+        synchronized int next() {
+            return ++count;
+        }
+    }
+
+    static final class GuardsWithALock {
+        private final ReentrantLock lock = new ReentrantLock();
+        private int count;
+
+        int next() {
+            lock.lock();
+            try {
+                return ++count;
+            } finally {
+                lock.unlock();
+            }
         }
     }
 }

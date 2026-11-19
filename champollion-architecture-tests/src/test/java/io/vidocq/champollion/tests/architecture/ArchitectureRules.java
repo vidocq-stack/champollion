@@ -19,6 +19,14 @@
  */
 package io.vidocq.champollion.tests.architecture;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.ClassModel;
+import java.lang.classfile.MethodModel;
+import java.lang.classfile.instruction.MonitorInstruction;
+import java.lang.reflect.AccessFlag;
 import java.util.Map;
 
 import io.vidocq.archrules.Jdk;
@@ -33,7 +41,11 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyP
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 /**
  * Champollion's own rules, which no scanner knows, as ArchUnit rules (Vidocq/vidocq#289). They come from the shared
@@ -254,18 +266,24 @@ final class ArchitectureRules {
                     "io.vidocq.champollion.jsonb.internal.CdiResolver",
                     "the optional CDI lookup JSON-B 3.0 section 5 requires: the CDI API is not a dependency, so its"
                             + " classes are loaded by name from the bean's class loader, without initialisation,"
-                            + " and a bean's @Inject members are read (CdiResolver Javadoc)"),
+                            + " and a bean's @Inject members are read; a bean the lookup by type does not find is"
+                            + " taken among the container's beans the same way (CdiResolver Javadoc)"),
             Map.entry(
                     "io.vidocq.champollion.jsonb.internal.AccessFailures",
                     "the failure path of the JSON-B runtime mode: it recognises InaccessibleObjectException to tell"
                             + " the user which opens line to add (BUG-20261031-01); it reads no member"),
             Map.entry("io.vidocq.champollion.jsonb.internal.GenericTypes", JSONB_TYPE_TOKEN),
             Map.entry(
-                    "io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry",
+                    "io.vidocq.champollion.jsonb.spi.GenericBeanTypes",
                     "the CDI bean types of a generic class: java.lang.reflect.Type is the type of a bean"
-                            + " (Bean.getTypes(), BeanContainer.getReference) and of a class's type variables, which"
-                            + " the registry compares to find the bean of a class with a bounded type variable"
-                            + " (CDI 4.1 section 5.2.4, BUG-20261117-02); it reads no member of a class"),
+                            + " (Bean.getTypes()) and of a class's type variables, which it compares to find the"
+                            + " bean of a class with a bounded type variable (CDI 4.1 section 5.2.4,"
+                            + " BUG-20261117-02, BUG-20261117-06); it reads no member of a class"),
+            Map.entry(
+                    "io.vidocq.champollion.jsonb.cdi.registry.JsonbCdiRegistry",
+                    "java.lang.reflect.Type is the type the registry asks a bean's reference by"
+                            + " (BeanContainer.getReference), for a bean the lookup by type does not find"
+                            + " (BUG-20261117-02, BUG-20261117-07); it reads no member of a class"),
             Map.entry("io.vidocq.champollion.jsonb.internal.ChampollionJsonb", JSONB_TYPE_TOKEN),
             Map.entry("io.vidocq.champollion.jsonb.internal.ChampollionDeserializationContext", JSONB_TYPE_TOKEN),
             Map.entry("io.vidocq.champollion.protobuf.Descriptors", PROTOBUF_RUNTIME_MODE),
@@ -295,6 +313,49 @@ final class ArchitectureRules {
             "Champollion is virtual-thread-friendly: a ThreadLocal neither follows a task nor caches anything,"
                     + " ScopedValue carries context",
             CLAUDE_CONSTRAINTS + ", constraint 4");
+
+    /**
+     * CLAUDE.md, constraint 4: no {@code synchronized}, neither a method nor a block (BUG-20261118-01). ArchUnit shows
+     * the modifier of a method only, so the rule reads the class file for the monitor instructions of a block.
+     */
+    static final ArchRule NO_SYNCHRONIZED = classes()
+            .should(new HoldNoMonitor())
+            .because("Champollion is virtual-thread-friendly: a java.util.concurrent lock or a concurrent structure"
+                    + " guards shared state, not a monitor (" + CLAUDE_CONSTRAINTS + ", constraint 4)");
+
+    /** No method of the class is {@code synchronized}, and none enters a monitor. */
+    private static final class HoldNoMonitor extends ArchCondition<JavaClass> {
+
+        HoldNoMonitor() {
+            super("hold no monitor (synchronized method or block)");
+        }
+
+        @Override
+        public void check(JavaClass type, ConditionEvents events) {
+            for (MethodModel method : classFile(type).methods()) {
+                String where = type.getName() + "." + method.methodName().stringValue();
+                if (method.flags().has(AccessFlag.SYNCHRONIZED)) {
+                    events.add(SimpleConditionEvent.violated(type, where + " is synchronized"));
+                }
+                boolean entersAMonitor = method.code().stream()
+                        .flatMap(code -> code.elementStream())
+                        .anyMatch(MonitorInstruction.class::isInstance);
+                if (entersAMonitor) {
+                    events.add(SimpleConditionEvent.violated(type, where + " has a synchronized block"));
+                }
+            }
+        }
+
+        private static ClassModel classFile(JavaClass type) {
+            var source = type.getSource()
+                    .orElseThrow(() -> new IllegalStateException(type.getName() + " has no source"));
+            try (InputStream in = source.getUri().toURL().openStream()) {
+                return ClassFile.of().parse(in.readAllBytes());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
 
     private ArchitectureRules() {
         // Rules only.

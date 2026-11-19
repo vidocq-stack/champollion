@@ -77,7 +77,8 @@ class ArchitectureRulesTest {
                 named("FOUNDATIONAL_BRICKS", ArchitectureRules.FOUNDATIONAL_BRICKS),
                 named("NO_REFLECTION", ArchitectureRules.NO_REFLECTION),
                 named("NO_PLATFORM_THREADS", ArchitectureRules.NO_PLATFORM_THREADS),
-                named("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL));
+                named("NO_THREAD_LOCAL", ArchitectureRules.NO_THREAD_LOCAL),
+                named("NO_SYNCHRONIZED", ArchitectureRules.NO_SYNCHRONIZED));
     }
 
     @ParameterizedTest(name = "{0}")

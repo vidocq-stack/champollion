@@ -57,12 +57,18 @@ public class JsonbCdiExtension implements BuildCompatibleExtension {
     private static final Set<String> ANNOTATIONS = Set.of(JsonbTypeAdapter.class.getName(),
             JsonbTypeSerializer.class.getName(), JsonbTypeDeserializer.class.getName());
     private static final String INJECT = "jakarta.inject.Inject";
+    private static final String DEFAULT = "jakarta.enterprise.inject.Default";
+    private static final Set<String> BUILT_IN_BESIDE_DEFAULT = Set.of("jakarta.enterprise.inject.Any",
+            "jakarta.inject.Named");
 
     /** A class a JSON-B annotation names, and where. */
     private record Referenced(ClassInfo type, String usedBy) {}
 
     private final Map<String, Referenced> referenced = new LinkedHashMap<>();
+    /** The beans with {@code @Default}, counted by each class that looks them up. */
     private final Map<String, Integer> beansByType = new HashMap<>();
+    /** The beans without {@code @Default}: they have only qualifiers of their own. */
+    private final Map<String, Integer> qualifiedBeansByType = new HashMap<>();
     /** The classes with an {@code @Inject} member, beans or not. */
     private final Set<String> injecting = new java.util.HashSet<>();
 
@@ -106,15 +112,32 @@ public class JsonbCdiExtension implements BuildCompatibleExtension {
      * class, and, for the bean of a class with type variables, by that class. The only type of its class such a bean
      * has is parameterized, {@code type<T>} (CDI 4.1 section 2.2.1), and its raw class does not look it up (section
      * 5.2.4): the registry takes it by its bean class (BUG-20261117-02, BUG-20261117-05).
+     *
+     * <p>The beans with {@code @Default} are counted apart from those that have only a qualifier of their own: the
+     * registry serves one of the second kind only when the class has none of the first (BUG-20261117-07).</p>
      */
     @Registration(types = Object.class)
     public void bean(BeanInfo bean) {
+        Map<String, Integer> counts = hasDefault(bean) ? beansByType : qualifiedBeansByType;
         for (Type type : bean.types()) {
-            if (type.isClass()) beansByType.merge(type.asClass().declaration().name(), 1, Integer::sum);
+            if (type.isClass()) counts.merge(type.asClass().declaration().name(), 1, Integer::sum);
         }
         if (bean.isClassBean() && hasTypeOfItsGenericClass(bean)) {
-            beansByType.merge(bean.declaringClass().name(), 1, Integer::sum);
+            counts.merge(bean.declaringClass().name(), 1, Integer::sum);
         }
+    }
+
+    /**
+     * Whether a bean has {@code @Default}: it declares it, or it declares no qualifier but {@code @Named} and
+     * {@code @Any} (CDI 4.1 section 2.3.1). A container may list the built-in qualifiers of a bean or leave them out.
+     */
+    private static boolean hasDefault(BeanInfo bean) {
+        boolean anotherQualifier = false;
+        for (AnnotationInfo qualifier : bean.qualifiers()) {
+            if (DEFAULT.equals(qualifier.name())) return true;
+            anotherQualifier |= !BUILT_IN_BESIDE_DEFAULT.contains(qualifier.name());
+        }
+        return !anotherQualifier;
     }
 
     /**
@@ -141,7 +164,9 @@ public class JsonbCdiExtension implements BuildCompatibleExtension {
     public void validate(Messages messages) {
         for (var e : referenced.entrySet()) {
             String name = e.getKey();
-            int beans = beansByType.getOrDefault(name, 0);
+            int withDefault = beansByType.getOrDefault(name, 0);
+            // As the registry: a bean with a qualifier of its own is served when no bean of the class has @Default.
+            int beans = withDefault > 0 ? withDefault : qualifiedBeansByType.getOrDefault(name, 0);
             if (beans > 1) {
                 messages.error("Champollion: " + name + ", named by a JSON-B annotation on " + e.getValue().usedBy()
                         + ", is ambiguous: " + beans + " beans have its type; JSON-B needs one instance of it");

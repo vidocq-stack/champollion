@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /**
@@ -53,6 +54,8 @@ public final class JsonbInstances {
 
     /** The installed sources, by the class loader of their application: several when containers share one. */
     private static final Map<ClassLoader, List<Source>> SOURCES = new WeakHashMap<>();
+    /** Guards {@link #SOURCES}: a lock, not a monitor (CLAUDE.md, constraint 4). */
+    private static final ReentrantLock SOURCES_LOCK = new ReentrantLock();
     /** Counts installs and uninstalls: an instance resolved under one generation is kept until it changes. */
     private static final AtomicInteger GENERATION = new AtomicInteger();
     private static final AtomicInteger INSTALLED = new AtomicInteger();
@@ -62,22 +65,28 @@ public final class JsonbInstances {
 
     /** Installs the source of the container whose application classes {@code loader} loads. */
     public static void install(ClassLoader loader, Source source) {
-        synchronized (SOURCES) {
+        SOURCES_LOCK.lock();
+        try {
             SOURCES.computeIfAbsent(loader, l -> new ArrayList<>()).add(source);
             INSTALLED.incrementAndGet();
             GENERATION.incrementAndGet();
+        } finally {
+            SOURCES_LOCK.unlock();
         }
     }
 
     /** Removes {@code source}, installed for {@code loader}. */
     public static void uninstall(ClassLoader loader, Source source) {
-        synchronized (SOURCES) {
+        SOURCES_LOCK.lock();
+        try {
             List<Source> sources = SOURCES.get(loader);
             if (sources != null && sources.remove(source)) {
                 INSTALLED.decrementAndGet();
                 if (sources.isEmpty()) SOURCES.remove(loader);
                 GENERATION.incrementAndGet();
             }
+        } finally {
+            SOURCES_LOCK.unlock();
         }
     }
 
@@ -92,13 +101,16 @@ public final class JsonbInstances {
     public static Source sourceFor(Class<?> type) {
         if (INSTALLED.get() == 0) return null;
         List<Source> candidates;
-        synchronized (SOURCES) {
+        SOURCES_LOCK.lock();
+        try {
             candidates = lookup(type.getClassLoader());
             if (candidates.isEmpty()) candidates = lookup(Thread.currentThread().getContextClassLoader());
             if (candidates.isEmpty()) {
                 candidates = new ArrayList<>();
                 for (List<Source> sources : SOURCES.values()) candidates.addAll(sources);
             }
+        } finally {
+            SOURCES_LOCK.unlock();
         }
         if (candidates.size() == 1) return candidates.getFirst();
         // Asked outside the lock: a source may walk the beans of its container (BUG-20261117-02), and a container that

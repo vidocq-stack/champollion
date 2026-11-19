@@ -64,4 +64,29 @@ class JsonbCdiExtensionTest {
             assertTrue(container.isRunning());
         }
     }
+
+    /**
+     * Two beans have the type of the adapter, one of them with {@code @Default}: the registry serves that one, so
+     * the extension reports nothing (BUG-20261117-07).
+     */
+    @Test
+    void aBeanWithDefaultBesideOneWithAnotherQualifierIsNotAmbiguous() {
+        Weld weld = new Weld("preferred-valid").disableDiscovery()
+                .addBeanClasses(PreferredTagged.class, Preferred.class, Preferred.Special.class)
+                .addBuildCompatibleExtensions(JsonbCdiExtension.class);
+        try (var container = weld.initialize()) {
+            assertTrue(container.isRunning());
+        }
+    }
+
+    /** An adapter that injects and has only a qualifier of its own is a bean the registry serves: nothing to report. */
+    @Test
+    void anAdapterWithAnotherQualifierThatInjectsPassesTheValidation() {
+        Weld weld = new Weld("marked-valid").disableDiscovery()
+                .addBeanClasses(MarkedTagged.class, MarkedAdapter.class, Formatter.class)
+                .addBuildCompatibleExtensions(JsonbCdiExtension.class);
+        try (var container = weld.initialize()) {
+            assertTrue(container.isRunning());
+        }
+    }
 }

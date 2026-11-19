@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.WeakHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Immutable index of runtime-available static {@link JsonbBinding}s, keyed by
@@ -56,6 +57,8 @@ final class StaticBindings {
      * reach their types and so the loader, which must not stay reachable from here once nothing else holds it.
      */
     private static final Map<ClassLoader, WeakReference<StaticBindings>> LAYERS = new WeakHashMap<>();
+    /** Guards {@link #LAYERS}: a lock, not a monitor (CLAUDE.md, constraint 4). */
+    private static final ReentrantLock LAYERS_LOCK = new ReentrantLock();
 
     private final Map<Class<?>, JsonbBinding<?>> byType;
     /** The loaders this index was made from, whose services files it has read: a type of theirs is not looked up again. */
@@ -151,21 +154,20 @@ final class StaticBindings {
 
     /** The bindings the services files of {@code loader} list: read once while the answer is reachable. */
     private static StaticBindings layer(ClassLoader loader) {
-        var answer = new StaticBindings[1];
-        synchronized (LAYERS) {
-            LAYERS.compute(loader, (key, known) -> {
-                StaticBindings kept = known == null ? null : known.get();
-                if (kept == null) {
-                    var found = new ArrayList<JsonbBinding<?>>();
-                    scan(key, found);
-                    kept = of(found);
-                    known = new WeakReference<>(kept);
-                }
-                answer[0] = kept;
-                return known;
-            });
+        LAYERS_LOCK.lock();
+        try {
+            WeakReference<StaticBindings> known = LAYERS.get(loader);
+            StaticBindings kept = known == null ? null : known.get();
+            if (kept == null) {
+                var found = new ArrayList<JsonbBinding<?>>();
+                scan(loader, found);
+                kept = of(found);
+                LAYERS.put(loader, new WeakReference<>(kept));
+            }
+            return kept;
+        } finally {
+            LAYERS_LOCK.unlock();
         }
-        return answer[0];
     }
 
     Map<Class<?>, JsonbBinding<?>> view() { return byType; }

@@ -27,7 +27,6 @@ import jakarta.json.bind.JsonbBuilder;
 import org.jboss.weld.environment.se.Weld;
 import org.jboss.weld.environment.se.WeldContainer;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.function.Supplier;
@@ -52,6 +51,8 @@ class JsonbCdiRegistryTest {
         BoundedAdapter.DESTROYED.set(0);
         ReentrantBounded.CREATED.set(0);
         ReentrantBounded.DESTROYED.set(0);
+        MarkedBounded.DESTROYED.set(0);
+        MarkedShared.DESTROYED.set(0);
     }
 
     private static WeldContainer start(String id) {
@@ -275,24 +276,94 @@ class JsonbCdiRegistryTest {
         assertEquals(2, ReentrantBounded.DESTROYED.get(), "the instance kept went with its container");
     }
 
+    /**
+     * A bean that has only a qualifier of its own does not have {@code @Default}: its container serves it all the
+     * same, as the only bean of its type (BUG-20261117-07).
+     */
     @Test
-    @Disabled("BUG-20261117-07: an adapter that has only another qualifier than @Default is created with new")
     void anAdapterWithAnotherQualifierIsServedByItsContainer() {
         Supplier<MarkedAdapter> generated = JsonbInstances.of(MarkedAdapter.class, MarkedAdapter::new);
-        try (var _ = start("marked")) {
+        try (WeldContainer container = start("marked")) {
             assertEquals("<x>", generated.get().adaptToJson("x"), "injected by the container");
+            assertTrue(container.select(JsonbCdiRegistry.class).get().serves(MarkedAdapter.class));
         }
     }
 
     @Test
-    @Disabled("BUG-20261117-06: without the registry, a bounded generic adapter is created with new")
+    @SuppressWarnings("rawtypes")
+    void aBoundedGenericAdapterWithAnotherQualifierIsServedAndDestroyed() {
+        Supplier<MarkedBounded> generated = JsonbInstances.of(MarkedBounded.class, MarkedBounded::new);
+        try (var _ = start("marked-bounded")) {
+            assertEquals("<x>", generated.get().adaptToJson("x"), "injected by the container");
+            assertEquals(0, MarkedBounded.DESTROYED.get(), "alive as long as its container");
+        }
+        assertEquals(1, MarkedBounded.DESTROYED.get(), "destroyed with its container");
+    }
+
+    /** A bean of a normal scope is its container's to destroy: once, when it stops. */
+    @Test
+    void anAdapterOfANormalScopeWithAnotherQualifierIsServedAndDestroyedOnce() {
+        Supplier<MarkedShared> generated = JsonbInstances.of(MarkedShared.class, MarkedShared::new);
+        try (var _ = start("marked-shared")) {
+            assertEquals("<x>", generated.get().adaptToJson("x"), "injected by the container");
+            assertEquals(0, MarkedShared.DESTROYED.get(), "alive as long as its container");
+        }
+        assertEquals(1, MarkedShared.DESTROYED.get(), "destroyed once, with its container");
+    }
+
+    /** Two beans of the type, one with {@code @Default}: that one is served, as an injection without a qualifier. */
+    @Test
+    void theBeanWithDefaultIsServedBesideOneWithAnotherQualifier() {
+        try (WeldContainer container = start("preferred")) {
+            JsonbCdiRegistry registry = container.select(JsonbCdiRegistry.class).get();
+            assertTrue(registry.serves(Preferred.class));
+            assertEquals("preferred:x", registry.get(Preferred.class).adaptToJson("x"));
+        }
+    }
+
+    /** The beans are asked once for a class that has no bean: the answer is kept. */
+    @Test
+    void aClassWithoutABeanIsDecidedOnce() {
+        try (WeldContainer container = start("no-bean-once")) {
+            BeanManager manager = container.getBeanManager();
+            CountingBeanContainer counting = new CountingBeanContainer(manager);
+            JsonbCdiRegistry registry = new JsonbCdiRegistry(manager.createInstance().select(
+                    jakarta.enterprise.inject.Default.Literal.INSTANCE), counting);
+            assertFalse(registry.serves(Tagged.class));
+            assertNull(registry.get(Tagged.class));
+            assertFalse(registry.serves(Tagged.class));
+            assertEquals(1, counting.beanWalks.get(), "the beans are asked once for the class");
+        }
+    }
+
+    /**
+     * Without the registry, the runtime takes the bean of a class with a bounded type variable from
+     * {@code CDI.current()} too, and destroys it when the {@code Jsonb} closes (BUG-20261117-06).
+     */
+    @Test
     void withoutTheRegistryABoundedGenericAdapterIsInjected() throws Exception {
         BoundedTagged tagged = new BoundedTagged();
         tagged.name = "n";
         try (var _ = new Weld("plain-bounded").disableDiscovery()
-                .addBeanClasses(BoundedAdapter.class, Formatter.class).initialize();
-                Jsonb jsonb = JsonbBuilder.create()) {
+                .addBeanClasses(BoundedAdapter.class, Formatter.class).initialize()) {
             assertNull(JsonbInstances.sourceFor(BoundedAdapter.class), "no registry in this container");
+            Jsonb jsonb = JsonbBuilder.create();
+            assertEquals("{\"name\":\"<n>\"}", jsonb.toJson(tagged));
+            assertEquals(0, BoundedAdapter.DESTROYED.get());
+            jsonb.close();
+            assertEquals(1, BoundedAdapter.DESTROYED.get(), "destroyed with the Jsonb that obtained it");
+        }
+    }
+
+    /** Without the registry, a bean that has only a qualifier of its own is injected too (BUG-20261117-07). */
+    @Test
+    void withoutTheRegistryAnAdapterWithAnotherQualifierIsInjected() throws Exception {
+        MarkedTagged tagged = new MarkedTagged();
+        tagged.name = "n";
+        try (var _ = new Weld("plain-marked").disableDiscovery()
+                .addBeanClasses(MarkedAdapter.class, Formatter.class).initialize();
+                Jsonb jsonb = JsonbBuilder.create()) {
+            assertNull(JsonbInstances.sourceFor(MarkedAdapter.class), "no registry in this container");
             assertEquals("{\"name\":\"<n>\"}", jsonb.toJson(tagged));
         }
     }

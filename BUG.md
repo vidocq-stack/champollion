@@ -1025,43 +1025,69 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 ## BUG-20261117-06 — JSON-B: without the registry, an adapter whose class has a bounded type variable is created with `new`
 
 - **Date** : 2026-11-17
-- **Statut** : OPEN. Found while fixing BUG-20261117-02: the same lookup by raw class, in another class. Disabled
-  reproduction: `JsonbCdiRegistryTest.withoutTheRegistryABoundedGenericAdapterIsInjected`.
+- **Statut** : FIXED on `fix/adapter-lookups-and-locks`. Found while fixing BUG-20261117-02: the same lookup by raw
+  class, in another class.
 - **Module touché** : `champollion-jsonb` (`CdiResolver.fromContainer`)
 - **Symptôme** : in a container without the registry of `champollion-jsonb-cdi` (the module absent, or a container
   that runs no build compatible extension), the runtime takes the bean of an adapter from `CDI.current()`. An adapter
   `BoundedAdapter<T extends Number>` annotated `@Dependent` is created with its no-argument constructor instead: its
   injected fields are `null` (`expected: <{"name":"<n>"}> but was: <{"name":"n"}>`).
-- **Reproduction minimale** : the disabled test above: Weld without discovery, the adapter and its collaborator as
-  bean classes, `JsonbBuilder.create().toJson(...)`.
+- **Reproduction minimale** : `JsonbCdiRegistryTest.withoutTheRegistryABoundedGenericAdapterIsInjected`: Weld without
+  discovery, the adapter and its collaborator as bean classes, `JsonbBuilder.create().toJson(...)`.
 - **Cause** : `CdiResolver.fromContainer` calls `CDI.current().select(beanClass)`, by reflection. The raw class of a
   bean whose class has a bounded type variable does not look it up (CDI 4.1 section 5.2.4): the lookup is unsatisfied
   and the resolver falls back to the constructor.
-- **Correctif** : none yet. `CdiResolver` reaches CDI by reflection, as the CDI API is no dependency of
-  `champollion-jsonb`: the lookup of BUG-20261117-02 has to be written the same way there. It is a fourth lookup by
-  raw class; Vidocq/vidocq#652 lists three.
+- **Correctif** : when the lookup by type is unsatisfied, `CdiResolver` takes the bean among the container's beans
+  (`CDI.current().getBeanManager()`, `getBeans`, `resolve`, `getReference`), as the registry does, with method handles
+  as for the rest of its CDI calls: the CDI API is no dependency of `champollion-jsonb`. The comparison of the bean
+  types (`X<T>` with the class's own type variables) moved from the registry to `GenericBeanTypes`, in the `spi`
+  package of `champollion-jsonb`, so both lookups share it. The `Jsonb` that obtained the instance destroys it when
+  it closes, with `Bean.destroy` for a `@Dependent` bean. A CDI API without `BeanManager`, `Bean` or `Any.Literal`
+  keeps the lookup by type alone.
+- **Vérification** : the test above, red before the fix with the message of the symptom, green after it, with the
+  `@PreDestroy` count at the close of the `Jsonb`; `GenericBeanTypesTest`, 5 tests. On Weld only: not run on a Vauban
+  container.
 
 ## BUG-20261117-07 — JSON-B CDI: an adapter that has only another qualifier than `@Default` is created with `new`
 
 - **Date** : 2026-11-17
-- **Statut** : OPEN. Found while fixing BUG-20261117-02 and left as it was: that fix keeps the qualifiers of the
-  lookup. Disabled reproduction: `JsonbCdiRegistryTest.anAdapterWithAnotherQualifierIsServedByItsContainer`.
+- **Statut** : FIXED on `fix/adapter-lookups-and-locks`. Found while fixing BUG-20261117-02 and left as it was then:
+  that fix kept the qualifiers of the lookup.
 - **Module touché** : `champollion-jsonb-cdi` (`JsonbCdiRegistry`, `JsonbCdiExtension`); `CdiResolver`, in
-  `champollion-jsonb`, asks the same way.
+  `champollion-jsonb`, asked the same way.
 - **Symptôme** : an adapter annotated `@Dependent`, with a qualifier of its own, is a bean. The generated bindings and
   the runtime create it with its no-argument constructor: its injected fields are `null`
   (`injected by the container ==> expected: <<x>> but was: <x>`), and nothing says so.
-- **Reproduction minimale** : the disabled test above.
+- **Reproduction minimale** : `JsonbCdiRegistryTest.anAdapterWithAnotherQualifierIsServedByItsContainer`.
 - **Cause** : `JsonbCdiRegistry` asks an `Instance<Object>` injected without a qualifier, so for `@Default`, which that
-  bean does not have. `JsonbCdiExtension` counts the beans of a type whatever their qualifiers: it counts one, and
-  reports nothing.
+  bean does not have. `CdiResolver` asks `CDI.current().select(beanClass)`, which is for `@Default` too on Weld.
+  `JsonbCdiExtension` counted the beans of a type whatever their qualifiers: one bean with `@Default` beside one with
+  another qualifier was reported ambiguous, though the registry served the first.
+- **Correctif** : when the lookup by type is unsatisfied, the registry and `CdiResolver` ask the container for the
+  beans of the class with `@Any` (`getBeans`, `resolve`, `getReference`). A bean with `@Default` comes first, as for an
+  injection point without a qualifier: one with another qualifier is served only when no bean of the class has
+  `@Default`; two of them are ambiguous, and the class is created with `new`. The same holds for the bean of a class
+  with a bounded type variable. The registry's public constructor is unchanged. The instance of a bean of a normal
+  scope is its context's to destroy: the registry and the `Jsonb` release the reference only; a `@Dependent` one is
+  destroyed with `Bean.destroy`. The registry asks the container once per class without a bean, generic or not: the
+  answer is kept. `JsonbCdiExtension` counts the beans with `@Default` apart from the others, and reports as the
+  registry serves.
+- **Vérification** : `JsonbCdiRegistryTest`, on Weld, red before the fix: the test above,
+  `aBoundedGenericAdapterWithAnotherQualifierIsServedAndDestroyed`,
+  `anAdapterOfANormalScopeWithAnotherQualifierIsServedAndDestroyedOnce` (all three `expected: <<x>> but was: <x>`),
+  `withoutTheRegistryAnAdapterWithAnotherQualifierIsInjected` (`expected: <{"name":"<n>"}> but was: <{"name":"n"}>`),
+  `aClassWithoutABeanIsDecidedOnce` (`expected: <1> but was: <0>`), and `JsonbCdiExtensionTest.
+  aBeanWithDefaultBesideOneWithAnotherQualifierIsNotAmbiguous` (`DeploymentException: … is ambiguous: 2 beans have its
+  type`). `theBeanWithDefaultIsServedBesideOneWithAnotherQualifier` and
+  `anAdapterWithAnotherQualifierThatInjectsPassesTheValidation` were green before: they guard what already held. On
+  Weld only: not run on a Vauban container, whose `BeanInfo.qualifiers()` the extension reads at build.
 
 ## BUG-20261118-01 — JSON-B: `synchronized` blocks in the shipped core, against CLAUDE.md constraint 4
 
 - **Date** : 2026-11-18
-- **Statut** : OPEN. Found while splitting `champollion-jsonb-cdi` (branch `refactor/jsonb-cdi-vauban-split`), left
-  out of that change: it is in `champollion-jsonb`, outside the split, and a lock change there wants its own JSON-B TCK
-  run.
+- **Statut** : FIXED on `fix/adapter-lookups-and-locks`. Found while splitting `champollion-jsonb-cdi` (branch
+  `refactor/jsonb-cdi-vauban-split`), left out of that change: it is in `champollion-jsonb`, outside the split, and a
+  lock change there wants its own JSON-B TCK run.
 - **Module touché** : `champollion-jsonb` — `JsonbInstances` (`install`, `uninstall`, `sourceFor`, on `SOURCES`) and
   `StaticBindings` (on `LAYERS`).
 - **Symptôme** : CLAUDE.md, constraint 4, says "No `synchronized`, no `ThreadLocal`"; four `synchronized` blocks ship.
@@ -1070,5 +1096,12 @@ Statuts : `OPEN` → `INVESTIGATING` → `FIXED` (commit hash) → `CLOSED`.
 - **Reproduction minimale** : `grep -rn 'synchronized (' champollion-jsonb/src/main/java`.
 - **Cause** : the registries of CDI sources and of hot-reload layers guard a `WeakHashMap` with its monitor. The
   architecture rules check thread-locals and platform threads, not monitors, so nothing caught it.
-- **Correctif proposé** : a `ReentrantLock` per map (or a structure that needs no lock), and an architecture rule
-  that forbids `synchronized` in the shipped classes, with a self-test fixture.
+- **Correctif** : a `ReentrantLock` per map (`SOURCES_LOCK`, `LAYERS_LOCK`), held for the same statements as the
+  monitor was. A new architecture rule, `ArchitectureRules.NO_SYNCHRONIZED`, forbids a `synchronized` method or block
+  in the shipped classes. ArchUnit shows the modifier of a method only, so the rule reads each class file with the
+  Class-File API for the monitor instructions of a block.
+- **Vérification** : `ArchitectureRulesTest`, red before the fix: the rule named the four blocks
+  (`StaticBindings.layer`, `JsonbInstances.install`, `sourceFor`, `uninstall`), and nothing else in the shipped
+  modules. `ArchitectureRulesSelfTest`: the rule catches a fixture with a block and one with a `synchronized` method,
+  and keeps one that uses a `ReentrantLock`. `JsonbInstancesTest.aSourceIsAskedWhetherItServesWithoutTheLockOfTheSources`
+  now also stops on `WAITING`, the state of a thread that waits for a `java.util.concurrent` lock.
